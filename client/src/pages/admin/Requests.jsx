@@ -63,17 +63,18 @@ function RoomPicker({ req, onAssigned }) {
 
 export default function AdminRequests() {
   const [requests, setRequests] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState('pending');
   const [expandedId, setExpandedId] = useState(null);
-  const [responseForm, setResponseForm] = useState({ status: 'approved', admin_response: '' });
+  const [responseForm, setResponseForm] = useState({ status: 'approved', admin_response: '', room_id: '' });
   const [msg, setMsg] = useState('');
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get('/rooms').then(r => setRooms(r.data.filter(x => x.is_active))); }, []);
   const load = () => api.get('/requests/all').then(r => setRequests(r.data));
 
   const openRespond = req => {
     setExpandedId(req.id);
-    setResponseForm({ status: 'approved', admin_response: '' });
+    setResponseForm({ status: 'approved', admin_response: '', room_id: '' });
     setMsg('');
   };
 
@@ -151,8 +152,41 @@ export default function AdminRequests() {
                   </div>
                 )}
 
-                {/* Permanent / other request — show standard form */}
-                {expandedId === req.id && req.request_type !== 'room_request' && (
+                {/* Permanent request — room picker + approval */}
+                {expandedId === req.id && req.request_type === 'permanent_request' && (
+                  <div className="mt-3 border-t pt-3 space-y-3">
+                    <p className="text-sm font-semibold text-gray-700">בקשה לשיבוץ קבוע — יום {DAYS[req.day_of_week]} | {req.start_time}–{req.end_time}</p>
+                    <div className="flex flex-wrap gap-3 items-end">
+                      <div>
+                        <label className="label">החלטה</label>
+                        <select className="select w-36" value={responseForm.status} onChange={e => setResponseForm(p=>({...p,status:e.target.value}))}>
+                          <option value="approved">אישור</option>
+                          <option value="rejected">דחייה</option>
+                        </select>
+                      </div>
+                      {responseForm.status === 'approved' && (
+                        <div>
+                          <label className="label">חדר לשיבוץ</label>
+                          <select className="select w-40" value={responseForm.room_id} onChange={e => setResponseForm(p=>({...p,room_id:e.target.value}))}>
+                            <option value="">בחר חדר...</option>
+                            {rooms.filter(r => r.room_type === 'regular').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <label className="label">הודעה לעובד (אופציונלי)</label>
+                        <input className="input w-60" value={responseForm.admin_response} onChange={e => setResponseForm(p=>({...p,admin_response:e.target.value}))} placeholder="הסבר / הערה..." />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="btn btn-success" onClick={() => submitResponse(req.id)}>שמור</button>
+                      <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other requests (absence etc) — standard form */}
+                {expandedId === req.id && req.request_type !== 'room_request' && req.request_type !== 'permanent_request' && (
                   <div className="mt-3 border-t pt-3 flex flex-wrap gap-3 items-end">
                     <div>
                       <label className="label">החלטה</label>

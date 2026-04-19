@@ -166,12 +166,29 @@ router.delete('/:id', requireAdmin, (req, res) => {
 });
 
 router.put('/:id', requireAdmin, (req, res) => {
-  const { status, admin_response, assigned_room_id } = req.body;
+  const { status, admin_response, assigned_room_id, room_id } = req.body;
+  const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
+
   db.get('one_time_requests').find({ id: +req.params.id }).assign({
     status,
     admin_response: admin_response || null,
     assigned_room_id: assigned_room_id ? +assigned_room_id : null,
   }).write();
+
+  // If approving a permanent_request with a room — create a room_assignment
+  if (status === 'approved' && request?.request_type === 'permanent_request' && room_id) {
+    db.get('room_assignments').push({
+      id: nextId('room_assignments'),
+      user_id: request.user_id,
+      room_id: +room_id,
+      day_of_week: request.day_of_week,
+      start_time: request.start_time,
+      end_time: request.end_time,
+      assignment_type: 'permanent',
+      created_at: new Date().toISOString(),
+    }).write();
+  }
+
   res.json({ message: 'הבקשה עודכנה' });
 });
 
