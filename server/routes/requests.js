@@ -187,13 +187,20 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
         return { name: u?.name, start: b.start_time, end: b.end_time };
       }),
     ];
-    // When does the room become free within the requested window?
-    let free_from = null;
-    if (occupants.length > 0) {
-      const maxEndMin = Math.max(...occupants.map(o => toMin(o.end)));
-      if (maxEndMin < toMin(end_time)) free_from = minToStr(maxEndMin);
+    // Compute free windows within the requested time range
+    const startMin = toMin(start_time);
+    const endMin = toMin(end_time);
+    const sortedBusy = occupants.slice().sort((a, b) => toMin(a.start) - toMin(b.start));
+    const free_windows = [];
+    let cursor = startMin;
+    for (const slot of sortedBusy) {
+      const slotStart = Math.max(toMin(slot.start), startMin);
+      const slotEnd = Math.min(toMin(slot.end), endMin);
+      if (cursor < slotStart) free_windows.push({ from: minToStr(cursor), to: minToStr(slotStart) });
+      cursor = Math.max(cursor, slotEnd);
     }
-    return { ...room, available: occupants.length === 0, occupants, free_from };
+    if (cursor < endMin) free_windows.push({ from: minToStr(cursor), to: minToStr(endMin) });
+    return { ...room, available: occupants.length === 0, occupants, free_windows };
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   res.json(allRooms);

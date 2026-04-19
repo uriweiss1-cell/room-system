@@ -108,22 +108,24 @@ function RoomPicker({ req, onAssigned }) {
         <div className="text-sm text-gray-400 mb-3">טוען חדרים...</div>
       ) : (
         <>
-          {/* Rooms that become free within the window */}
-          {rooms.filter(r => !r.available && r.free_from).length > 0 && (
+          {/* Rooms with partial free windows */}
+          {rooms.filter(r => !r.available && r.free_windows?.length > 0).length > 0 && (
             <div className="mb-3 space-y-1">
-              {rooms.filter(r => !r.available && r.free_from).map(r => (
-                <div key={r.id} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm">
-                  <span className="font-semibold text-blue-800">{r.name}</span>
-                  <span className="text-blue-700">מתפנה בשעה {r.free_from}</span>
-                  <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
-                    onClick={() => { setAdjStart(r.free_from); fetchRooms(r.free_from, adjEnd); }}>
-                    שבץ מ-{r.free_from}
-                  </button>
-                </div>
-              ))}
+              {rooms.filter(r => !r.available && r.free_windows?.length > 0).map(r =>
+                r.free_windows.map((w, i) => (
+                  <div key={`${r.id}-${i}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm flex-wrap">
+                    <span className="font-semibold text-blue-800">{r.name}</span>
+                    <span className="text-blue-700">פנוי בין {w.from}–{w.to}</span>
+                    <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
+                      onClick={() => { setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to); }}>
+                      שבץ {w.from}–{w.to}
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           )}
-          {rooms.filter(r => r.available).length === 0 && rooms.filter(r => !r.available && r.free_from).length === 0 && (
+          {rooms.filter(r => r.available).length === 0 && rooms.filter(r => !r.available && r.free_windows?.length > 0).length === 0 && (
             <p className="text-red-500 text-sm mb-3">אין חדרים פנויים בשעות אלו</p>
           )}
           {rooms.filter(r => r.available).length > 0 && (
@@ -145,7 +147,7 @@ function RoomPicker({ req, onAssigned }) {
             {rooms.filter(r => !r.available).map(r => (
               <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
                 <span className="font-medium">{r.name}</span>
-                {r.free_from && <span className="text-blue-600 mr-1"> — מתפנה ב-{r.free_from}</span>}
+                {r.free_windows?.length > 0 && <span className="text-blue-600 mr-1"> — פנוי: {r.free_windows.map(w => `${w.from}–${w.to}`).join(', ')}</span>}
                 {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
               </div>
             ))}
