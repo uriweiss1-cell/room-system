@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS } from '../../constants';
+import { useAuth } from '../../context/AuthContext';
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -16,6 +17,7 @@ function weekDates(offset = 0) {
 }
 
 export default function Library() {
+  const { isAdmin } = useAuth();
   const [weekOffset, setWeekOffset] = useState(0);
   const [schedule, setSchedule] = useState({});
   const [loading, setLoading] = useState(false);
@@ -87,10 +89,14 @@ export default function Library() {
                   ) : (
                     <div className="space-y-1">
                       {bookings.map((b, i) => (
-                        <div key={i} className="flex gap-3 text-sm">
+                        <div key={i} className="flex gap-3 text-sm items-center">
                           <span className="text-gray-500 tabular-nums">{b.start_time}–{b.end_time}</span>
                           <span className="font-medium">{b.user_name}</span>
                           {b.type === 'permanent' && <span className="text-xs text-purple-600">קבוע</span>}
+                          {isAdmin && b.type === 'one_time' && b.id && (
+                            <button onClick={async () => { if (confirm('למחוק שיבוץ זה?')) { await api.delete(`/requests/${b.id}`); loadSchedule(); } }}
+                              className="text-red-400 hover:text-red-600 text-xs">מחק</button>
+                          )}
                         </div>
                       ))}
                     </div>

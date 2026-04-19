@@ -115,7 +115,7 @@ router.get('/library-schedule', (req, res) => {
       .filter(x => x.specific_date === date && x.status === 'assigned' && libraryIds.includes(x.assigned_room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
-        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time' };
+        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time' };
       });
     const permBookings = db.get('room_assignments')
       .filter(x => x.day_of_week === dayOfWeek && libraryIds.includes(x.room_id))
