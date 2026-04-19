@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../../api';
 
-const ROOM_TYPES = { regular: 'טיפול רגיל', staff: 'חדר צוות', committee: 'חדר ועדה', art_therapy: 'טיפול באמנות' };
-const TYPE_COLORS = { regular: 'badge-blue', staff: 'badge-green', committee: 'badge-yellow', art_therapy: 'badge-red' };
+const ROOM_TYPES = { regular: 'טיפול רגיל', library: 'ספריה', staff: 'חדר צוות', committee: 'חדר ועדה', art_therapy: 'טיפול באמנות' };
+const TYPE_COLORS = { regular: 'badge-blue', library: 'badge-green', staff: 'badge-gray', committee: 'badge-yellow', art_therapy: 'badge-red' };
 const emptyRoom = { name: '', capacity: 1, room_type: 'regular', notes: '' };
 
 export default function AdminRooms() {

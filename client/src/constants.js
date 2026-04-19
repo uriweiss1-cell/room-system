@@ -37,4 +37,5 @@ export const REQUEST_TYPE_LABELS = {
   absence: 'היעדרות',
   room_request: 'בקשת חדר חד-פעמית',
   permanent_request: 'בקשת שינוי קבוע',
+  library_request: 'בקשת ספריה',
 };

@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import MySchedule from './pages/employee/MySchedule';
 import RoomQuery from './pages/employee/RoomQuery';
 import OneTimeRequest from './pages/employee/OneTimeRequest';
+import Library from './pages/employee/Library';
 import AdminUsers from './pages/admin/Users';
 import AdminRooms from './pages/admin/Rooms';
 import AdminAssignments from './pages/admin/Assignments';
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="my-schedule"      element={<MySchedule />} />
         <Route path="room-query"       element={<RoomQuery />} />
         <Route path="one-time-request" element={<OneTimeRequest />} />
+        <Route path="library"          element={<Library />} />
         <Route path="admin/users"       element={<Guard adminOnly><AdminUsers /></Guard>} />
         <Route path="admin/rooms"       element={<Guard adminOnly><AdminRooms /></Guard>} />
         <Route path="admin/assignments" element={<Guard adminOnly><AdminAssignments /></Guard>} />

@@ -21,7 +21,8 @@ export default function Layout() {
   const employeeLinks = [
     { to: '/my-schedule',      label: 'הלוח שלי' },
     { to: '/room-query',       label: 'שאילתת חדר' },
-    { to: '/one-time-request', label: 'בקשה חד-פעמית' },
+    { to: '/one-time-request', label: 'בקשת חדרים' },
+    { to: '/library',          label: 'ספריה' },
   ];
   const adminLinks = [
     { to: '/admin/users',       label: 'עובדים' },
