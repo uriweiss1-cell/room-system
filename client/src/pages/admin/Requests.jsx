@@ -47,8 +47,11 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
         <div className="mb-3 space-y-1">
           {withWindows.map(r =>
             r.free_windows.map((w, i) => (
-              <div key={`${r.id}-${i}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm flex-wrap">
+              <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
                 <span className="font-semibold text-blue-800">{r.name}</span>
+                {r.user_already_here?.length > 0 && (
+                  <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
+                )}
                 <span className="text-blue-700">פנוי בין {w.from}–{w.to}</span>
                 <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
                   onClick={() => { setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to); }}>
