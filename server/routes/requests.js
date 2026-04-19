@@ -192,8 +192,12 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
 });
 
 router.post('/:id/assign-room', requireAdmin, (req, res) => {
-  const { room_id } = req.body;
-  db.get('one_time_requests').find({ id: +req.params.id }).assign({ assigned_room_id: +room_id, status: 'assigned' }).write();
+  const { room_id, start_time, end_time, admin_response } = req.body;
+  const update = { assigned_room_id: +room_id, status: 'assigned' };
+  if (start_time) update.start_time = start_time;
+  if (end_time) update.end_time = end_time;
+  if (admin_response) update.admin_response = admin_response;
+  db.get('one_time_requests').find({ id: +req.params.id }).assign(update).write();
   const room = db.get('rooms').find({ id: +room_id }).value();
   res.json({ message: `הוקצה ${room?.name}` });
 });

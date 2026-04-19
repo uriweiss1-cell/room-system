@@ -57,37 +57,60 @@ function RoomPicker({ req, onAssigned }) {
   const [rooms, setRooms] = useState(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  const [adjStart, setAdjStart] = useState(req.start_time);
+  const [adjEnd, setAdjEnd] = useState(req.end_time);
+  const [adminMsg, setAdminMsg] = useState('');
 
-  useEffect(() => {
-    api.get('/requests/available-rooms', { params: { date: req.specific_date, start_time: req.start_time, end_time: req.end_time } })
+  const fetchRooms = (s, e) => {
+    setRooms(null);
+    api.get('/requests/available-rooms', { params: { date: req.specific_date, start_time: s, end_time: e } })
       .then(r => setRooms(r.data))
       .catch(() => setRooms([]));
-  }, []);
+  };
+
+  useEffect(() => { fetchRooms(adjStart, adjEnd); }, []);
 
   const assign = async roomId => {
     setLoading(true);
     try {
-      const r = await api.post(`/requests/${req.id}/assign-room`, { room_id: roomId });
+      const r = await api.post(`/requests/${req.id}/assign-room`, { room_id: roomId, start_time: adjStart, end_time: adjEnd, admin_response: adminMsg || null });
       setMsg(r.data.message);
       setTimeout(onAssigned, 800);
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
     finally { setLoading(false); }
   };
 
-  if (!rooms) return <div className="text-sm text-gray-400 mt-3">טוען חדרים...</div>;
-
-  const free = rooms.filter(r => r.available);
-  const busy = rooms.filter(r => !r.available);
+  const isPartial = adjStart !== req.start_time || adjEnd !== req.end_time;
 
   return (
     <div className="mt-3 border-t pt-3">
       {msg && <div className="text-green-700 text-sm mb-2 font-medium">{msg}</div>}
-      <p className="text-sm font-semibold mb-2">חדרים פנויים ל-{req.specific_date} | {req.start_time}–{req.end_time}</p>
-      {free.length === 0 ? (
-        <p className="text-red-500 text-sm">אין חדרים פנויים בשעות אלו</p>
+      <p className="text-sm font-semibold mb-2">
+        חדרים פנויים ל-{req.specific_date}
+        {isPartial && <span className="text-orange-600"> (שיבוץ חלקי)</span>}
+      </p>
+      <div className="flex gap-3 items-end mb-3">
+        <div>
+          <label className="label text-xs">משעה</label>
+          <input type="time" className="input w-28 text-sm" value={adjStart}
+            onChange={e => { setAdjStart(e.target.value); fetchRooms(e.target.value, adjEnd); }} />
+        </div>
+        <div>
+          <label className="label text-xs">עד שעה</label>
+          <input type="time" className="input w-28 text-sm" value={adjEnd}
+            onChange={e => { setAdjEnd(e.target.value); fetchRooms(adjStart, e.target.value); }} />
+        </div>
+        {isPartial && (
+          <div className="text-xs text-orange-600 pb-1">בקשה מקורית: {req.start_time}–{req.end_time}</div>
+        )}
+      </div>
+      {!rooms ? (
+        <div className="text-sm text-gray-400 mb-3">טוען חדרים...</div>
+      ) : rooms.filter(r => r.available).length === 0 ? (
+        <p className="text-red-500 text-sm mb-3">אין חדרים פנויים בשעות אלו</p>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
-          {free.map(r => (
+          {rooms.filter(r => r.available).map(r => (
             <button key={r.id} onClick={() => assign(r.id)} disabled={loading}
               className="bg-green-50 hover:bg-green-100 border-2 border-green-300 rounded-xl py-2 px-1 text-sm font-semibold text-green-800 transition-colors">
               {r.name}
@@ -95,11 +118,11 @@ function RoomPicker({ req, onAssigned }) {
           ))}
         </div>
       )}
-      {busy.length > 0 && (
-        <details className="text-xs text-gray-500">
-          <summary className="cursor-pointer mb-1">חדרים תפוסים ({busy.length})</summary>
+      {rooms && rooms.filter(r => !r.available).length > 0 && (
+        <details className="text-xs text-gray-500 mb-3">
+          <summary className="cursor-pointer mb-1">חדרים תפוסים ({rooms.filter(r => !r.available).length})</summary>
           <div className="grid grid-cols-2 gap-1 mt-1">
-            {busy.map(r => (
+            {rooms.filter(r => !r.available).map(r => (
               <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
                 <span className="font-medium">{r.name}</span>
                 {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
@@ -108,6 +131,11 @@ function RoomPicker({ req, onAssigned }) {
           </div>
         </details>
       )}
+      <div>
+        <label className="label text-xs">הודעה לעובד (אופציונלי)</label>
+        <input className="input w-full text-sm" value={adminMsg} onChange={e => setAdminMsg(e.target.value)}
+          placeholder={isPartial ? `לדוגמה: שובצת לחדר רק בין ${adjStart}–${adjEnd} כיוון שהחדר תפוס בשעות הנותרות` : 'הסבר / הערה...'} />
+      </div>
     </div>
   );
 }
@@ -197,11 +225,7 @@ export default function AdminRequests() {
                 {expandedId === req.id && req.request_type === 'room_request' && (
                   <div>
                     <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }} />
-                    <div className="flex gap-2 mt-3 border-t pt-3 items-end flex-wrap">
-                      <div>
-                        <label className="label">הודעה לעובד (אופציונלי)</label>
-                        <input className="input w-60" value={responseForm.admin_response} onChange={e => setResponseForm(p=>({...p,admin_response:e.target.value}))} placeholder="הסבר / הערה..." />
-                      </div>
+                    <div className="flex gap-2 mt-3 border-t pt-3 flex-wrap">
                       <button className="btn btn-danger" onClick={() => { setResponseForm(p=>({...p,status:'rejected'})); submitResponse(req.id); }}>דחה בקשה</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
                     </div>
