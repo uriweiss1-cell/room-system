@@ -4,26 +4,69 @@ import { DAYS, ROLES, ROLE_COLORS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LA
 
 function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
   const [rooms, setRooms] = useState(null);
+  const [adjStart, setAdjStart] = useState(req.start_time);
+  const [adjEnd, setAdjEnd] = useState(req.end_time);
 
-  useEffect(() => {
-    api.get('/requests/available-rooms-permanent', { params: { day_of_week: req.day_of_week, start_time: req.start_time, end_time: req.end_time, user_id: req.user_id } })
+  const fetchRooms = (s, e) => {
+    setRooms(null);
+    api.get('/requests/available-rooms-permanent', { params: { day_of_week: req.day_of_week, start_time: s, end_time: e, user_id: req.user_id } })
       .then(r => setRooms(r.data))
       .catch(() => setRooms([]));
-  }, []);
+  };
+
+  useEffect(() => { fetchRooms(adjStart, adjEnd); }, []);
+
+  const isPartial = adjStart !== req.start_time || adjEnd !== req.end_time;
 
   if (!rooms) return <div className="text-sm text-gray-400">טוען חדרים...</div>;
   const free = rooms.filter(r => r.available);
   const busy = rooms.filter(r => !r.available);
+  const withWindows = busy.filter(r => r.free_windows?.length > 0);
 
   return (
     <div>
-      <p className="text-sm font-semibold mb-2">חדרים פנויים ביום {DAYS[req.day_of_week]} | {req.start_time}–{req.end_time}</p>
-      {free.length === 0 ? (
+      <p className="text-sm font-semibold mb-2">
+        חדרים פנויים ביום {DAYS[req.day_of_week]}
+        {isPartial && <span className="text-orange-600"> (שיבוץ חלקי — מקורי: {req.start_time}–{req.end_time})</span>}
+      </p>
+      <div className="flex gap-3 items-end mb-3">
+        <div>
+          <label className="label text-xs">משעה</label>
+          <input type="time" className="input w-28 text-sm" value={adjStart}
+            onChange={e => { setAdjStart(e.target.value); fetchRooms(e.target.value, adjEnd); }} />
+        </div>
+        <div>
+          <label className="label text-xs">עד שעה</label>
+          <input type="time" className="input w-28 text-sm" value={adjEnd}
+            onChange={e => { setAdjEnd(e.target.value); fetchRooms(adjStart, e.target.value); }} />
+        </div>
+      </div>
+
+      {/* Rooms with partial free windows */}
+      {withWindows.length > 0 && (
+        <div className="mb-3 space-y-1">
+          {withWindows.map(r =>
+            r.free_windows.map((w, i) => (
+              <div key={`${r.id}-${i}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm flex-wrap">
+                <span className="font-semibold text-blue-800">{r.name}</span>
+                <span className="text-blue-700">פנוי בין {w.from}–{w.to}</span>
+                <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
+                  onClick={() => { setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to); }}>
+                  שבץ {w.from}–{w.to}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {free.length === 0 && withWindows.length === 0 && (
         <p className="text-red-500 text-sm mb-2">אין חדרים פנויים בשעות אלו</p>
-      ) : (
+      )}
+      {free.length > 0 && (
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
           {free.map(r => (
-            <button key={r.id} onClick={() => onSelect(r.id)}
+            <button key={r.id} onClick={() => onSelect({ id: r.id, start_time: adjStart, end_time: adjEnd })}
               className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${selectedRoomId == r.id ? 'bg-green-200 border-green-600 text-green-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
               {r.name}
               {r.user_already_here?.length > 0 && (
@@ -40,6 +83,7 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
             {busy.map(r => (
               <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
                 <span className="font-medium">{r.name}</span>
+                {r.free_windows?.length > 0 && <span className="text-blue-600 mr-1"> — פנוי: {r.free_windows.map(w => `${w.from}–${w.to}`).join(', ')}</span>}
                 {r.user_already_here?.length > 0 && (
                   <div className="text-orange-600">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
                 )}
@@ -260,7 +304,7 @@ export default function AdminRequests() {
                   <div className="mt-3 border-t pt-3 space-y-3">
                     {responseForm.status === 'approved' && (
                       <PermanentRoomPicker req={req} selectedRoomId={responseForm.room_id}
-                        onSelect={id => setResponseForm(p => ({ ...p, room_id: id }))} />
+                        onSelect={({ id, start_time, end_time }) => setResponseForm(p => ({ ...p, room_id: id, assign_start_time: start_time, assign_end_time: end_time }))} />
                     )}
                     <div className="flex flex-wrap gap-3 items-end">
                       <div>

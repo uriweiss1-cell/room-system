@@ -156,12 +156,25 @@ router.get('/available-rooms-permanent', requireAdmin, (req, res) => {
       const u = db.get('users').find({ id: b.user_id }).value();
       return { name: u?.name, start: b.start_time, end: b.end_time };
     });
-    // Check if the requesting user already has this room on other hours this day
     const userAlreadyHere = user_id
       ? allInRoom.filter(b => b.user_id === +user_id && !overlap(start_time, end_time, b.start_time, b.end_time))
           .map(b => `${b.start_time}–${b.end_time}`)
       : [];
-    return { ...room, available: occupants.length === 0, occupants, user_already_here: userAlreadyHere };
+    // Compute free windows within requested range
+    const startMin = toMin(start_time);
+    const endMin = toMin(end_time);
+    const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const sortedBusy = occupants.slice().sort((a, b) => toMin(a.start) - toMin(b.start));
+    const free_windows = [];
+    let cursor = startMin;
+    for (const slot of sortedBusy) {
+      const slotStart = Math.max(toMin(slot.start), startMin);
+      const slotEnd = Math.min(toMin(slot.end), endMin);
+      if (cursor < slotStart) free_windows.push({ from: minToStr(cursor), to: minToStr(slotStart) });
+      cursor = Math.max(cursor, slotEnd);
+    }
+    if (cursor < endMin) free_windows.push({ from: minToStr(cursor), to: minToStr(endMin) });
+    return { ...room, available: occupants.length === 0, occupants, user_already_here: userAlreadyHere, free_windows };
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   res.json(allRooms);
@@ -223,7 +236,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
 });
 
 router.put('/:id', requireAdmin, (req, res) => {
-  const { status, admin_response, assigned_room_id, room_id } = req.body;
+  const { status, admin_response, assigned_room_id, room_id, assign_start_time, assign_end_time } = req.body;
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
 
   db.get('one_time_requests').find({ id: +req.params.id }).assign({
@@ -239,8 +252,8 @@ router.put('/:id', requireAdmin, (req, res) => {
       user_id: request.user_id,
       room_id: +room_id,
       day_of_week: request.day_of_week,
-      start_time: request.start_time,
-      end_time: request.end_time,
+      start_time: assign_start_time || request.start_time,
+      end_time: assign_end_time || request.end_time,
       assignment_type: 'permanent',
       created_at: new Date().toISOString(),
     }).write();
