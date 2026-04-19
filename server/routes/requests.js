@@ -160,6 +160,11 @@ router.post('/:id/assign-room', requireAdmin, (req, res) => {
   res.json({ message: `הוקצה ${room?.name}` });
 });
 
+router.delete('/:id', requireAdmin, (req, res) => {
+  db.get('one_time_requests').remove({ id: +req.params.id }).write();
+  res.json({ message: 'הבקשה נמחקה' });
+});
+
 router.put('/:id', requireAdmin, (req, res) => {
   const { status, admin_response, assigned_room_id } = req.body;
   db.get('one_time_requests').find({ id: +req.params.id }).assign({

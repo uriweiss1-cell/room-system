@@ -82,6 +82,12 @@ export default function AdminRequests() {
     setExpandedId(null); load();
   };
 
+  const deleteRequest = async id => {
+    if (!confirm('למחוק בקשה זו לצמיתות?')) return;
+    await api.delete(`/requests/${id}`);
+    load();
+  };
+
   const filtered = requests.filter(r => filter === 'all' || r.status === filter);
   const pendingCount = requests.filter(r => r.status === 'pending').length;
 
@@ -122,9 +128,12 @@ export default function AdminRequests() {
                     {req.notes && <div className="text-sm text-gray-500 mt-1">הערת עובד: {req.notes}</div>}
                     {req.admin_response && <div className="text-sm text-blue-700 mt-1">תגובת מנהל: {req.admin_response}</div>}
                   </div>
-                  {req.status === 'pending' && expandedId !== req.id && (
-                    <button className="btn btn-primary text-sm" onClick={() => openRespond(req)}>טפל בבקשה</button>
-                  )}
+                  <div className="flex gap-2">
+                    {req.status === 'pending' && expandedId !== req.id && (
+                      <button className="btn btn-primary text-sm" onClick={() => openRespond(req)}>טפל בבקשה</button>
+                    )}
+                    <button className="btn btn-danger text-sm" onClick={() => deleteRequest(req.id)}>מחק</button>
+                  </div>
                 </div>
 
                 {/* Room request — show room picker */}

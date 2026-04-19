@@ -233,9 +233,10 @@ export default function AdminAssignments() {
                         {slots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
                           return (
-                            <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-blue-50 border-blue-200'}`}>
+                            <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 group relative ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-blue-50 border-blue-200'}`}>
                               <div className={`font-medium leading-tight ${highlighted ? 'text-yellow-900' : 'text-blue-900'}`}>{a.user_name}</div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
+                              <button onClick={() => deleteAssignment(a.id)} className="absolute top-0 left-0 hidden group-hover:flex items-center justify-center w-4 h-4 bg-red-500 text-white rounded-full text-xs leading-none">×</button>
                             </div>
                           );
                         })}
@@ -298,10 +299,13 @@ export default function AdminAssignments() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {byEmployee[u.id].slots.sort((a,b)=>a.day_of_week-b.day_of_week).map(a => (
-                    <div key={a.id} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
-                      <div className="font-medium text-blue-800">{DAYS[a.day_of_week]}</div>
-                      <div>{a.room_name}</div>
-                      <div className="text-gray-500">{a.start_time}–{a.end_time}</div>
+                    <div key={a.id} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs flex gap-2 items-start">
+                      <div>
+                        <div className="font-medium text-blue-800">{DAYS[a.day_of_week]}</div>
+                        <div>{a.room_name}</div>
+                        <div className="text-gray-500">{a.start_time}–{a.end_time}</div>
+                      </div>
+                      <button onClick={() => deleteAssignment(a.id)} className="text-red-400 hover:text-red-600 text-base leading-none mt-0.5">×</button>
                     </div>
                   ))}
                 </div>
