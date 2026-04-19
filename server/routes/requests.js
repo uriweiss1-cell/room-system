@@ -174,6 +174,8 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
   const permBusy = db.get('room_assignments').filter({ assignment_type: 'permanent', day_of_week: dayOfWeek }).value();
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === date && x.status === 'assigned' && x.assigned_room_id).value();
 
+  const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
   const allRooms = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().map(room => {
     const occupants = [
       ...permBusy.filter(b => b.room_id === room.id && overlap(start_time, end_time, b.start_time, b.end_time)).map(b => {
@@ -185,7 +187,13 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
         return { name: u?.name, start: b.start_time, end: b.end_time };
       }),
     ];
-    return { ...room, available: occupants.length === 0, occupants };
+    // When does the room become free within the requested window?
+    let free_from = null;
+    if (occupants.length > 0) {
+      const maxEndMin = Math.max(...occupants.map(o => toMin(o.end)));
+      if (maxEndMin < toMin(end_time)) free_from = minToStr(maxEndMin);
+    }
+    return { ...room, available: occupants.length === 0, occupants, free_from };
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   res.json(allRooms);
