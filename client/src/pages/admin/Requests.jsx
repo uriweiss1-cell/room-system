@@ -6,7 +6,7 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
   const [rooms, setRooms] = useState(null);
 
   useEffect(() => {
-    api.get('/requests/available-rooms-permanent', { params: { day_of_week: req.day_of_week, start_time: req.start_time, end_time: req.end_time } })
+    api.get('/requests/available-rooms-permanent', { params: { day_of_week: req.day_of_week, start_time: req.start_time, end_time: req.end_time, user_id: req.user_id } })
       .then(r => setRooms(r.data))
       .catch(() => setRooms([]));
   }, []);
@@ -26,6 +26,9 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
             <button key={r.id} onClick={() => onSelect(r.id)}
               className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${selectedRoomId == r.id ? 'bg-green-200 border-green-600 text-green-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
               {r.name}
+              {r.user_already_here?.length > 0 && (
+                <div className="text-xs font-normal text-orange-600 mt-0.5">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+              )}
             </button>
           ))}
         </div>
@@ -37,6 +40,9 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
             {busy.map(r => (
               <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
                 <span className="font-medium">{r.name}</span>
+                {r.user_already_here?.length > 0 && (
+                  <div className="text-orange-600">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+                )}
                 {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
               </div>
             ))}
