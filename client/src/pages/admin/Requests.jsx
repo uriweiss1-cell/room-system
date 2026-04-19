@@ -2,6 +2,51 @@ import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LABELS } from '../../constants';
 
+function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
+  const [rooms, setRooms] = useState(null);
+
+  useEffect(() => {
+    api.get('/requests/available-rooms-permanent', { params: { day_of_week: req.day_of_week, start_time: req.start_time, end_time: req.end_time } })
+      .then(r => setRooms(r.data))
+      .catch(() => setRooms([]));
+  }, []);
+
+  if (!rooms) return <div className="text-sm text-gray-400">טוען חדרים...</div>;
+  const free = rooms.filter(r => r.available);
+  const busy = rooms.filter(r => !r.available);
+
+  return (
+    <div>
+      <p className="text-sm font-semibold mb-2">חדרים פנויים ביום {DAYS[req.day_of_week]} | {req.start_time}–{req.end_time}</p>
+      {free.length === 0 ? (
+        <p className="text-red-500 text-sm mb-2">אין חדרים פנויים בשעות אלו</p>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
+          {free.map(r => (
+            <button key={r.id} onClick={() => onSelect(r.id)}
+              className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${selectedRoomId == r.id ? 'bg-green-200 border-green-600 text-green-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {busy.length > 0 && (
+        <details className="text-xs text-gray-500 mb-2">
+          <summary className="cursor-pointer mb-1">חדרים תפוסים ({busy.length})</summary>
+          <div className="grid grid-cols-2 gap-1 mt-1">
+            {busy.map(r => (
+              <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                <span className="font-medium">{r.name}</span>
+                {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function RoomPicker({ req, onAssigned }) {
   const [rooms, setRooms] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -155,24 +200,18 @@ export default function AdminRequests() {
                 {/* Permanent request — room picker + approval */}
                 {expandedId === req.id && req.request_type === 'permanent_request' && (
                   <div className="mt-3 border-t pt-3 space-y-3">
-                    <p className="text-sm font-semibold text-gray-700">בקשה לשיבוץ קבוע — יום {DAYS[req.day_of_week]} | {req.start_time}–{req.end_time}</p>
+                    {responseForm.status === 'approved' && (
+                      <PermanentRoomPicker req={req} selectedRoomId={responseForm.room_id}
+                        onSelect={id => setResponseForm(p => ({ ...p, room_id: id }))} />
+                    )}
                     <div className="flex flex-wrap gap-3 items-end">
                       <div>
                         <label className="label">החלטה</label>
-                        <select className="select w-36" value={responseForm.status} onChange={e => setResponseForm(p=>({...p,status:e.target.value}))}>
+                        <select className="select w-36" value={responseForm.status} onChange={e => setResponseForm(p=>({...p,status:e.target.value,room_id:''}))}>
                           <option value="approved">אישור</option>
                           <option value="rejected">דחייה</option>
                         </select>
                       </div>
-                      {responseForm.status === 'approved' && (
-                        <div>
-                          <label className="label">חדר לשיבוץ</label>
-                          <select className="select w-40" value={responseForm.room_id} onChange={e => setResponseForm(p=>({...p,room_id:e.target.value}))}>
-                            <option value="">בחר חדר...</option>
-                            {rooms.filter(r => r.room_type === 'regular').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                          </select>
-                        </div>
-                      )}
                       <div>
                         <label className="label">הודעה לעובד (אופציונלי)</label>
                         <input className="input w-60" value={responseForm.admin_response} onChange={e => setResponseForm(p=>({...p,admin_response:e.target.value}))} placeholder="הסבר / הערה..." />
