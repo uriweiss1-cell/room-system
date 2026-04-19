@@ -16,9 +16,13 @@ export default function OneTimeRequest() {
   const [requestId, setRequestId] = useState(null);
   const [msg, setMsg] = useState('');
   const [myRequests, setMyRequests] = useState([]);
+  const [myAssignments, setMyAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { loadRequests(); }, []);
+  useEffect(() => {
+    loadRequests();
+    api.get('/assignments/my').then(r => setMyAssignments(r.data)).catch(() => {});
+  }, []);
 
   const loadRequests = () => api.get('/requests/my').then(r => setMyRequests(r.data));
 
@@ -105,6 +109,19 @@ export default function OneTimeRequest() {
                 </div>
               </div>
             )}
+            {type === 'permanent_request' && (() => {
+              const toMin = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+              const conflicts = myAssignments.filter(a =>
+                a.day_of_week === dayOfWeek &&
+                toMin(a.start_time) < toMin(endTime) &&
+                toMin(a.end_time) > toMin(startTime)
+              );
+              return conflicts.length > 0 ? (
+                <div className="bg-orange-50 border border-orange-200 text-orange-800 px-3 py-2 rounded text-sm">
+                  ⚠️ כבר יש לך שיבוץ קבוע ביום זה: {conflicts.map(a => `${a.room_name} ${a.start_time}–${a.end_time}`).join(', ')}
+                </div>
+              ) : null;
+            })()}
             <div>
               <label className="label">הערות (אופציונלי)</label>
               <textarea className="input h-20 resize-none" value={notes} onChange={e => setNotes(e.target.value)} placeholder="הוסף הסבר אם רצוי..." />

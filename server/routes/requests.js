@@ -11,7 +11,20 @@ const overlap = (s1, e1, s2, e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s
 function enrich(r) {
   const user = db.get('users').find({ id: r.user_id }).value();
   const room = r.assigned_room_id ? db.get('rooms').find({ id: r.assigned_room_id }).value() : null;
-  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null };
+
+  let existing_assignments = [];
+  if (r.request_type === 'permanent_request' && r.day_of_week != null && r.start_time) {
+    existing_assignments = db.get('room_assignments')
+      .filter({ user_id: r.user_id, day_of_week: r.day_of_week, assignment_type: 'permanent' })
+      .value()
+      .filter(a => overlap(a.start_time, a.end_time, r.start_time, r.end_time))
+      .map(a => {
+        const rm = db.get('rooms').find({ id: a.room_id }).value();
+        return { room_name: rm?.name, start_time: a.start_time, end_time: a.end_time };
+      });
+  }
+
+  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, existing_assignments };
 }
 
 router.get('/my', (req, res) => {

@@ -173,6 +173,11 @@ export default function AdminRequests() {
                     </div>
                     {req.notes && <div className="text-sm text-gray-500 mt-1">הערת עובד: {req.notes}</div>}
                     {req.admin_response && <div className="text-sm text-blue-700 mt-1">תגובת מנהל: {req.admin_response}</div>}
+                    {req.existing_assignments?.length > 0 && (
+                      <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1 mt-1">
+                        ⚠️ לעובד כבר יש שיבוץ קבוע ביום זה: {req.existing_assignments.map(a => `${a.room_name} ${a.start_time}–${a.end_time}`).join(', ')}
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {req.status === 'pending' && expandedId !== req.id && (
