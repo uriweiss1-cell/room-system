@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: room-system
+    env: node
+    region: frankfurt
+    buildCommand: cd server && npm install && cd ../client && npm install && npm run build
+    startCommand: node server/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: room-data
+      mountPath: /data
+      sizeGB: 1

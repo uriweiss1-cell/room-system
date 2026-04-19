@@ -1,0 +1,223 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "מנהל מערכת",
+      "email": "admin@clinic.local",
+      "password_hash": "$2a$10$8ytaK.bsEOsya/f/e1UHnuc64qb5rFGN6HGjXCgW4Dl0tgGGVoBO6",
+      "role": "admin",
+      "work_percentage": 100,
+      "phone": null,
+      "notes": null,
+      "is_active": true,
+      "can_admin": true,
+      "created_at": "2026-04-18T11:17:25.935Z"
+    }
+  ],
+  "rooms": [
+    {
+      "id": 1,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 1",
+      "room_type": "regular"
+    },
+    {
+      "id": 2,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 2",
+      "room_type": "regular"
+    },
+    {
+      "id": 3,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 3",
+      "room_type": "regular"
+    },
+    {
+      "id": 4,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 4",
+      "room_type": "regular"
+    },
+    {
+      "id": 5,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 5",
+      "room_type": "regular"
+    },
+    {
+      "id": 6,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 6",
+      "room_type": "regular"
+    },
+    {
+      "id": 7,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 7",
+      "room_type": "regular"
+    },
+    {
+      "id": 8,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 8",
+      "room_type": "regular"
+    },
+    {
+      "id": 9,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 9",
+      "room_type": "regular"
+    },
+    {
+      "id": 10,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 10",
+      "room_type": "regular"
+    },
+    {
+      "id": 11,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 11",
+      "room_type": "regular"
+    },
+    {
+      "id": 12,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 12",
+      "room_type": "regular"
+    },
+    {
+      "id": 13,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 13",
+      "room_type": "regular"
+    },
+    {
+      "id": 14,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 14",
+      "room_type": "regular"
+    },
+    {
+      "id": 15,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 15",
+      "room_type": "regular"
+    },
+    {
+      "id": 16,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 16",
+      "room_type": "regular"
+    },
+    {
+      "id": 17,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 17",
+      "room_type": "regular"
+    },
+    {
+      "id": 18,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 18",
+      "room_type": "regular"
+    },
+    {
+      "id": 19,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 19",
+      "room_type": "regular"
+    },
+    {
+      "id": 20,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 20",
+      "room_type": "regular"
+    },
+    {
+      "id": 21,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 21",
+      "room_type": "regular"
+    },
+    {
+      "id": 22,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר 22",
+      "room_type": "regular"
+    },
+    {
+      "id": 23,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר צוות",
+      "room_type": "staff"
+    },
+    {
+      "id": 24,
+      "capacity": 1,
+      "notes": null,
+      "is_active": true,
+      "name": "חדר ועדה",
+      "room_type": "committee"
+    }
+  ],
+  "regular_schedules": [],
+  "room_assignments": [],
+  "one_time_requests": [],
+  "uploaded_files": [],
+  "_ids": {
+    "users": 2,
+    "rooms": 25,
+    "regular_schedules": 1,
+    "room_assignments": 1,
+    "one_time_requests": 1,
+    "uploaded_files": 1
+  }
+}

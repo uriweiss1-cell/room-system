@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  direction: rtl;
+  @apply bg-gray-50 text-gray-900;
+}
+
+@layer components {
+  .btn { @apply px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer disabled:opacity-50; }
+  .btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700; }
+  .btn-danger  { @apply bg-red-600 text-white hover:bg-red-700; }
+  .btn-success { @apply bg-green-600 text-white hover:bg-green-700; }
+  .btn-ghost   { @apply bg-gray-100 text-gray-700 hover:bg-gray-200; }
+
+  .input  { @apply border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white; }
+  .select { @apply border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white; }
+  .label  { @apply block text-sm font-medium text-gray-700 mb-1; }
+
+  .card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-5; }
+
+  .tbl { @apply w-full text-sm border-collapse; }
+  .tbl th { @apply bg-gray-50 text-right px-3 py-2 border border-gray-200 font-semibold text-gray-600 text-sm; }
+  .tbl td { @apply px-3 py-2 border border-gray-200; }
+  .tbl tr:hover td { @apply bg-gray-50; }
+
+  .badge { @apply inline-block px-2 py-0.5 rounded-full text-xs font-medium; }
+  .badge-blue   { @apply bg-blue-100 text-blue-800; }
+  .badge-green  { @apply bg-green-100 text-green-800; }
+  .badge-yellow { @apply bg-yellow-100 text-yellow-800; }
+  .badge-red    { @apply bg-red-100 text-red-800; }
+  .badge-gray   { @apply bg-gray-100 text-gray-700; }
+}
