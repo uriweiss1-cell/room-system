@@ -143,20 +143,25 @@ router.get('/library-schedule', (req, res) => {
 });
 
 router.get('/available-rooms-permanent', requireAdmin, (req, res) => {
-  const { day_of_week, start_time, end_time } = req.query;
+  const { day_of_week, start_time, end_time, user_id } = req.query;
   if (day_of_week == null || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dow = +day_of_week;
 
   const allRooms = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().map(room => {
-    const busy = db.get('room_assignments')
+    const allInRoom = db.get('room_assignments')
       .filter({ room_id: room.id, day_of_week: dow, assignment_type: 'permanent' })
-      .value()
-      .filter(b => overlap(start_time, end_time, b.start_time, b.end_time));
+      .value();
+    const busy = allInRoom.filter(b => overlap(start_time, end_time, b.start_time, b.end_time));
     const occupants = busy.map(b => {
       const u = db.get('users').find({ id: b.user_id }).value();
       return { name: u?.name, start: b.start_time, end: b.end_time };
     });
-    return { ...room, available: occupants.length === 0, occupants };
+    // Check if the requesting user already has this room on other hours this day
+    const userAlreadyHere = user_id
+      ? allInRoom.filter(b => b.user_id === +user_id && !overlap(start_time, end_time, b.start_time, b.end_time))
+          .map(b => `${b.start_time}–${b.end_time}`)
+      : [];
+    return { ...room, available: occupants.length === 0, occupants, user_already_here: userAlreadyHere };
   }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
 
   res.json(allRooms);
