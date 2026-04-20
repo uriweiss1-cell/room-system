@@ -42,7 +42,7 @@ router.get('/all', requireAdmin, (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id } = req.body;
+  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type } = req.body;
 
   // Admin can submit on behalf of another user
   const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
@@ -83,6 +83,7 @@ router.post('/', (req, res) => {
     notes: notes || null,
     admin_response: null,
     reduce_assignment_id: reduce_assignment_id ? +reduce_assignment_id : null,
+    target_room_type: target_room_type || null,
     created_at: new Date().toISOString(),
   };
   db.get('one_time_requests').push(r).write();
@@ -324,18 +325,26 @@ router.put('/:id', requireAdmin, (req, res) => {
     assigned_room_id: assigned_room_id ? +assigned_room_id : null,
   }).write();
 
-  // If approving a permanent_request with a room — create a room_assignment
-  if (status === 'approved' && request?.request_type === 'permanent_request' && room_id) {
-    db.get('room_assignments').push({
-      id: nextId('room_assignments'),
-      user_id: request.user_id,
-      room_id: +room_id,
-      day_of_week: request.day_of_week,
-      start_time: assign_start_time || request.start_time,
-      end_time: assign_end_time || request.end_time,
-      assignment_type: 'permanent',
-      created_at: new Date().toISOString(),
-    }).write();
+  // If approving a permanent_request — create a room_assignment
+  if (status === 'approved' && request?.request_type === 'permanent_request') {
+    // For library/meeting requests, find the special room automatically
+    let finalRoomId = room_id ? +room_id : null;
+    if (!finalRoomId && request.target_room_type) {
+      const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();
+      if (specialRoom) finalRoomId = specialRoom.id;
+    }
+    if (finalRoomId) {
+      db.get('room_assignments').push({
+        id: nextId('room_assignments'),
+        user_id: request.user_id,
+        room_id: finalRoomId,
+        day_of_week: request.day_of_week,
+        start_time: assign_start_time || request.start_time,
+        end_time: assign_end_time || request.end_time,
+        assignment_type: 'permanent',
+        created_at: new Date().toISOString(),
+      }).write();
+    }
   }
 
   if (status === 'approved' && request?.request_type === 'permanent_reduce' && request.reduce_assignment_id) {

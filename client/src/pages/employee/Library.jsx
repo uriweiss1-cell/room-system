@@ -45,11 +45,12 @@ export default function Library() {
     try {
       const r = await api.post('/requests', {
         request_type: permanent ? 'permanent_request' : 'library_request',
+        target_room_type: permanent ? 'library' : undefined,
         specific_date: permanent ? null : form.date,
         day_of_week: permanent ? form.day_of_week : null,
         start_time: form.start_time,
         end_time: form.end_time,
-        notes: (permanent ? '[בקשת ספריה קבועה] ' : '') + (form.notes || ''),
+        notes: form.notes || '',
       });
       setMsg(r.data.message);
       if (!permanent) loadSchedule();

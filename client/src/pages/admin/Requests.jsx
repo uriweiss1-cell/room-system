@@ -305,9 +305,20 @@ export default function AdminRequests() {
                 {/* Permanent request — room picker + approval */}
                 {expandedId === req.id && req.request_type === 'permanent_request' && (
                   <div className="mt-3 border-t pt-3 space-y-3">
-                    {responseForm.status === 'approved' && (
+                    {responseForm.status === 'approved' && !req.target_room_type && (
                       <PermanentRoomPicker req={req} selectedRoomId={responseForm.room_id}
                         onSelect={({ id, start_time, end_time }) => setResponseForm(p => ({ ...p, room_id: id, assign_start_time: start_time, assign_end_time: end_time }))} />
+                    )}
+                    {responseForm.status === 'approved' && req.target_room_type && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-sm">
+                        <span className="font-semibold text-purple-800">
+                          {req.target_room_type === 'library' ? '📚 ספריה' : '🤝 חדר ישיבות'}
+                        </span>
+                        <span className="text-purple-700 mr-2">
+                          — {req.day_of_week != null ? `יום ${['ראשון','שני','שלישי','רביעי','חמישי'][req.day_of_week]}` : ''} {req.start_time}–{req.end_time}
+                        </span>
+                        <div className="text-xs text-purple-600 mt-1">לחיצה על "שמור" תיצור שיבוץ קבוע בחדר זה</div>
+                      </div>
                     )}
                     <div className="flex flex-wrap gap-3 items-end">
                       <div>

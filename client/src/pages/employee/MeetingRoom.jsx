@@ -45,11 +45,12 @@ export default function MeetingRoom() {
     try {
       const r = await api.post('/requests', {
         request_type: permanent ? 'permanent_request' : 'meeting_request',
+        target_room_type: permanent ? 'meeting' : undefined,
         specific_date: permanent ? null : form.date,
         day_of_week: permanent ? form.day_of_week : null,
         start_time: form.start_time,
         end_time: form.end_time,
-        notes: (permanent ? '[בקשת חדר ישיבות קבוע] ' : '') + (form.notes || ''),
+        notes: form.notes || '',
       });
       setMsg(r.data.message);
       if (!permanent) loadSchedule();
