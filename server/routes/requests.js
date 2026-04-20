@@ -96,12 +96,15 @@ router.post('/', (req, res) => {
     return res.json({ requestId: r.id, message: 'הבקשה הועברה למנהל לאישור' });
   }
 
-  if (request_type === 'library_request') {
-    const libraryRoom = db.get('rooms').find({ room_type: 'library', is_active: true }).value();
-    if (!libraryRoom) return res.status(400).json({ error: 'לא הוגדרה ספריה במערכת. פנה למנהל.' });
+  if (request_type === 'library_request' || request_type === 'meeting_request') {
+    const isLibrary = request_type === 'library_request';
+    const roomType = isLibrary ? 'library' : 'meeting';
+    const roomLabel = isLibrary ? 'הספריה' : 'חדר הישיבות';
+    const specialRoom = db.get('rooms').find({ room_type: roomType, is_active: true }).value();
+    if (!specialRoom) return res.status(400).json({ error: `לא הוגדר ${roomLabel} במערכת. פנה למנהל.` });
     const dayOfWeek = new Date(specific_date).getDay();
-    const permBusy = db.get('room_assignments').filter({ room_id: libraryRoom.id, day_of_week: dayOfWeek }).value();
-    const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === libraryRoom.id).value();
+    const permBusy = db.get('room_assignments').filter({ room_id: specialRoom.id, day_of_week: dayOfWeek }).value();
+    const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === specialRoom.id).value();
     const conflict = [
       ...permBusy.filter(b => overlap(start_time, end_time, b.start_time, b.end_time)),
       ...otBusy.filter(b => b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
@@ -109,10 +112,10 @@ router.post('/', (req, res) => {
     if (conflict.length > 0) {
       db.get('one_time_requests').remove({ id: r.id }).write();
       const names = conflict.map(b => { const u = db.get('users').find({ id: b.user_id }).value(); return `${u?.name} (${b.start_time}–${b.end_time})`; }).join(', ');
-      return res.status(409).json({ error: `הספריה תפוסה בשעות אלו: ${names}` });
+      return res.status(409).json({ error: `${roomLabel} תפוס/ה בשעות אלו: ${names}` });
     }
-    db.get('one_time_requests').find({ id: r.id }).assign({ assigned_room_id: libraryRoom.id, status: 'assigned' }).write();
-    return res.json({ requestId: r.id, message: `הספריה שובצה לך לתאריך ${specific_date} בין ${start_time}–${end_time}` });
+    db.get('one_time_requests').find({ id: r.id }).assign({ assigned_room_id: specialRoom.id, status: 'assigned' }).write();
+    return res.json({ requestId: r.id, message: `${roomLabel} שובץ/ה לתאריך ${specific_date} בין ${start_time}–${end_time}` });
   }
 
   // room_request — find available rooms
@@ -171,6 +174,36 @@ router.get('/library-schedule', (req, res) => {
       });
     const permBookings = db.get('room_assignments')
       .filter(x => x.day_of_week === dayOfWeek && libraryIds.includes(x.room_id))
+      .value().map(x => {
+        const u = db.get('users').find({ id: x.user_id }).value();
+        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent' };
+      });
+    const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+    result[date] = all;
+  });
+  res.json(result);
+});
+
+router.get('/meeting-schedule', (req, res) => {
+  const { from, to } = req.query;
+  const meetingRooms = db.get('rooms').filter({ room_type: 'meeting', is_active: true }).value();
+  if (meetingRooms.length === 0) return res.json({});
+  const meetingIds = meetingRooms.map(r => r.id);
+  const dates = [];
+  const cur = new Date(from);
+  const end = new Date(to);
+  while (cur <= end) { dates.push(cur.toISOString().slice(0, 10)); cur.setDate(cur.getDate() + 1); }
+  const result = {};
+  dates.forEach(date => {
+    const dayOfWeek = new Date(date).getDay();
+    const otBookings = db.get('one_time_requests')
+      .filter(x => x.specific_date === date && x.status === 'assigned' && meetingIds.includes(x.assigned_room_id))
+      .value().map(x => {
+        const u = db.get('users').find({ id: x.user_id }).value();
+        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time' };
+      });
+    const permBookings = db.get('room_assignments')
+      .filter(x => x.day_of_week === dayOfWeek && meetingIds.includes(x.room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
         return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent' };
