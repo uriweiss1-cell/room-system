@@ -104,14 +104,13 @@ export default function MySchedule() {
               <p className="text-gray-400 text-sm">לא הוגדר לוח זמנים. לחץ על "עריכת לוח הזמנים" להגדרה.</p>
             ) : (
               <table className="tbl">
-                <thead><tr><th>יום</th><th>שעת התחלה</th><th>שעת סיום</th><th>חדר מועדף</th></tr></thead>
+                <thead><tr><th>יום</th><th>שעת התחלה</th><th>שעת סיום</th></tr></thead>
                 <tbody>
                   {schedule.map(s => (
                     <tr key={s.id}>
                       <td>{DAYS[s.day_of_week]}</td>
                       <td>{s.start_time}</td>
                       <td>{s.end_time}</td>
-                      <td>{s.room_name || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

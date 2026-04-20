@@ -17,27 +17,33 @@ export default function RoomQuery() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
-  const [selectedUser, setSelectedUser] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null); // { id, name }
+  const [roomSearch, setRoomSearch] = useState('');
 
   useEffect(() => { api.get('/users/list/active').then(r => setEmployees(r.data)); }, []);
 
   const queryRoom = async () => {
     setLoading(true); setResult(null);
     try {
-      const r = await api.get('/assignments/query', { params: { date, time } });
+      const params = { date, time };
+      if (roomSearch.trim()) params.roomFilter = roomSearch.trim();
+      const r = await api.get('/assignments/query', { params });
       setResult(r.data);
     } finally { setLoading(false); }
   };
 
   const queryEmployee = async () => {
+    if (!selectedUser) return;
     setLoading(true); setResult(null);
     try {
-      const r = await api.get('/assignments/locate', { params: { date, time, userId: selectedUser || undefined } });
+      const r = await api.get('/assignments/locate', { params: { date, time, userId: selectedUser.id } });
       setResult(r.data);
     } finally { setLoading(false); }
   };
 
   const dayName = date ? DAYS[new Date(date).getDay()] : '';
+  const filteredEmployees = employees.filter(u => u.name.includes(employeeSearch));
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -58,30 +64,58 @@ export default function RoomQuery() {
             <label className="label">שעה</label>
             <input type="time" className="input w-28" value={time} onChange={e => setTime(e.target.value)} />
           </div>
-          {tab === 'employee' && (
+          {tab === 'room' && (
             <div>
-              <label className="label">עובד</label>
-              <select className="select w-44" value={selectedUser} onChange={e => setSelectedUser(e.target.value)}>
-                <option value="">אני</option>
-                {employees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <label className="label">סינון לפי חדר (אופציונלי)</label>
+              <input className="input w-36" placeholder="חדר 22..." value={roomSearch}
+                onChange={e => setRoomSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && queryRoom()} />
             </div>
           )}
           <div className="flex items-end">
-            <button className="btn btn-primary" onClick={tab === 'room' ? queryRoom : queryEmployee} disabled={loading}>
+            <button className="btn btn-primary" onClick={tab === 'room' ? queryRoom : queryEmployee}
+              disabled={loading || (tab === 'employee' && !selectedUser)}>
               {loading ? 'מחפש...' : 'חפש'}
             </button>
           </div>
         </div>
 
-        {date && <p className="text-sm text-gray-500 mb-2">יום {dayName}, {date} בשעה {time}</p>}
+        {tab === 'employee' && (
+          <div className="mb-4">
+            <label className="label">חפש עובד</label>
+            <input className="input w-full mb-2" placeholder="שם עובד..." value={employeeSearch}
+              onChange={e => { setEmployeeSearch(e.target.value); setSelectedUser(null); setResult(null); }} />
+            {employeeSearch && !selectedUser && (
+              <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                {filteredEmployees.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-400">לא נמצאו עובדים</div>
+                ) : filteredEmployees.map(u => (
+                  <button key={u.id} className="w-full text-right px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                    onClick={() => { setSelectedUser(u); setEmployeeSearch(u.name); }}>
+                    {u.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {selectedUser && (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-3 py-1.5 text-sm">
+                <span className="font-medium text-blue-800">{selectedUser.name}</span>
+                <button className="text-gray-400 hover:text-gray-600 text-xs" onClick={() => { setSelectedUser(null); setEmployeeSearch(''); setResult(null); }}>✕</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {date && <p className="text-sm text-gray-500">יום {dayName}, {date} בשעה {time}</p>}
       </div>
 
       {result && tab === 'room' && (
         <div className="card">
-          <h3 className="font-semibold mb-3">עובדים בחדרים — {date} {time}</h3>
+          <h3 className="font-semibold mb-3">
+            {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'} — {date} {time}
+          </h3>
           {(result.regular.length + result.oneTime.length) === 0 ? (
-            <p className="text-gray-400 text-sm">לא נמצאו עובדים בשעה זו</p>
+            <p className="text-gray-400 text-sm">לא נמצאו עובדים בשעה זו{roomSearch ? ` בחדר ${roomSearch}` : ''}</p>
           ) : (
             <table className="tbl">
               <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>

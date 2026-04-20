@@ -117,7 +117,14 @@ router.post('/', (req, res) => {
 
   // room_request — find available rooms
   const dayOfWeek = new Date(specific_date).getDay();
-  const permBusy = db.get('room_assignments').filter({ assignment_type: 'permanent', day_of_week: dayOfWeek }).value();
+  // Absent users' permanent rooms are free
+  const absentUsers = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
+    .map('user_id').value();
+  const permBusy = db.get('room_assignments')
+    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
+    .value()
+    .filter(a => !absentUsers.includes(a.user_id));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id).value();
 
   const available = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().filter(room => {
@@ -216,7 +223,14 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
   const { date, start_time, end_time } = req.query;
   if (!date || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dayOfWeek = new Date(date).getDay();
-  const permBusy = db.get('room_assignments').filter({ assignment_type: 'permanent', day_of_week: dayOfWeek }).value();
+  // Absent users' permanent rooms are free
+  const absentUsersForDate = db.get('one_time_requests')
+    .filter(x => x.specific_date === date && x.request_type === 'absence' && x.status === 'assigned')
+    .map('user_id').value();
+  const permBusy = db.get('room_assignments')
+    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
+    .value()
+    .filter(a => !absentUsersForDate.includes(a.user_id));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === date && x.status === 'assigned' && x.assigned_room_id).value();
 
   const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;

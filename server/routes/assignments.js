@@ -25,29 +25,35 @@ router.get('/all', requireAdmin, (req, res) => {
 });
 
 router.get('/query', (req, res) => {
-  const { date, time } = req.query;
+  const { date, time, roomFilter } = req.query;
   if (!date || !time) return res.status(400).json({ error: 'נדרשים date ו-time' });
   const dayOfWeek = new Date(date).getDay();
 
   const absences = db.get('one_time_requests')
     .filter(r => r.specific_date === date && r.request_type === 'absence' && r.status === 'assigned')
-    .filter(r => !r.start_time || (toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time)))
     .map('user_id').value();
 
-  const regular = db.get('room_assignments')
+  let regular = db.get('room_assignments')
     .filter(a => a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time)
       && !absences.includes(a.user_id))
     .value().map(enrichAssignment);
 
-  const oneTime = db.get('one_time_requests')
-    .filter(r => r.specific_date === date && r.status === 'assigned' && r.request_type === 'room_request'
+  let oneTime = db.get('one_time_requests')
+    .filter(r => r.specific_date === date && r.status === 'assigned'
+      && ['room_request', 'library_request'].includes(r.request_type)
       && r.assigned_room_id && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
     .value().map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
       const room = db.get('rooms').find({ id: r.assigned_room_id }).value();
       return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name };
     });
+
+  if (roomFilter) {
+    const rf = roomFilter.toLowerCase();
+    regular = regular.filter(a => a.room_name?.toLowerCase().includes(rf));
+    oneTime = oneTime.filter(a => a.room_name?.toLowerCase().includes(rf));
+  }
 
   res.json({ date, time, dayOfWeek, regular, oneTime });
 });
