@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LABELS } from '../../constants';
+import { useAuth } from '../../context/AuthContext';
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 
 export default function OneTimeRequest() {
+  const { isAdmin, user } = useAuth();
   const [type, setType] = useState('absence');
   const [date, setDate] = useState(todayStr());
+  const [dateTo, setDateTo] = useState('');
   const [dayOfWeek, setDayOfWeek] = useState(0);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -18,18 +21,26 @@ export default function OneTimeRequest() {
   const [myRequests, setMyRequests] = useState([]);
   const [myAssignments, setMyAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [reduceAssignmentId, setReduceAssignmentId] = useState('');
+  const [allUsers, setAllUsers] = useState([]);
+  const [impersonateId, setImpersonateId] = useState('');
 
   useEffect(() => {
     loadRequests();
     api.get('/assignments/my').then(r => setMyAssignments(r.data)).catch(() => {});
-  }, []);
+    if (isAdmin) api.get('/users').then(r => setAllUsers(r.data.filter(u => u.is_active && u.role !== 'admin'))).catch(() => {});
+  }, [isAdmin]);
 
   const loadRequests = () => api.get('/requests/my').then(r => setMyRequests(r.data));
 
   const submit = async () => {
     setLoading(true); setMsg('');
     try {
-      const r = await api.post('/requests', { request_type: type, specific_date: type === 'permanent_request' ? null : date, day_of_week: type === 'permanent_request' ? dayOfWeek : null, start_time: startTime, end_time: endTime, notes });
+      const body = { request_type: type, specific_date: type === 'permanent_request' || type === 'permanent_reduce' ? null : date, day_of_week: type === 'permanent_request' ? dayOfWeek : null, start_time: startTime, end_time: endTime, notes };
+      if (type === 'permanent_reduce') body.reduce_assignment_id = reduceAssignmentId;
+      if (type === 'absence' && dateTo && dateTo > date) body.date_to = dateTo;
+      if (isAdmin && impersonateId) body.impersonate_user_id = impersonateId;
+      const r = await api.post('/requests', body);
       if (type === 'room_request' && r.data.availableRooms) {
         setRequestId(r.data.requestId);
         setAvailableRooms(r.data.availableRooms);
@@ -54,7 +65,7 @@ export default function OneTimeRequest() {
     finally { setLoading(false); }
   };
 
-  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDayOfWeek(0); };
+  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); };
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -63,6 +74,15 @@ export default function OneTimeRequest() {
 
         {step === 'form' && (
           <div className="space-y-4">
+            {isAdmin && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                <label className="label text-purple-800">🎭 הגשה בשם עובד (אופציונלי)</label>
+                <select className="select w-full" value={impersonateId} onChange={e => setImpersonateId(e.target.value)}>
+                  <option value="">הגש בשמי ({user?.name})</option>
+                  {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="label">סוג הבקשה</label>
               <div className="flex flex-wrap gap-2">
@@ -70,6 +90,7 @@ export default function OneTimeRequest() {
                   { v: 'absence', l: 'היעדרות — לא צריך חדר' },
                   { v: 'room_request', l: 'בקשת חדר חד-פעמית' },
                   { v: 'permanent_request', l: 'בקשת שינוי קבוע (לאישור מנהל)' },
+                  { v: 'permanent_reduce', l: 'הפחתת שעות קבועות' },
                 ].map(o => (
                   <button key={o.v} onClick={() => setType(o.v)}
                     className={`btn text-sm ${type === o.v ? 'btn-primary' : 'btn-ghost'}`}>
@@ -78,10 +99,18 @@ export default function OneTimeRequest() {
                 ))}
               </div>
             </div>
-            {type !== 'permanent_request' && (
-              <div>
-                <label className="label">תאריך</label>
-                <input type="date" className="input w-44" value={date} onChange={e => setDate(e.target.value)} min={todayStr()} />
+            {type !== 'permanent_request' && type !== 'permanent_reduce' && (
+              <div className="flex gap-3 flex-wrap items-end">
+                <div>
+                  <label className="label">{type === 'absence' ? 'מתאריך' : 'תאריך'}</label>
+                  <input type="date" className="input w-44" value={date} onChange={e => setDate(e.target.value)} min={todayStr()} />
+                </div>
+                {type === 'absence' && (
+                  <div>
+                    <label className="label">עד תאריך (אופציונלי)</label>
+                    <input type="date" className="input w-44" value={dateTo} onChange={e => setDateTo(e.target.value)} min={date || todayStr()} />
+                  </div>
+                )}
               </div>
             )}
             {type === 'permanent_request' && (
@@ -97,14 +126,27 @@ export default function OneTimeRequest() {
                 </div>
               </div>
             )}
+            {type === 'permanent_reduce' && (
+              <div>
+                <label className="label">בחר שיבוץ להפחתה</label>
+                <select className="select w-full" value={reduceAssignmentId} onChange={e => setReduceAssignmentId(e.target.value)}>
+                  <option value="">בחר שיבוץ...</option>
+                  {myAssignments.map(a => (
+                    <option key={a.id} value={a.id}>
+                      חדר {a.room_name} — יום {DAYS[a.day_of_week]} — {a.start_time}–{a.end_time}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {type !== 'absence' && (
               <div className="flex gap-3">
                 <div>
-                  <label className="label">משעה</label>
+                  <label className="label">{type === 'permanent_reduce' ? 'שעת התחלה חדשה' : 'משעה'}</label>
                   <input type="time" className="input w-28" value={startTime} onChange={e => setStartTime(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">עד שעה</label>
+                  <label className="label">{type === 'permanent_reduce' ? 'שעת סיום חדשה' : 'עד שעה'}</label>
                   <input type="time" className="input w-28" value={endTime} onChange={e => setEndTime(e.target.value)} />
                 </div>
               </div>

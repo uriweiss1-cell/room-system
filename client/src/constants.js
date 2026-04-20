@@ -38,4 +38,5 @@ export const REQUEST_TYPE_LABELS = {
   room_request: 'בקשת חדר חד-פעמית',
   permanent_request: 'בקשת שינוי קבוע',
   library_request: 'בקשת ספריה',
+  permanent_reduce: 'הפחתת שעות קבועות',
 };

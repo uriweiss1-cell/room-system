@@ -8,6 +8,11 @@ router.use(authenticate);
 const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const overlap = (s1, e1, s2, e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s2);
 
+const numSort = (a, b) => {
+  const n = x => parseInt((x.name || '').match(/\d+/)?.[0] ?? '999');
+  return n(a) - n(b) || (a.name || '').localeCompare(b.name || '', 'he');
+};
+
 function enrich(r) {
   const user = db.get('users').find({ id: r.user_id }).value();
   const room = r.assigned_room_id ? db.get('rooms').find({ id: r.assigned_room_id }).value() : null;
@@ -37,11 +42,37 @@ router.get('/all', requireAdmin, (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { request_type, specific_date, day_of_week, start_time, end_time, notes } = req.body;
+  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id } = req.body;
+
+  // Admin can submit on behalf of another user
+  const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+
+  // Absence with date range — create one record per day
+  if (request_type === 'absence' && date_to && date_to > specific_date) {
+    const dates = [];
+    const cur = new Date(specific_date);
+    const end = new Date(date_to);
+    while (cur <= end) {
+      const d = cur.toISOString().slice(0, 10);
+      const dow = cur.getDay();
+      if (dow >= 0 && dow <= 4) dates.push(d); // Sun–Thu only
+      cur.setDate(cur.getDate() + 1);
+    }
+    dates.forEach(d => {
+      const rid = nextId('one_time_requests');
+      db.get('one_time_requests').push({
+        id: rid, user_id: userId, request_type: 'absence', specific_date: d,
+        day_of_week: null, start_time: null, end_time: null, status: 'assigned',
+        assigned_room_id: null, notes: notes || null, admin_response: null,
+        reduce_assignment_id: null, created_at: new Date().toISOString(),
+      }).write();
+    });
+    return res.json({ message: `ההיעדרות נרשמה ל-${dates.length} ימים (${specific_date} עד ${date_to})` });
+  }
 
   const r = {
     id: nextId('one_time_requests'),
-    user_id: req.user.id,
+    user_id: userId,
     request_type,
     specific_date,
     day_of_week: day_of_week ?? null,
@@ -51,6 +82,7 @@ router.post('/', (req, res) => {
     assigned_room_id: null,
     notes: notes || null,
     admin_response: null,
+    reduce_assignment_id: reduce_assignment_id ? +reduce_assignment_id : null,
     created_at: new Date().toISOString(),
   };
   db.get('one_time_requests').push(r).write();
@@ -175,7 +207,7 @@ router.get('/available-rooms-permanent', requireAdmin, (req, res) => {
     }
     if (cursor < endMin) free_windows.push({ from: minToStr(cursor), to: minToStr(endMin) });
     return { ...room, available: occupants.length === 0, occupants, user_already_here: userAlreadyHere, free_windows };
-  }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  }).sort(numSort);
 
   res.json(allRooms);
 });
@@ -214,7 +246,7 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
     }
     if (cursor < endMin) free_windows.push({ from: minToStr(cursor), to: minToStr(endMin) });
     return { ...room, available: occupants.length === 0, occupants, free_windows };
-  }).sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  }).sort(numSort);
 
   res.json(allRooms);
 });
@@ -256,6 +288,13 @@ router.put('/:id', requireAdmin, (req, res) => {
       end_time: assign_end_time || request.end_time,
       assignment_type: 'permanent',
       created_at: new Date().toISOString(),
+    }).write();
+  }
+
+  if (status === 'approved' && request?.request_type === 'permanent_reduce' && request.reduce_assignment_id) {
+    db.get('room_assignments').find({ id: request.reduce_assignment_id }).assign({
+      start_time: request.start_time,
+      end_time: request.end_time,
     }).write();
   }
 

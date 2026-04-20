@@ -60,6 +60,17 @@ export default function AdminAssignments() {
     } finally { setApplying(null); }
   };
 
+  const assignTogether = async (userId, roomId, day, start, end, userName, roomName) => {
+    if (!confirm(`לשבץ את ${userName} יחד בחדר ${roomName} (יום ${DAYS[day]}, ${start}–${end})?`)) return;
+    try {
+      await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end });
+      setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
+      load();
+    } catch (e) {
+      setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+    }
+  };
+
   const clearAll = async () => {
     if (!confirm('למחוק את כל השיבוצים הקבועים?')) return;
     await api.delete('/assignments/clear/permanent'); load();
@@ -115,6 +126,18 @@ export default function AdminAssignments() {
                 {genResult.suggestions.map((s, i) => (
                   <div key={i} className="bg-white border border-yellow-200 rounded-xl p-3">
                     <p className="font-semibold text-gray-800 mb-2">{s.userName}</p>
+                    {(() => {
+                      const conflict = genResult.conflicts?.find(c => c.userName === s.userName);
+                      const stats = conflict && genResult.userStats?.[conflict.userId];
+                      if (!stats) return null;
+                      return (
+                        <div className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1 mb-2 flex flex-wrap gap-3">
+                          <span>שובץ: {stats.assignedSlots}/{stats.totalSlots} ימים</span>
+                          {stats.unassignedDays?.length > 0 && <span className="text-red-600">ללא חדר: {stats.unassignedDays.join(', ')}</span>}
+                          {stats.assignedRooms?.length > 0 && <span>חדרים: {stats.assignedRooms.join(', ')}</span>}
+                        </div>
+                      );
+                    })()}
                     {s.slots.map((slot, j) => (
                       <div key={j} className="mb-3">
                         <p className="text-xs font-medium text-yellow-700 mb-1">יום {slot.day} | {slot.time}</p>
@@ -159,6 +182,56 @@ export default function AdminAssignments() {
                     ))}
                   </div>
                 ))}
+              </div>
+            )}
+            {genResult.preferenceConflicts?.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-orange-700">⚠️ כפילויות חדר (עובדים שלא קיבלו את החדר המועדף):</p>
+                {genResult.preferenceConflicts.map((pc, i) => {
+                  const stats = genResult.userStats?.[pc.userId];
+                  const takenStats = genResult.userStats?.[pc.takenByUserId];
+                  return (
+                    <div key={i} className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm">
+                      <div className="flex flex-wrap gap-2 items-start justify-between">
+                        <div>
+                          <span className="font-semibold">{pc.userName}</span>
+                          <span className="text-orange-700"> ביקש את חדר {pc.wantedRoomName}</span>
+                          {pc.assignedRoomName
+                            ? <span className="text-gray-600"> — שובץ בחדר {pc.assignedRoomName}</span>
+                            : <span className="text-red-600"> — לא שובץ</span>}
+                          <span className="text-gray-500"> (תפוס ע"י {pc.takenByUserName})</span>
+                        </div>
+                      </div>
+                      {/* Employee stats side by side */}
+                      <div className="flex gap-4 mt-2 flex-wrap">
+                        {[
+                          { label: pc.userName, s: stats },
+                          { label: pc.takenByUserName, s: takenStats },
+                        ].filter(x => x.s).map(({ label, s }, j) => (
+                          <div key={j} className="bg-white border border-orange-200 rounded-lg px-3 py-1.5 text-xs">
+                            <div className="font-semibold text-gray-700">{label}</div>
+                            <div>שובץ: {s.assignedSlots}/{s.totalSlots} ימים</div>
+                            {s.unassignedDays?.length > 0 && <div className="text-red-600">ללא חדר: {s.unassignedDays.join(', ')}</div>}
+                            {s.assignedRooms?.length > 0 && <div className="text-gray-500">חדרים: {s.assignedRooms.join(', ')}</div>}
+                          </div>
+                        ))}
+                      </div>
+                      {/* Assign together buttons */}
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {pc.slots.map((s, k) => {
+                          const room = rooms.find(r => r.name === pc.wantedRoomName);
+                          if (!room) return null;
+                          return (
+                            <button key={k} className="btn btn-ghost text-xs border border-orange-300 text-orange-700 hover:bg-orange-100"
+                              onClick={() => assignTogether(pc.userId, room.id, s.day_of_week, s.start_time, s.end_time, pc.userName, pc.wantedRoomName)}>
+                              שבץ יחד ביום {DAYS[s.day_of_week]} {s.start_time}–{s.end_time}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -219,7 +292,10 @@ export default function AdminAssignments() {
               </tr>
             </thead>
             <tbody>
-              {rooms.filter(r => r.is_active !== false).sort((a, b) => a.name.localeCompare(b.name, 'he'))
+              {rooms.filter(r => r.is_active !== false).sort((a, b) => {
+                  const n = x => parseInt((x.name || '').match(/\d+/)?.[0] ?? '999');
+                  return n(a) - n(b);
+                })
                 .filter(room => !search || assignments.some(a => a.room_id === room.id && a.user_name?.includes(search)))
                 .map(room => (
                 <tr key={room.id} className="hover:bg-gray-50">
@@ -269,7 +345,10 @@ export default function AdminAssignments() {
               <table className="tbl">
                 <thead><tr><th>חדר</th><th>עובד</th><th>תפקיד</th><th>משעה</th><th>עד שעה</th><th></th></tr></thead>
                 <tbody>
-                  {byDay[selectedDay].filter(a => !search || a.user_name?.includes(search)).sort((a,b) => a.room_name.localeCompare(b.room_name, 'he')).map(a => (
+                  {byDay[selectedDay].filter(a => !search || a.user_name?.includes(search)).sort((a,b) => {
+                    const n = x => parseInt((x.room_name || '').match(/\d+/)?.[0] ?? '999');
+                    return n(a) - n(b);
+                  }).map(a => (
                     <tr key={a.id} className={search && a.user_name?.includes(search) ? 'bg-yellow-50' : ''}>
                       <td className="font-medium">{a.room_name}</td>
                       <td>{a.user_name}</td>

@@ -158,19 +158,29 @@ function generateAssignments() {
   const userSched = {};
   schedules.forEach(s => { (userSched[s.user_id] = userSched[s.user_id] || []).push(s); });
 
-  const grid = {}; // roomId -> [{day, start, end}]
+  const grid = {}; // roomId -> [{day, start, end, userId, role, userName}]
   rooms.forEach(r => (grid[r.id] = []));
 
-  // Pre-fill grid with existing assignments for users NOT processed by this run
   const usersWithSchedules = new Set(schedules.map(s => s.user_id));
+
+  // Record each user's most-used current room before clearing
+  const roomCounts = {};
   db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().forEach(a => {
-    if (!usersWithSchedules.has(a.user_id) && grid[a.room_id]) {
+    if (usersWithSchedules.has(a.user_id)) {
+      if (!roomCounts[a.user_id]) roomCounts[a.user_id] = {};
+      roomCounts[a.user_id][a.room_id] = (roomCounts[a.user_id][a.room_id] || 0) + 1;
+    } else if (grid[a.room_id]) {
       grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time });
     }
+  });
+  const currentRooms = {}; // userId -> roomId (their primary current room)
+  Object.entries(roomCounts).forEach(([uid, counts]) => {
+    currentRooms[+uid] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
   });
 
   const newAssignments = [];
   const conflicts = [];
+  const preferenceConflicts = [];
 
   const isAvail = (roomId, day, start, end) =>
     !grid[roomId]?.some(a => a.day === day && overlap(start, end, a.start, a.end));
@@ -205,16 +215,48 @@ function generateAssignments() {
     const slots = effectiveSlots(user.role, rawSlots);
 
     const preferredId = rawSlots.find(s => s.preferred_room_id)?.preferred_room_id;
+    const currentRoomId = currentRooms[user.id];
     let chosenRoom = null;
 
+    // 1. Try preferred room (explicit preference takes priority)
     if (preferredId) {
-      const pr = rooms.find(r => r.id === preferredId);
+      const pr = regularRooms.find(r => r.id === preferredId);
       if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) chosenRoom = pr;
     }
 
+    // 2. Try current room (maintain continuity)
+    if (!chosenRoom && currentRoomId) {
+      const cr = regularRooms.find(r => r.id === currentRoomId);
+      if (cr && slots.every(s => isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))) chosenRoom = cr;
+    }
+
+    // 3. Find any free room
     if (!chosenRoom) {
       for (const room of regularRooms) {
         if (slots.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
+      }
+    }
+
+    // Detect preference conflict: user wanted a specific room but didn't get it
+    const wantedRoomId = preferredId || currentRoomId;
+    if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId)) {
+      const wantedRoom = rooms.find(r => r.id === wantedRoomId);
+      // Find who is occupying that room during user's slots
+      const blocker = slots.flatMap(s =>
+        (grid[wantedRoomId] || []).filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end))
+      )[0];
+      if (blocker) {
+        preferenceConflicts.push({
+          userId: user.id,
+          userName: user.name,
+          role: user.role,
+          wantedRoomId,
+          wantedRoomName: wantedRoom?.name,
+          takenByUserId: blocker.userId,
+          takenByUserName: blocker.userName,
+          assignedRoomName: chosenRoom?.name || null,
+          slots: slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+        });
       }
     }
 
@@ -231,7 +273,19 @@ function generateAssignments() {
     }
   }
 
-  // Only clear assignments for users whose schedules were processed — preserve imported assignments
+  // Build userStats for conflict resolution UI
+  const userStats = {};
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    const assigned = newAssignments.filter(a => a.user_id === user.id);
+    const assignedRooms = [...new Set(assigned.map(a => a.room_id))]
+      .map(rid => rooms.find(r => r.id === rid)?.name).filter(Boolean);
+    const unassignedDays = rawSlots.filter(s => !assigned.some(a => a.day_of_week === s.day_of_week)).map(s => DAYS_HE[s.day_of_week]);
+    userStats[user.id] = { name: user.name, totalSlots: rawSlots.length, assignedSlots: assigned.length, assignedRooms, unassignedDays };
+  }
+
+  // Only clear assignments for users whose schedules were processed
   const toClear = [...usersWithSchedules];
   db.get('room_assignments')
     .remove(a => a.assignment_type === 'permanent' && toClear.includes(a.user_id))
@@ -245,7 +299,9 @@ function generateAssignments() {
   return {
     assigned: newAssignments.length,
     conflicts,
+    preferenceConflicts,
     suggestions,
+    userStats,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : `השיבוץ הושלם בהצלחה! שובצו ${newAssignments.length} משבצות`,
