@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS } from '../../constants';
-
 export default function AdminAssignments() {
   const [assignments, setAssignments] = useState([]);
   const [users, setUsers] = useState([]);
@@ -18,13 +17,23 @@ export default function AdminAssignments() {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
   const [msg, setMsg] = useState('');
+  const [resolving, setResolving] = useState(null); // `${pcIdx}-notify` or `${pcIdx}-${blockerIdx}`
+  const [notifyMsgs, setNotifyMsgs] = useState({}); // pcIdx -> string
+  const [schedules, setSchedules] = useState([]);
 
   useEffect(() => { load(); }, []);
-  const load = () => Promise.all([
-    api.get('/assignments/all'),
-    api.get('/users'),
-    api.get('/rooms'),
-  ]).then(([a, u, r]) => { setAssignments(a.data); setUsers(u.data.filter(u=>u.is_active)); setRooms(r.data); });
+  const load = async () => {
+    const [a, u, r] = await Promise.all([
+      api.get('/assignments/all'),
+      api.get('/users'),
+      api.get('/rooms'),
+    ]);
+    setAssignments(a.data);
+    setUsers(u.data.filter(u => u.is_active));
+    setRooms(r.data);
+    // Schedules are secondary — load separately so a failure doesn't break the main page
+    try { const s = await api.get('/schedules/all'); setSchedules(s.data); } catch {}
+  };
 
   const importFromDoc = async () => {
     if (!confirm('פעולה זו תייבא את שיבוץ החדרים מקובץ תשפ"ו, תשנה שמות חדרים ותיצור עובדים חדשים. להמשיך?')) return;
@@ -71,6 +80,17 @@ export default function AdminAssignments() {
     }
   };
 
+  const resolvePreference = async (action, payload, key) => {
+    setResolving(key);
+    try {
+      const r = await api.post('/assignments/resolve-preference', { action, ...payload });
+      setGenResult(prev => ({ ...prev, applyMsg: r.data.message, applyError: null }));
+      if (action === 'displace') load();
+    } catch (e) {
+      setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message), applyMsg: null }));
+    } finally { setResolving(null); }
+  };
+
   const clearAll = async () => {
     if (!confirm('למחוק את כל השיבוצים הקבועים?')) return;
     await api.delete('/assignments/clear/permanent'); load();
@@ -108,12 +128,41 @@ export default function AdminAssignments() {
             <button className="btn btn-primary" onClick={generate} disabled={generating}>
               {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setMsg(''); }}>+ הוסף שיבוץ ידני</button>
+            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); }}>+ הוסף שיבוץ ידני</button>
             <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
           </div>
         </div>
 
         {msg && <div className={`px-4 py-2 rounded-lg text-sm mb-3 ${msg.startsWith('שגיאה') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>}
+
+        {showAdd && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+            <h3 className="font-semibold mb-3">הוספת שיבוץ ידני</h3>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div><label className="label">עובד</label>
+                <select className="select w-44" value={addForm.user_id} onChange={e => setAddForm(p=>({...p,user_id:e.target.value}))}>
+                  <option value="">בחר...</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div><label className="label">חדר</label>
+                <select className="select w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
+                  <option value="">בחר...</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div><label className="label">יום</label>
+                <select className="select w-24" value={addForm.day_of_week} onChange={e => setAddForm(p=>({...p,day_of_week:+e.target.value}))}>
+                  {DAYS.map((d,i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+              </div>
+              <div><label className="label">משעה</label><input type="time" className="input w-28" value={addForm.start_time} onChange={e => setAddForm(p=>({...p,start_time:e.target.value}))} /></div>
+              <div><label className="label">עד שעה</label><input type="time" className="input w-28" value={addForm.end_time} onChange={e => setAddForm(p=>({...p,end_time:e.target.value}))} /></div>
+              <button className="btn btn-primary" onClick={addAssignment}>הוסף</button>
+              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>ביטול</button>
+            </div>
+          </div>
+        )}
 
         {genResult && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
@@ -186,83 +235,152 @@ export default function AdminAssignments() {
             )}
             {genResult.preferenceConflicts?.length > 0 && (
               <div className="mt-4 space-y-3">
-                <p className="text-sm font-semibold text-orange-700">⚠️ כפילויות חדר (עובדים שלא קיבלו את החדר המועדף):</p>
+                <p className="text-sm font-semibold text-orange-700">⚠️ חדר מועדף תפוס — עובדים שרצו חדר ספציפי אך שובצו לאחר:</p>
                 {genResult.preferenceConflicts.map((pc, i) => {
                   const stats = genResult.userStats?.[pc.userId];
-                  const takenStats = genResult.userStats?.[pc.takenByUserId];
+                  const blockers = pc.blockers || (pc.takenByUserId ? [{ userId: pc.takenByUserId, userName: pc.takenByUserName }] : []);
+                  const room = rooms.find(r => r.name === pc.wantedRoomName);
+                  const notifyKey = `${i}-notify`;
                   return (
-                    <div key={i} className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm">
-                      <div className="flex flex-wrap gap-2 items-start justify-between">
-                        <div>
-                          <span className="font-semibold">{pc.userName}</span>
-                          <span className="text-orange-700"> ביקש את חדר {pc.wantedRoomName}</span>
-                          {pc.assignedRoomName
-                            ? <span className="text-gray-600"> — שובץ בחדר {pc.assignedRoomName}</span>
-                            : <span className="text-red-600"> — לא שובץ</span>}
-                          <span className="text-gray-500"> (תפוס ע"י {pc.takenByUserName})</span>
+                    <div key={i} className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm space-y-2">
+                      {/* Header */}
+                      <div>
+                        <span className="font-semibold">{pc.userName}</span>
+                        <span className="text-orange-700"> ביקש את חדר {pc.wantedRoomName}</span>
+                        {pc.assignedRoomName
+                          ? <span className="text-gray-600"> — שובץ בחדר {pc.assignedRoomName}</span>
+                          : <span className="text-red-600 font-medium"> — לא שובץ כלל</span>}
+                      </div>
+
+                      {/* Stats for requested user */}
+                      {stats && (
+                        <div className="bg-white border border-orange-200 rounded-lg px-3 py-1.5 text-xs inline-block">
+                          <div className="font-semibold text-gray-700">{pc.userName}</div>
+                          <div>שובץ: {stats.assignedSlots}/{stats.totalSlots} ימים</div>
+                          {stats.unassignedDays?.length > 0 && <div className="text-red-600">ללא חדר: {stats.unassignedDays.join(', ')}</div>}
+                          {stats.assignedRooms?.length > 0 && <div className="text-gray-500">חדרים: {stats.assignedRooms.join(', ')}</div>}
+                        </div>
+                      )}
+
+                      {/* Blockers list — each with a displace button */}
+                      {blockers.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-500 font-medium">תופסי החדר בשעות הרצויות:</p>
+                          {blockers.map((bl, bi) => {
+                            const blStats = genResult.userStats?.[bl.userId];
+                            const displaceKey = `${i}-${bi}`;
+                            return (
+                              <div key={bi} className="flex flex-wrap items-center gap-2 bg-white border border-orange-100 rounded-lg px-3 py-1.5">
+                                <div className="flex-1 text-xs">
+                                  <span className="font-semibold">{bl.userName}</span>
+                                  {bl.day !== undefined && <span className="text-gray-500"> — יום {DAYS[bl.day]} {bl.start}–{bl.end}</span>}
+                                  {blStats && <span className="text-gray-400 mr-1">({blStats.assignedSlots}/{blStats.totalSlots} ימים)</span>}
+                                </div>
+                                <button
+                                  className="btn text-xs bg-red-50 border border-red-300 text-red-700 hover:bg-red-100 shrink-0"
+                                  disabled={resolving === displaceKey}
+                                  onClick={async () => {
+                                    if (!confirm(`להסיר את ${bl.userName} ולשבץ את ${pc.userName} בחדר ${pc.wantedRoomName}?`)) return;
+                                    await resolvePreference('displace', {
+                                      userId: pc.userId,
+                                      blockerUserId: bl.userId,
+                                      roomId: room?.id,
+                                      day: bl.day,
+                                      start: bl.start,
+                                      end: bl.end,
+                                    }, displaceKey);
+                                  }}>
+                                  {resolving === displaceKey ? '...' : `הסר ${bl.userName} ושבץ ${pc.userName}`}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Notify employee of rejection */}
+                      <div className="border-t border-orange-200 pt-2 space-y-1">
+                        <p className="text-xs text-gray-500 font-medium">שלח הודעת דחייה ל{pc.userName}:</p>
+                        <div className="flex gap-2 flex-wrap items-start">
+                          <textarea
+                            rows={2}
+                            className="input flex-1 text-xs min-w-[180px]"
+                            placeholder={`שיבוצך לחדר ${pc.wantedRoomName} לא אושר — שובצת בחדר ${pc.assignedRoomName || 'אחר'}`}
+                            value={notifyMsgs[i] || ''}
+                            onChange={e => setNotifyMsgs(prev => ({ ...prev, [i]: e.target.value }))}
+                          />
+                          <button
+                            className="btn text-xs bg-orange-100 border border-orange-300 text-orange-800 hover:bg-orange-200 shrink-0"
+                            disabled={resolving === notifyKey}
+                            onClick={async () => {
+                              await resolvePreference('notify', {
+                                userId: pc.userId,
+                                roomId: room?.id,
+                                message: notifyMsgs[i] || '',
+                              }, notifyKey);
+                            }}>
+                            {resolving === notifyKey ? '...' : '📨 שלח הודעה'}
+                          </button>
                         </div>
                       </div>
-                      {/* Employee stats side by side */}
-                      <div className="flex gap-4 mt-2 flex-wrap">
-                        {[
-                          { label: pc.userName, s: stats },
-                          { label: pc.takenByUserName, s: takenStats },
-                        ].filter(x => x.s).map(({ label, s }, j) => (
-                          <div key={j} className="bg-white border border-orange-200 rounded-lg px-3 py-1.5 text-xs">
-                            <div className="font-semibold text-gray-700">{label}</div>
-                            <div>שובץ: {s.assignedSlots}/{s.totalSlots} ימים</div>
-                            {s.unassignedDays?.length > 0 && <div className="text-red-600">ללא חדר: {s.unassignedDays.join(', ')}</div>}
-                            {s.assignedRooms?.length > 0 && <div className="text-gray-500">חדרים: {s.assignedRooms.join(', ')}</div>}
-                          </div>
-                        ))}
-                      </div>
-                      {/* Assign together buttons */}
-                      <div className="flex gap-2 mt-2 flex-wrap">
-                        {pc.slots.map((s, k) => {
-                          const room = rooms.find(r => r.name === pc.wantedRoomName);
-                          if (!room) return null;
-                          return (
-                            <button key={k} className="btn btn-ghost text-xs border border-orange-300 text-orange-700 hover:bg-orange-100"
-                              onClick={() => assignTogether(pc.userId, room.id, s.day_of_week, s.start_time, s.end_time, pc.userName, pc.wantedRoomName)}>
-                              שבץ יחד ביום {DAYS[s.day_of_week]} {s.start_time}–{s.end_time}
-                            </button>
-                          );
-                        })}
-                      </div>
+
+                      {/* Assign together (fallback) */}
+                      {pc.slots?.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {pc.slots.map((s, k) => {
+                            if (!room) return null;
+                            return (
+                              <button key={k} className="btn btn-ghost text-xs border border-orange-300 text-orange-700 hover:bg-orange-100"
+                                onClick={() => assignTogether(pc.userId, room.id, s.day_of_week, s.start_time, s.end_time, pc.userName, pc.wantedRoomName)}>
+                                שבץ יחד ביום {DAYS[s.day_of_week]} {s.start_time}–{s.end_time}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
-        )}
-
-        {showAdd && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-            <h3 className="font-semibold mb-3">הוספת שיבוץ ידני</h3>
-            <div className="flex flex-wrap gap-3 items-end">
-              <div><label className="label">עובד</label>
-                <select className="select w-44" value={addForm.user_id} onChange={e => setAddForm(p=>({...p,user_id:e.target.value}))}>
-                  <option value="">בחר...</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
+            {genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-gray-700 mb-2">🔍 מעקב שיבוצים — עובדים שלא קיבלו את החדר הרצוי:</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 text-right">
+                        <th className="border border-gray-200 px-2 py-1">עובד</th>
+                        <th className="border border-gray-200 px-2 py-1">רצה</th>
+                        <th className="border border-gray-200 px-2 py-1">קיבל</th>
+                        <th className="border border-gray-200 px-2 py-1">חסום ע"י</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {genResult.assignmentTrace.filter(t => t.wanted && t.result !== 'got_wanted').map((t, i) => (
+                        <tr key={i} className={t.result === 'unassigned' ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                          <td className="border border-gray-200 px-2 py-1 font-medium">{t.userName}</td>
+                          <td className="border border-gray-200 px-2 py-1 text-blue-700">
+                            {t.wanted}
+                            <span className="text-gray-400 mr-1">({t.wantedType === 'preferred' ? 'מועדף' : 'נוכחי'})</span>
+                          </td>
+                          <td className="border border-gray-200 px-2 py-1">
+                            {t.gotRoom
+                              ? <span className="text-green-700">{t.gotRoom}</span>
+                              : <span className="text-red-600 font-medium">לא שובץ</span>}
+                          </td>
+                          <td className="border border-gray-200 px-2 py-1 text-gray-600">
+                            {t.blockedReasons?.length > 0
+                              ? t.blockedReasons.map((b, j) => <span key={j} className="mr-2">{b.day}: {b.blockedBy}</span>)
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div><label className="label">חדר</label>
-                <select className="select w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
-                  <option value="">בחר...</option>
-                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </div>
-              <div><label className="label">יום</label>
-                <select className="select w-24" value={addForm.day_of_week} onChange={e => setAddForm(p=>({...p,day_of_week:+e.target.value}))}>
-                  {DAYS.map((d,i) => <option key={i} value={i}>{d}</option>)}
-                </select>
-              </div>
-              <div><label className="label">משעה</label><input type="time" className="input w-28" value={addForm.start_time} onChange={e => setAddForm(p=>({...p,start_time:e.target.value}))} /></div>
-              <div><label className="label">עד שעה</label><input type="time" className="input w-28" value={addForm.end_time} onChange={e => setAddForm(p=>({...p,end_time:e.target.value}))} /></div>
-              <button className="btn btn-primary" onClick={addAssignment}>הוסף</button>
-              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>ביטול</button>
-            </div>
+            )}
           </div>
         )}
 
@@ -403,6 +521,42 @@ export default function AdminAssignments() {
           </div>
         </div>
       )}
+      {/* Preferred room summary */}
+      <div className="card">
+        <h3 className="font-semibold mb-3 text-gray-700">חדר מועדף לפי עובד</h3>
+        <p className="text-xs text-gray-500 mb-3">מה כל עובד ביקש כחדר קבוע. ריק = לא הוגדרה העדפה.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-100 text-right">
+                <th className="border border-gray-200 px-3 py-2 font-semibold">שם</th>
+                <th className="border border-gray-200 px-3 py-2 font-semibold">תפקיד</th>
+                <th className="border border-gray-200 px-3 py-2 font-semibold">חדר מועדף</th>
+                <th className="border border-gray-200 px-3 py-2 font-semibold">ימי עבודה</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.filter(u => schedules.some(s => s.user_id === u.id)).map(u => {
+                const userSlots = schedules.filter(s => s.user_id === u.id);
+                const prefRoom = userSlots.find(s => s.room_name)?.room_name || null;
+                const workDays = [...new Set(userSlots.map(s => DAYS[s.day_of_week]))].join(', ');
+                return (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="border border-gray-200 px-3 py-1.5 font-medium">{u.name}</td>
+                    <td className="border border-gray-200 px-3 py-1.5 text-gray-600">{ROLES[u.role] || u.role}</td>
+                    <td className="border border-gray-200 px-3 py-1.5">
+                      {prefRoom
+                        ? <span className="text-blue-700 font-medium">{prefRoom}</span>
+                        : <span className="text-gray-400 text-xs">—</span>}
+                    </td>
+                    <td className="border border-gray-200 px-3 py-1.5 text-gray-600 text-xs">{workDays}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

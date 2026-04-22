@@ -131,6 +131,21 @@ router.post('/', (req, res) => {
     .filter(a => !absentUsers.includes(a.user_id));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id).value();
 
+  // Check if the requesting user already has a room at these times
+  const userAlreadyHasRoom = [
+    ...permBusy.filter(b => b.user_id === userId && overlap(start_time, end_time, b.start_time, b.end_time)),
+    ...otBusy.filter(b => b.user_id === userId && b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
+  ];
+  if (userAlreadyHasRoom.length > 0) {
+    db.get('one_time_requests').remove({ id: r.id }).write();
+    const details = userAlreadyHasRoom.map(b => {
+      const roomId = b.room_id || b.assigned_room_id;
+      const room = db.get('rooms').find({ id: roomId }).value();
+      return `${room?.name} (${b.start_time}–${b.end_time})`;
+    }).join(', ');
+    return res.status(409).json({ error: `כבר יש לך חדר מוקצה בשעות אלו: ${details}` });
+  }
+
   const available = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().filter(room => {
     const busy = [
       ...permBusy.filter(b => b.room_id === room.id),
@@ -171,13 +186,13 @@ router.get('/library-schedule', (req, res) => {
       .filter(x => x.specific_date === date && x.status === 'assigned' && libraryIds.includes(x.assigned_room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
-        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time' };
+        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time', notes: x.notes };
       });
     const permBookings = db.get('room_assignments')
       .filter(x => x.day_of_week === dayOfWeek && libraryIds.includes(x.room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
-        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent' };
+        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
       });
     const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
     result[date] = all;
@@ -201,13 +216,13 @@ router.get('/meeting-schedule', (req, res) => {
       .filter(x => x.specific_date === date && x.status === 'assigned' && meetingIds.includes(x.assigned_room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
-        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time' };
+        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time', notes: x.notes };
       });
     const permBookings = db.get('room_assignments')
       .filter(x => x.day_of_week === dayOfWeek && meetingIds.includes(x.room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
-        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent' };
+        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
       });
     const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
     result[date] = all;
@@ -310,7 +325,45 @@ router.post('/:id/assign-room', requireAdmin, (req, res) => {
   res.json({ message: `הוקצה ${room?.name}` });
 });
 
+// Add an additional partial assignment for a request (keeps original, creates sibling record)
+router.post('/:id/add-partial', requireAdmin, (req, res) => {
+  const { room_id, start_time, end_time, admin_response } = req.body;
+  const original = db.get('one_time_requests').find({ id: +req.params.id }).value();
+  if (!original) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  const newReq = {
+    id: nextId('one_time_requests'),
+    user_id: original.user_id,
+    request_type: original.request_type,
+    specific_date: original.specific_date,
+    day_of_week: original.day_of_week,
+    start_time,
+    end_time,
+    status: 'assigned',
+    assigned_room_id: +room_id,
+    notes: original.notes,
+    admin_response: admin_response || null,
+    reduce_assignment_id: null,
+    target_room_type: null,
+    created_at: new Date().toISOString(),
+  };
+  db.get('one_time_requests').push(newReq).write();
+  const room = db.get('rooms').find({ id: +room_id }).value();
+  res.json({ message: `נוסף שיבוץ: ${room?.name} ${start_time}–${end_time}` });
+});
+
 router.delete('/:id', requireAdmin, (req, res) => {
+  const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
+  // If an approved permanent special-room request is deleted, also remove its room_assignment
+  if (request?.request_type === 'permanent_request' && request?.status === 'approved' && request?.target_room_type) {
+    const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();
+    if (specialRoom) {
+      db.get('room_assignments').remove(a =>
+        a.user_id === request.user_id && a.room_id === specialRoom.id &&
+        a.day_of_week === request.day_of_week && a.assignment_type === 'permanent' &&
+        overlap(a.start_time, a.end_time, request.start_time, request.end_time)
+      ).write();
+    }
+  }
   db.get('one_time_requests').remove({ id: +req.params.id }).write();
   res.json({ message: 'הבקשה נמחקה' });
 });
@@ -324,6 +377,18 @@ router.put('/:id', requireAdmin, (req, res) => {
     admin_response: admin_response || null,
     assigned_room_id: assigned_room_id ? +assigned_room_id : null,
   }).write();
+
+  // If rejecting an already-approved permanent special-room request — remove its room_assignment
+  if (status === 'rejected' && request?.request_type === 'permanent_request' && request?.status === 'approved' && request?.target_room_type) {
+    const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();
+    if (specialRoom) {
+      db.get('room_assignments').remove(a =>
+        a.user_id === request.user_id && a.room_id === specialRoom.id &&
+        a.day_of_week === request.day_of_week && a.assignment_type === 'permanent' &&
+        overlap(a.start_time, a.end_time, request.start_time, request.end_time)
+      ).write();
+    }
+  }
 
   // If approving a permanent_request — create a room_assignment
   if (status === 'approved' && request?.request_type === 'permanent_request') {
@@ -342,6 +407,7 @@ router.put('/:id', requireAdmin, (req, res) => {
         start_time: assign_start_time || request.start_time,
         end_time: assign_end_time || request.end_time,
         assignment_type: 'permanent',
+        notes: request.notes || null,
         created_at: new Date().toISOString(),
       }).write();
     }

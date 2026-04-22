@@ -107,6 +107,7 @@ function RoomPicker({ req, onAssigned }) {
   const [adjStart, setAdjStart] = useState(req.start_time);
   const [adjEnd, setAdjEnd] = useState(req.end_time);
   const [adminMsg, setAdminMsg] = useState('');
+  const [assignedSlots, setAssignedSlots] = useState([]); // list of {roomName, start, end}
 
   const fetchRooms = (s, e) => {
     setRooms(null);
@@ -120,9 +121,18 @@ function RoomPicker({ req, onAssigned }) {
   const assign = async roomId => {
     setLoading(true);
     try {
-      const r = await api.post(`/requests/${req.id}/assign-room`, { room_id: roomId, start_time: adjStart, end_time: adjEnd, admin_response: adminMsg || null });
+      const isFirst = assignedSlots.length === 0;
+      const endpoint = isFirst
+        ? `/requests/${req.id}/assign-room`
+        : `/requests/${req.id}/add-partial`;
+      const r = await api.post(endpoint, { room_id: roomId, start_time: adjStart, end_time: adjEnd, admin_response: adminMsg || null });
+      const roomName = rooms?.find(x => x.id === roomId)?.name || roomId;
+      setAssignedSlots(prev => [...prev, { roomName, start: adjStart, end: adjEnd }]);
       setMsg(r.data.message);
-      setTimeout(onAssigned, 800);
+      // Reset times to original for next potential partial assignment
+      setAdjStart(req.start_time);
+      setAdjEnd(req.end_time);
+      fetchRooms(req.start_time, req.end_time);
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
     finally { setLoading(false); }
   };
@@ -131,12 +141,22 @@ function RoomPicker({ req, onAssigned }) {
 
   return (
     <div className="mt-3 border-t pt-3">
+      {/* Already-assigned slots summary */}
+      {assignedSlots.length > 0 && (
+        <div className="mb-3 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          <div className="font-semibold text-green-800 text-sm mb-1">שיבוצים שנוצרו:</div>
+          {assignedSlots.map((s, i) => (
+            <div key={i} className="text-sm text-green-700">{s.roomName}: {s.start}–{s.end}</div>
+          ))}
+          <button className="btn btn-success mt-2 text-sm" onClick={onAssigned}>סיים ✓</button>
+        </div>
+      )}
       {msg && <div className="text-green-700 text-sm mb-2 font-medium">{msg}</div>}
       <p className="text-sm font-semibold mb-2">
-        חדרים פנויים ל-{req.specific_date}
+        {assignedSlots.length > 0 ? 'הוסף שיבוץ נוסף' : `חדרים פנויים ל-${req.specific_date}`}
         {isPartial && <span className="text-orange-600"> (שיבוץ חלקי)</span>}
       </p>
-      <div className="flex gap-3 items-end mb-3">
+      <div className="flex gap-3 items-end mb-3 flex-wrap">
         <div>
           <label className="label text-xs">משעה</label>
           <input type="time" className="input w-28 text-sm" value={adjStart}
@@ -233,8 +253,8 @@ export default function AdminRequests() {
   };
 
   const deleteRequest = async id => {
-    if (!confirm('למחוק בקשה זו לצמיתות?')) return;
-    await api.delete(`/requests/${id}`);
+    if (!confirm('לדחות בקשה זו?')) return;
+    await api.put(`/requests/${id}`, { status: 'rejected', admin_response: 'הבקשה נדחתה על ידי המנהל' });
     load();
   };
 

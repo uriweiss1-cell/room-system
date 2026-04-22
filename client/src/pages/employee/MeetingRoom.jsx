@@ -90,14 +90,17 @@ export default function MeetingRoom() {
                   ) : (
                     <div className="space-y-1">
                       {bookings.map((b, i) => (
-                        <div key={i} className="flex gap-3 text-sm items-center">
-                          <span className="text-gray-500 tabular-nums">{b.start_time}–{b.end_time}</span>
-                          <span className="font-medium">{b.user_name}</span>
-                          {b.type === 'permanent' && <span className="text-xs text-purple-600">קבוע</span>}
-                          {isAdmin && b.type === 'one_time' && b.id && (
-                            <button onClick={async () => { if (confirm('למחוק שיבוץ זה?')) { await api.delete(`/requests/${b.id}`); loadSchedule(); } }}
-                              className="text-red-400 hover:text-red-600 text-xs">מחק</button>
-                          )}
+                        <div key={i} className="text-sm">
+                          <div className="flex gap-3 items-center">
+                            <span className="text-gray-500 tabular-nums">{b.start_time}–{b.end_time}</span>
+                            <span className="font-medium">{b.user_name}</span>
+                            {b.type === 'permanent' && <span className="text-xs text-purple-600">קבוע</span>}
+                            {isAdmin && b.type === 'one_time' && b.id && (
+                              <button onClick={async () => { if (confirm('למחוק שיבוץ זה?')) { await api.delete(`/requests/${b.id}`); loadSchedule(); } }}
+                                className="text-red-400 hover:text-red-600 text-xs">מחק</button>
+                            )}
+                          </div>
+                          {b.notes && <div className="text-xs text-gray-500 mr-1 mt-0.5">📝 {b.notes}</div>}
                         </div>
                       ))}
                     </div>

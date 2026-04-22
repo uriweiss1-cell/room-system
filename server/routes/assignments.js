@@ -41,7 +41,7 @@ router.get('/query', (req, res) => {
 
   let oneTime = db.get('one_time_requests')
     .filter(r => r.specific_date === date && r.status === 'assigned'
-      && ['room_request', 'library_request'].includes(r.request_type)
+      && ['room_request', 'library_request', 'meeting_request'].includes(r.request_type)
       && r.assigned_room_id && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
     .value().map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
@@ -104,6 +104,63 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'השיבוץ נמחק' });
 });
 
+// Resolve a preference conflict: notify the employee OR displace a blocker and assign the employee
+router.post('/resolve-preference', requireAdmin, (req, res) => {
+  const { action, userId, blockerUserId, roomId, day, start, end, message } = req.body;
+  try {
+    const sendNotif = (toUserId, msg) => {
+      const notifId = db.get('_ids.notifications').value() || 0;
+      db.set('_ids.notifications', notifId + 1).write();
+      db.get('notifications').push({ id: notifId, user_id: +toUserId, read: false, message: msg, created_at: new Date().toISOString() }).write();
+    };
+
+    if (action === 'notify') {
+      const room = db.get('rooms').find({ id: +roomId }).value();
+      const dayName = DAYS_HE[+day];
+      const defaultMsg = `שיבוצך לחדר ${room?.name} ביום ${dayName} (${start}–${end}) לא אושר. לפרטים פנה/י למנהל.`;
+      sendNotif(userId, message || defaultMsg);
+      return res.json({ message: 'הודעה נשלחה לעובד' });
+    }
+
+    if (action === 'displace') {
+      // Remove the blocker's assignment for this room/day slot
+      const allForBlocker = db.get('room_assignments')
+        .filter(a => a.user_id === +blockerUserId && a.room_id === +roomId && a.day_of_week === +day && a.assignment_type === 'permanent')
+        .value();
+      const toRemove = allForBlocker.find(a => overlap(a.start_time, a.end_time, start, end));
+      if (toRemove) db.get('room_assignments').remove({ id: toRemove.id }).write();
+
+      // Also remove any existing assignment of the target user for the same day (avoid duplicates)
+      db.get('room_assignments')
+        .remove(a => a.user_id === +userId && a.day_of_week === +day && a.assignment_type === 'permanent'
+          && overlap(a.start_time, a.end_time, start, end))
+        .write();
+
+      // Assign the preferred user to the room
+      db.get('room_assignments').push({
+        id: nextId('room_assignments'),
+        user_id: +userId, room_id: +roomId, day_of_week: +day,
+        start_time: start, end_time: end,
+        assignment_type: 'permanent', specific_date: null, created_at: new Date().toISOString(),
+      }).write();
+
+      const blocker = db.get('users').find({ id: +blockerUserId }).value();
+      const targetUser = db.get('users').find({ id: +userId }).value();
+      const room = db.get('rooms').find({ id: +roomId }).value();
+
+      // Notify displaced user
+      sendNotif(blockerUserId, `השיבוץ שלך לחדר ${room?.name} ביום ${DAYS_HE[+day]} (${start}–${end}) בוטל על ידי המנהל.`);
+
+      return res.json({ message: `${targetUser?.name} שובץ לחדר ${room?.name}, ${blocker?.name} הוסר` });
+    }
+
+    res.status(400).json({ error: 'פעולה לא ידועה' });
+  } catch (e) {
+    console.error('resolve-preference error:', e);
+    res.status(500).json({ error: e.message || 'שגיאת שרת' });
+  }
+});
+
 router.post('/generate', requireAdmin, (req, res) => {
   try { res.json(generateAssignments()); }
   catch (e) { res.status(500).json({ error: e.message }); }
@@ -117,6 +174,8 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     id: nextId('room_assignments'), ...a,
     assignment_type: 'permanent', specific_date: null, created_at: new Date().toISOString(),
   }).write();
+
+  try {
 
   if (action.type === 'split' || action.type === 'partial') {
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
@@ -142,22 +201,30 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     push({ user_id: +action.displaceUserId, room_id: +action.toRoomId, day_of_week: +action.day, start_time: action.displaceStart, end_time: action.displaceEnd });
     // Assign conflict user to freed room
     push({ user_id: +action.conflictUserId, room_id: +action.fromRoomId, day_of_week: +action.day, start_time: action.conflictStart, end_time: action.conflictEnd });
-    // Notify the displaced user
-    const notifId = db.get('_ids.notifications').value();
-    db.set('_ids.notifications', notifId + 1).write();
-    db.get('notifications').push({
-      id: notifId, user_id: +action.displaceUserId, read: false,
-      message: `השיבוץ שלך עודכן: הועברת מ-${action.fromRoomName} ל-${action.toRoomName} (יום ${DAYS_HE[action.day]}, ${action.displaceStart}–${action.displaceEnd})`,
-      created_at: new Date().toISOString(),
-    }).write();
+    // Notify the displaced user (safely, in case notifications collection isn't initialized)
+    try {
+      if (!db.get('notifications').value()) db.set('notifications', []).write();
+      const notifId = db.get('_ids.notifications').value() || 0;
+      db.set('_ids.notifications', notifId + 1).write();
+      db.get('notifications').push({
+        id: notifId, user_id: +action.displaceUserId, read: false,
+        message: `השיבוץ שלך עודכן: הועברת מ-${action.fromRoomName} ל-${action.toRoomName} (יום ${DAYS_HE[action.day]}, ${action.displaceStart}–${action.displaceEnd})`,
+        created_at: new Date().toISOString(),
+      }).write();
+    } catch (e) { /* notifications are non-critical */ }
     return res.json({ message: `${action.displaceUserName} הועבר ל-${action.toRoomName}, ${action.fromRoomName} הוקצה ל-${action.conflictUserName}` });
   }
 
   res.status(400).json({ error: 'סוג פעולה לא ידוע' });
+
+  } catch (e) {
+    console.error('apply-suggestion error:', e);
+    res.status(500).json({ error: e.message || 'שגיאת שרת' });
+  }
 });
 
 function generateAssignments() {
-  const users = db.get('users').filter(u => u.is_active && u.role !== 'admin').value();
+  const users = db.get('users').filter(u => u.is_active).value();
   const rooms = db.get('rooms').filter({ is_active: true }).value();
   const schedules = db.get('regular_schedules').value();
 
@@ -169,16 +236,25 @@ function generateAssignments() {
 
   const usersWithSchedules = new Set(schedules.map(s => s.user_id));
 
-  // Record each user's most-used current room before clearing
+  // processableUserIds: active users who have schedules — these are the only users
+  // whose assignments will be cleared and re-created by the algorithm.
+  // Inactive or schedule-less users keep their existing assignments and
+  // their rooms are protected in the grid so the algorithm doesn't overwrite them.
+  const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
+
+  // Record each processable user's most-used current room before clearing.
+  // All other users' rooms go into the grid so they're treated as occupied.
   const roomCounts = {};
   db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().forEach(a => {
-    if (usersWithSchedules.has(a.user_id)) {
+    if (processableUserIds.has(a.user_id)) {
       if (!roomCounts[a.user_id]) roomCounts[a.user_id] = {};
       roomCounts[a.user_id][a.room_id] = (roomCounts[a.user_id][a.room_id] || 0) + 1;
     } else if (grid[a.room_id]) {
+      // Inactive users / users without schedules — protect their rooms in the grid
       grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time });
     }
   });
+
   const currentRooms = {}; // userId -> roomId (their primary current room)
   Object.entries(roomCounts).forEach(([uid, counts]) => {
     currentRooms[+uid] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
@@ -187,6 +263,7 @@ function generateAssignments() {
   const newAssignments = [];
   const conflicts = [];
   const preferenceConflicts = [];
+  const assignmentTrace = []; // per-user: what they wanted, what blocked them, what they got
 
   const isAvail = (roomId, day, start, end) =>
     !grid[roomId]?.some(a => a.day === day && overlap(start, end, a.start, a.end));
@@ -211,29 +288,79 @@ function generateAssignments() {
     });
   }
 
-  const PRIORITY = { supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, psychiatrist: 0 };
+  const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4 };
   const sorted = [...users].sort((a, b) => (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9));
   const regularRooms = rooms.filter(r => r.room_type === 'regular');
 
+  // Helper: get preferredId for a user's rawSlots
+  const getPreferredId = rawSlots => {
+    const val = rawSlots.find(s => s.preferred_room_id)?.preferred_room_id;
+    return val ? +val : null;
+  };
+
+  // ─── Pass 1: Pre-reservation ────────────────────────────────────────────────
+  // Users whose preferred room matches their current room get it guaranteed,
+  // before role-priority even applies. This implements: "if you're already in
+  // room X and request room X, you keep it regardless of who else wants it."
+  const preReserved = new Set(); // user IDs handled in this pass
   for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    const preferredId = getPreferredId(rawSlots);
+    const currentRoomId = currentRooms[user.id];
+    // Both preferred AND current must point to the same room
+    if (!preferredId || preferredId !== currentRoomId) continue;
+    const pr = regularRooms.find(r => r.id === preferredId);
+    if (!pr) continue;
+    const slots = effectiveSlots(user.role, rawSlots);
+    if (slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
+      slots.forEach(s => reserve(preferredId, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
+      preReserved.add(user.id);
+      assignmentTrace.push({ userId: user.id, userName: user.name, role: user.role, wanted: pr.name, wantedType: 'preferred+current', result: 'got_wanted' });
+    }
+    // If room unavailable even for pre-reserved candidate, fall through to pass 2
+  }
+
+  // ─── Pass 2: Main assignment ─────────────────────────────────────────────────
+  for (const user of sorted) {
+    if (preReserved.has(user.id)) continue; // already handled
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const slots = effectiveSlots(user.role, rawSlots);
 
-    const preferredId = rawSlots.find(s => s.preferred_room_id)?.preferred_room_id;
+    const preferredId = getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
     let chosenRoom = null;
 
     // 1. Try preferred room (explicit preference takes priority)
+    let preferredBlocked = null;
     if (preferredId) {
       const pr = regularRooms.find(r => r.id === preferredId);
-      if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) chosenRoom = pr;
+      if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
+        chosenRoom = pr;
+      } else if (pr) {
+        // Record what's blocking the preferred room
+        const blockedSlots = slots.filter(s => !isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
+        preferredBlocked = blockedSlots.map(s => {
+          const blocker = (grid[preferredId] || []).find(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end));
+          return { day: DAYS_HE[s.day_of_week], blockedBy: blocker?.userName || '?' };
+        });
+      }
     }
 
     // 2. Try current room (maintain continuity)
+    let currentBlocked = null;
     if (!chosenRoom && currentRoomId) {
       const cr = regularRooms.find(r => r.id === currentRoomId);
-      if (cr && slots.every(s => isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))) chosenRoom = cr;
+      if (cr && slots.every(s => isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))) {
+        chosenRoom = cr;
+      } else if (cr) {
+        const blockedSlots = slots.filter(s => !isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time));
+        currentBlocked = blockedSlots.map(s => {
+          const blocker = (grid[currentRoomId] || []).find(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end));
+          return { day: DAYS_HE[s.day_of_week], blockedBy: blocker?.userName || '?' };
+        });
+      }
     }
 
     // 3. Find any free room
@@ -243,24 +370,55 @@ function generateAssignments() {
       }
     }
 
-    // Detect preference conflict: user wanted a specific room but didn't get it
+    // Record trace for this user
+    const wantedRoom = preferredId ? rooms.find(r => r.id === preferredId) : (currentRoomId ? rooms.find(r => r.id === currentRoomId) : null);
+    if (wantedRoom || chosenRoom) {
+      const traceEntry = { userId: user.id, userName: user.name, role: user.role };
+      if (wantedRoom) {
+        traceEntry.wanted = wantedRoom.name;
+        traceEntry.wantedType = preferredId ? 'preferred' : 'current';
+        if (chosenRoom && chosenRoom.id === (preferredId || currentRoomId)) {
+          traceEntry.result = 'got_wanted';
+        } else {
+          traceEntry.result = chosenRoom ? 'got_other' : 'unassigned';
+          traceEntry.gotRoom = chosenRoom?.name || null;
+          traceEntry.blockedReasons = preferredBlocked || currentBlocked || [];
+        }
+      } else {
+        traceEntry.wanted = null;
+        traceEntry.result = chosenRoom ? 'no_preference' : 'unassigned';
+        traceEntry.gotRoom = chosenRoom?.name || null;
+      }
+      assignmentTrace.push(traceEntry);
+    }
+
+    // Detect preference conflict: user wanted a specific room but didn't get it.
+    // Collect ALL blockers (not just first) so admin can choose whom to displace.
     const wantedRoomId = preferredId || currentRoomId;
     if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId)) {
-      const wantedRoom = rooms.find(r => r.id === wantedRoomId);
-      // Find who is occupying that room during user's slots
-      const blocker = slots.flatMap(s =>
-        (grid[wantedRoomId] || []).filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end))
-      )[0];
-      if (blocker) {
+      const wantedRoomObj = rooms.find(r => r.id === wantedRoomId);
+      const blockersMap = new Map();
+      slots.forEach(s => {
+        (grid[wantedRoomId] || [])
+          .filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end))
+          .forEach(b => {
+            const key = `${b.userId}-${b.day}`;
+            if (!blockersMap.has(key))
+              blockersMap.set(key, { userId: b.userId, userName: b.userName, day: b.day, start: b.start, end: b.end });
+          });
+      });
+      const allBlockers = [...blockersMap.values()];
+      if (allBlockers.length > 0) {
         preferenceConflicts.push({
           userId: user.id,
           userName: user.name,
           role: user.role,
           wantedRoomId,
-          wantedRoomName: wantedRoom?.name,
-          takenByUserId: blocker.userId,
-          takenByUserName: blocker.userName,
+          wantedRoomName: wantedRoomObj?.name,
+          takenByUserId: allBlockers[0].userId,
+          takenByUserName: allBlockers[0].userName,
           assignedRoomName: chosenRoom?.name || null,
+          blockers: allBlockers,
           slots: slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
         });
       }
@@ -291,8 +449,9 @@ function generateAssignments() {
     userStats[user.id] = { name: user.name, totalSlots: rawSlots.length, assignedSlots: assigned.length, assignedRooms, unassignedDays };
   }
 
-  // Only clear assignments for users whose schedules were processed
-  const toClear = [...usersWithSchedules];
+  // Only clear assignments for processable users (non-admin active users with schedules).
+  // Admin and users without schedules keep their existing assignments unchanged.
+  const toClear = [...processableUserIds];
   db.get('room_assignments')
     .remove(a => a.assignment_type === 'permanent' && toClear.includes(a.user_id))
     .write();
@@ -306,6 +465,7 @@ function generateAssignments() {
     assigned: newAssignments.length,
     conflicts,
     preferenceConflicts,
+    assignmentTrace,
     suggestions,
     userStats,
     message: conflicts.length
