@@ -290,7 +290,10 @@ function generateAssignments() {
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4 };
   const sorted = [...users].sort((a, b) => (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9));
-  const regularRooms = rooms.filter(r => r.room_type === 'regular');
+  // Include both regular and committee rooms — committee rooms are used as
+  // regular offices on non-meeting days; Wednesday meeting times are protected
+  // by effectiveSlots() which removes those hours from employee schedules.
+  const regularRooms = rooms.filter(r => r.room_type === 'regular' || r.room_type === 'committee');
 
   // Helper: get preferredId for a user's rawSlots
   const getPreferredId = rawSlots => {
