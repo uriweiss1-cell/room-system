@@ -389,6 +389,10 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
     .value()
     .filter(a => !absentUsersForDate.includes(a.user_id));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === date && x.status === 'assigned' && x.assigned_room_id).value();
+  // Guest one-time assignments stored directly in room_assignments
+  const guestBusy = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && a.specific_date === date)
+    .value();
 
   const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
@@ -402,6 +406,9 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
         const u = db.get('users').find({ id: b.user_id }).value();
         return { name: u?.name, start: b.start_time, end: b.end_time };
       }),
+      ...guestBusy.filter(b => b.room_id === room.id && overlap(start_time, end_time, b.start_time, b.end_time)).map(b => ({
+        name: b.guest_name || 'אורח', start: b.start_time, end: b.end_time,
+      })),
     ];
     // Compute free windows within the requested time range
     const startMin = toMin(start_time);
