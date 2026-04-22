@@ -20,6 +20,7 @@ export default function RoomQuery() {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null); // { id, name }
   const [roomSearch, setRoomSearch] = useState('');
+  const [nameSearch, setNameSearch] = useState('');
 
   useEffect(() => { api.get('/users/list/active').then(r => setEmployees(r.data)); }, []);
 
@@ -65,12 +66,20 @@ export default function RoomQuery() {
             <input type="time" className="input w-28" value={time} onChange={e => setTime(e.target.value)} />
           </div>
           {tab === 'room' && (
-            <div>
-              <label className="label">סינון לפי חדר (אופציונלי)</label>
-              <input className="input w-36" placeholder="חדר 22..." value={roomSearch}
-                onChange={e => setRoomSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && queryRoom()} />
-            </div>
+            <>
+              <div>
+                <label className="label">סינון לפי חדר (אופציונלי)</label>
+                <input className="input w-36" placeholder="חדר 22..." value={roomSearch}
+                  onChange={e => setRoomSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && queryRoom()} />
+              </div>
+              <div>
+                <label className="label">סינון לפי שם (אופציונלי)</label>
+                <input className="input w-36" placeholder="שם עובד..." value={nameSearch}
+                  onChange={e => setNameSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && queryRoom()} />
+              </div>
+            </>
           )}
           <div className="flex items-end">
             <button className="btn btn-primary" onClick={tab === 'room' ? queryRoom : queryEmployee}
@@ -112,33 +121,45 @@ export default function RoomQuery() {
       {result && tab === 'room' && (
         <div className="card">
           <h3 className="font-semibold mb-3">
-            {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'} — {date} {time}
+            {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'}
+            {nameSearch ? ` — "${nameSearch}"` : ''}
+            {' '}— {date} {time}
           </h3>
-          {(result.regular.length + result.oneTime.length) === 0 ? (
-            <p className="text-gray-400 text-sm">לא נמצאו עובדים בשעה זו{roomSearch ? ` בחדר ${roomSearch}` : ''}</p>
-          ) : (
-            <table className="tbl">
-              <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>
-              <tbody>
-                {result.regular.map(a => (
-                  <tr key={`r-${a.id}`}>
-                    <td className="font-medium">{a.room_name}</td>
-                    <td>{a.user_name}</td>
-                    <td>{a.start_time}–{a.end_time}</td>
-                    <td><span className="badge badge-blue">קבוע</span></td>
-                  </tr>
-                ))}
-                {result.oneTime.map(a => (
-                  <tr key={`ot-${a.id}`}>
-                    <td className="font-medium">{a.room_name}</td>
-                    <td>{a.user_name}</td>
-                    <td>{a.start_time}–{a.end_time}</td>
-                    <td><span className="badge badge-yellow">חד-פעמי</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {(() => {
+            const filterName = nameSearch.trim();
+            const regular = filterName ? result.regular.filter(a => a.user_name?.includes(filterName)) : result.regular;
+            const oneTime = filterName ? result.oneTime.filter(a => a.user_name?.includes(filterName)) : result.oneTime;
+            if (regular.length + oneTime.length === 0) return (
+              <p className="text-gray-400 text-sm">
+                לא נמצאו עובדים בשעה זו
+                {roomSearch ? ` בחדר ${roomSearch}` : ''}
+                {filterName ? ` בשם "${filterName}"` : ''}
+              </p>
+            );
+            return (
+              <table className="tbl">
+                <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>
+                <tbody>
+                  {regular.map(a => (
+                    <tr key={`r-${a.id}`}>
+                      <td className="font-medium">{a.room_name}</td>
+                      <td>{a.user_name}</td>
+                      <td>{a.start_time}–{a.end_time}</td>
+                      <td><span className="badge badge-blue">קבוע</span></td>
+                    </tr>
+                  ))}
+                  {oneTime.map(a => (
+                    <tr key={`ot-${a.id}`}>
+                      <td className="font-medium">{a.room_name}</td>
+                      <td>{a.user_name}</td>
+                      <td>{a.start_time}–{a.end_time}</td>
+                      <td><span className="badge badge-yellow">חד-פעמי</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       )}
 
