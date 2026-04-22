@@ -427,10 +427,17 @@ function generateAssignments() {
     if (chosenRoom) {
       slots.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
     } else {
+      // No single room fits all days — assign per slot, preferring preferred→current→any
       const unassigned = [];
       for (const s of slots) {
-        const room = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
-        if (room) reserve(room.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+        let slotRoom = null;
+        if (preferredId && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
+          slotRoom = regularRooms.find(r => r.id === preferredId) || null;
+        if (!slotRoom && currentRoomId && isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))
+          slotRoom = regularRooms.find(r => r.id === currentRoomId) || null;
+        if (!slotRoom)
+          slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+        if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
         else unassigned.push(s);
       }
       if (unassigned.length) conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: unassigned });
