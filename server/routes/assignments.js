@@ -298,6 +298,23 @@ function generateAssignments() {
     return val ? +val : null;
   };
 
+  // Build index of which rooms are explicitly preferred by someone —
+  // "current room" continuity must yield to another user's explicit preference.
+  const roomPreferredBy = new Map(); // roomId -> Set of userIds who prefer it
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    const pid = getPreferredId(rawSlots);
+    if (pid) {
+      if (!roomPreferredBy.has(pid)) roomPreferredBy.set(pid, new Set());
+      roomPreferredBy.get(pid).add(user.id);
+    }
+  }
+  // Returns true if using roomId as "current room" would block someone else's explicit preference
+  const blocksPreference = (roomId, userId) => {
+    const preferrers = roomPreferredBy.get(roomId);
+    return preferrers && [...preferrers].some(uid => uid !== userId);
+  };
+
   // ─── Pass 1: Pre-reservation ────────────────────────────────────────────────
   // Users whose preferred room matches their current room get it guaranteed,
   // before role-priority even applies. This implements: "if you're already in
@@ -348,9 +365,9 @@ function generateAssignments() {
       }
     }
 
-    // 2. Try current room (maintain continuity)
+    // 2. Try current room (maintain continuity) — but not if someone else explicitly prefers it
     let currentBlocked = null;
-    if (!chosenRoom && currentRoomId) {
+    if (!chosenRoom && currentRoomId && !blocksPreference(currentRoomId, user.id)) {
       const cr = regularRooms.find(r => r.id === currentRoomId);
       if (cr && slots.every(s => isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))) {
         chosenRoom = cr;
@@ -433,7 +450,7 @@ function generateAssignments() {
         let slotRoom = null;
         if (preferredId && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === preferredId) || null;
-        if (!slotRoom && currentRoomId && isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))
+        if (!slotRoom && currentRoomId && !blocksPreference(currentRoomId, user.id) && isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === currentRoomId) || null;
         if (!slotRoom)
           slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
