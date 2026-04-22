@@ -104,19 +104,38 @@ router.get('/query', (req, res) => {
 });
 
 router.get('/locate', (req, res) => {
-  const { userId, date, time } = req.query;
+  const { userId, guestName, date, time } = req.query;
   if (!date || !time) return res.status(400).json({ error: 'נדרשים date ו-time' });
-  const uid = userId ? +userId : req.user.id;
   const dayOfWeek = new Date(date).getDay();
 
+  // Guest lookup — search room_assignments by guest_name
+  if (guestName) {
+    const guestSlot = db.get('room_assignments')
+      .filter(a => a.user_id === null && a.guest_name === guestName && a.specific_date === date && a.assignment_type === 'one_time')
+      .filter(a => !a.start_time || (toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time)))
+      .first().value();
+    if (guestSlot) {
+      const room = db.get('rooms').find({ id: guestSlot.room_id }).value();
+      return res.json({ room: room?.name });
+    }
+    return res.json({ room: null, message: 'לא נמצא חדר מוקצה בשעה זו' });
+  }
+
+  const uid = userId ? +userId : req.user.id;
+
+  // One-time room request (assigned)
   const oneTime = db.get('one_time_requests')
     .filter(r => r.user_id === uid && r.specific_date === date && r.status === 'assigned')
     .filter(r => !r.start_time || (toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time)))
-    .first().value();
+    .value();
 
-  if (oneTime) {
-    if (oneTime.request_type === 'absence') return res.json({ room: null, message: 'העובד לא נמצא' });
-    const room = db.get('rooms').find({ id: oneTime.assigned_room_id }).value();
+  // If marked absent, return not found even if there is also a room booking
+  if (oneTime.some(r => r.request_type === 'absence')) {
+    return res.json({ room: null, message: 'העובד לא נמצא' });
+  }
+  const roomRequest = oneTime.find(r => r.assigned_room_id);
+  if (roomRequest) {
+    const room = db.get('rooms').find({ id: roomRequest.assigned_room_id }).value();
     return res.json({ room: room?.name });
   }
 

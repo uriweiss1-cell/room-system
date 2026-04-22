@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
-import { DAYS, ROLES, ROLE_COLORS } from '../../constants';
+import { DAYS } from '../../constants';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -17,12 +17,15 @@ export default function RoomQuery() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [guests, setGuests] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null); // { id, name }
+  const [selectedUser, setSelectedUser] = useState(null); // { id, name, isGuest }
   const [roomSearch, setRoomSearch] = useState('');
-  const [nameSearch, setNameSearch] = useState('');
 
-  useEffect(() => { api.get('/users/list/active').then(r => setEmployees(r.data)); }, []);
+  useEffect(() => {
+    api.get('/users/list/active').then(r => setEmployees(r.data));
+    api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
+  }, []);
 
   const queryRoom = async () => {
     setLoading(true); setResult(null);
@@ -38,13 +41,25 @@ export default function RoomQuery() {
     if (!selectedUser) return;
     setLoading(true); setResult(null);
     try {
-      const r = await api.get('/assignments/locate', { params: { date, time, userId: selectedUser.id } });
+      const params = { date, time };
+      if (selectedUser.isGuest) params.guestName = selectedUser.name;
+      else params.userId = selectedUser.id;
+      const r = await api.get('/assignments/locate', { params });
       setResult(r.data);
     } finally { setLoading(false); }
   };
 
   const dayName = date ? DAYS[new Date(date).getDay()] : '';
-  const filteredEmployees = employees.filter(u => u.name.includes(employeeSearch));
+
+  // Combine employees + unique guest names for autocomplete
+  const guestNames = [...new Set(guests.map(g => g.user_name).filter(Boolean))];
+  const filteredEmployees = employeeSearch
+    ? employees.filter(u => u.name.includes(employeeSearch))
+    : [];
+  const filteredGuests = employeeSearch
+    ? guestNames.filter(n => n.includes(employeeSearch))
+    : [];
+  const hasDropdown = employeeSearch && !selectedUser && (filteredEmployees.length > 0 || filteredGuests.length > 0);
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -66,20 +81,12 @@ export default function RoomQuery() {
             <input type="time" className="input w-28" value={time} onChange={e => setTime(e.target.value)} />
           </div>
           {tab === 'room' && (
-            <>
-              <div>
-                <label className="label">סינון לפי חדר (אופציונלי)</label>
-                <input className="input w-36" placeholder="חדר 22..." value={roomSearch}
-                  onChange={e => setRoomSearch(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && queryRoom()} />
-              </div>
-              <div>
-                <label className="label">סינון לפי שם (אופציונלי)</label>
-                <input className="input w-36" placeholder="שם עובד..." value={nameSearch}
-                  onChange={e => setNameSearch(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && queryRoom()} />
-              </div>
-            </>
+            <div>
+              <label className="label">סינון לפי חדר (אופציונלי)</label>
+              <input className="input w-36" placeholder="חדר 22..." value={roomSearch}
+                onChange={e => setRoomSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && queryRoom()} />
+            </div>
           )}
           <div className="flex items-end">
             <button className="btn btn-primary" onClick={tab === 'room' ? queryRoom : queryEmployee}
@@ -91,24 +98,37 @@ export default function RoomQuery() {
 
         {tab === 'employee' && (
           <div className="mb-4">
-            <label className="label">חפש עובד</label>
-            <input className="input w-full mb-2" placeholder="שם עובד..." value={employeeSearch}
+            <label className="label">חפש עובד או אורח</label>
+            <input className="input w-full mb-2" placeholder="שם עובד או אורח..." value={employeeSearch}
               onChange={e => { setEmployeeSearch(e.target.value); setSelectedUser(null); setResult(null); }} />
-            {employeeSearch && !selectedUser && (
+            {hasDropdown && (
               <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-                {filteredEmployees.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-gray-400">לא נמצאו עובדים</div>
-                ) : filteredEmployees.map(u => (
-                  <button key={u.id} className="w-full text-right px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0"
-                    onClick={() => { setSelectedUser(u); setEmployeeSearch(u.name); }}>
-                    {u.name}
-                  </button>
-                ))}
+                {filteredEmployees.length === 0 && filteredGuests.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-400">לא נמצאו תוצאות</div>
+                ) : (
+                  <>
+                    {filteredEmployees.map(u => (
+                      <button key={u.id} className="w-full text-right px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                        onClick={() => { setSelectedUser({ id: u.id, name: u.name, isGuest: false }); setEmployeeSearch(u.name); }}>
+                        {u.name}
+                      </button>
+                    ))}
+                    {filteredGuests.map(name => (
+                      <button key={`g-${name}`} className="w-full text-right px-3 py-2 text-sm hover:bg-teal-50 border-b border-gray-100 last:border-0"
+                        onClick={() => { setSelectedUser({ id: null, name, isGuest: true }); setEmployeeSearch(name); }}>
+                        👤 {name} <span className="text-xs text-teal-600">(אורח)</span>
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
             {selectedUser && (
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-3 py-1.5 text-sm">
-                <span className="font-medium text-blue-800">{selectedUser.name}</span>
+              <div className={`flex items-center gap-2 border rounded px-3 py-1.5 text-sm ${selectedUser.isGuest ? 'bg-teal-50 border-teal-200' : 'bg-blue-50 border-blue-200'}`}>
+                <span className={`font-medium ${selectedUser.isGuest ? 'text-teal-800' : 'text-blue-800'}`}>
+                  {selectedUser.isGuest ? '👤 ' : ''}{selectedUser.name}
+                  {selectedUser.isGuest && <span className="text-xs font-normal text-teal-600 mr-1">(אורח)</span>}
+                </span>
                 <button className="text-gray-400 hover:text-gray-600 text-xs" onClick={() => { setSelectedUser(null); setEmployeeSearch(''); setResult(null); }}>✕</button>
               </div>
             )}
@@ -121,45 +141,33 @@ export default function RoomQuery() {
       {result && tab === 'room' && (
         <div className="card">
           <h3 className="font-semibold mb-3">
-            {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'}
-            {nameSearch ? ` — "${nameSearch}"` : ''}
-            {' '}— {date} {time}
+            {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'} — {date} {time}
           </h3>
-          {(() => {
-            const filterName = nameSearch.trim();
-            const regular = filterName ? result.regular.filter(a => a.user_name?.includes(filterName)) : result.regular;
-            const oneTime = filterName ? result.oneTime.filter(a => a.user_name?.includes(filterName)) : result.oneTime;
-            if (regular.length + oneTime.length === 0) return (
-              <p className="text-gray-400 text-sm">
-                לא נמצאו עובדים בשעה זו
-                {roomSearch ? ` בחדר ${roomSearch}` : ''}
-                {filterName ? ` בשם "${filterName}"` : ''}
-              </p>
-            );
-            return (
-              <table className="tbl">
-                <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>
-                <tbody>
-                  {regular.map(a => (
-                    <tr key={`r-${a.id}`}>
-                      <td className="font-medium">{a.room_name}</td>
-                      <td>{a.user_name}</td>
-                      <td>{a.start_time}–{a.end_time}</td>
-                      <td><span className="badge badge-blue">קבוע</span></td>
-                    </tr>
-                  ))}
-                  {oneTime.map(a => (
-                    <tr key={`ot-${a.id}`}>
-                      <td className="font-medium">{a.room_name}</td>
-                      <td>{a.user_name}</td>
-                      <td>{a.start_time}–{a.end_time}</td>
-                      <td><span className="badge badge-yellow">חד-פעמי</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            );
-          })()}
+          {(result.regular.length + result.oneTime.length) === 0 ? (
+            <p className="text-gray-400 text-sm">לא נמצאו עובדים בשעה זו{roomSearch ? ` בחדר ${roomSearch}` : ''}</p>
+          ) : (
+            <table className="tbl">
+              <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>
+              <tbody>
+                {result.regular.map(a => (
+                  <tr key={`r-${a.id}`}>
+                    <td className="font-medium">{a.room_name}</td>
+                    <td>{a.user_name}</td>
+                    <td>{a.start_time}–{a.end_time}</td>
+                    <td><span className="badge badge-blue">קבוע</span></td>
+                  </tr>
+                ))}
+                {result.oneTime.map(a => (
+                  <tr key={`ot-${a.id}`}>
+                    <td className="font-medium">{a.room_name}</td>
+                    <td>{a.user_name}</td>
+                    <td>{a.start_time}–{a.end_time}</td>
+                    <td><span className="badge badge-yellow">חד-פעמי</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
