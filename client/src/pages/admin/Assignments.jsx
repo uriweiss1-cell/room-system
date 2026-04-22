@@ -18,7 +18,10 @@ export default function AdminAssignments() {
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
   const [msg, setMsg] = useState('');
   const [showGuest, setShowGuest] = useState(false);
-  const [guestForm, setGuestForm] = useState({ guest_name: '', room_id: '', specific_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '17:00' });
+  const [guestForm, setGuestForm] = useState({ guest_name: '', specific_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '17:00' });
+  const [guestStep, setGuestStep] = useState('form'); // 'form' | 'pick-room'
+  const [guestAvailableRooms, setGuestAvailableRooms] = useState([]);
+  const [guestSearching, setGuestSearching] = useState(false);
   const [guests, setGuests] = useState([]);
   const [resolving, setResolving] = useState(null); // `${pcIdx}-notify` or `${pcIdx}-${blockerIdx}`
   const [notifyMsgs, setNotifyMsgs] = useState({}); // pcIdx -> string
@@ -189,11 +192,25 @@ export default function AdminAssignments() {
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
-  const addGuest = async () => {
+  const searchGuestRooms = async () => {
+    if (!guestForm.guest_name.trim()) { setMsg('יש להזין שם אורח'); return; }
+    setGuestSearching(true);
     try {
-      const r = await api.post('/assignments/guest', guestForm);
+      const r = await api.get('/requests/available-rooms', {
+        params: { date: guestForm.specific_date, start_time: guestForm.start_time, end_time: guestForm.end_time },
+      });
+      setGuestAvailableRooms(r.data.filter(room => room.available));
+      setGuestStep('pick-room');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+    finally { setGuestSearching(false); }
+  };
+
+  const addGuest = async (roomId) => {
+    try {
+      const r = await api.post('/assignments/guest', { ...guestForm, room_id: roomId });
       setMsg(r.data.message);
       setShowGuest(false);
+      setGuestStep('form');
       setGuestForm(p => ({ ...p, guest_name: '' }));
       loadGuests();
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
@@ -221,7 +238,7 @@ export default function AdminAssignments() {
               {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
             </button>
             <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
-            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
+            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
             <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
             <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
           </div>
@@ -261,37 +278,58 @@ export default function AdminAssignments() {
         {showGuest && (
           <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 mb-4">
             <h3 className="font-semibold mb-3 text-teal-900">שיבוץ אורח חד-פעמי</h3>
-            <div className="flex flex-wrap gap-3 items-end">
-              <div>
-                <label className="label">שם האורח *</label>
-                <input className="input w-44" placeholder="שם מלא..." value={guestForm.guest_name}
-                  onChange={e => setGuestForm(p => ({ ...p, guest_name: e.target.value }))} />
+
+            {guestStep === 'form' && (
+              <div className="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="label">שם האורח *</label>
+                  <input className="input w-44" placeholder="שם מלא..." value={guestForm.guest_name}
+                    onChange={e => setGuestForm(p => ({ ...p, guest_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">תאריך *</label>
+                  <input type="date" className="input w-36" value={guestForm.specific_date}
+                    onChange={e => setGuestForm(p => ({ ...p, specific_date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">משעה</label>
+                  <input type="time" className="input w-28" value={guestForm.start_time}
+                    onChange={e => setGuestForm(p => ({ ...p, start_time: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">עד שעה</label>
+                  <input type="time" className="input w-28" value={guestForm.end_time}
+                    onChange={e => setGuestForm(p => ({ ...p, end_time: e.target.value }))} />
+                </div>
+                <button className="btn btn-primary" onClick={searchGuestRooms} disabled={guestSearching}>
+                  {guestSearching ? 'מחפש...' : 'חפש חדרים פנויים'}
+                </button>
+                <button className="btn btn-ghost" onClick={() => { setShowGuest(false); setGuestStep('form'); }}>ביטול</button>
               </div>
+            )}
+
+            {guestStep === 'pick-room' && (
               <div>
-                <label className="label">חדר *</label>
-                <select className="select w-32" value={guestForm.room_id} onChange={e => setGuestForm(p => ({ ...p, room_id: e.target.value }))}>
-                  <option value="">בחר...</option>
-                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
+                <p className="text-sm text-teal-800 mb-3 font-medium">
+                  בחר חדר לאורח <strong>{guestForm.guest_name}</strong> — {guestForm.specific_date} בין {guestForm.start_time}–{guestForm.end_time}
+                </p>
+                {guestAvailableRooms.length === 0 ? (
+                  <p className="text-red-600 text-sm mb-3">אין חדרים פנויים בשעות אלו.</p>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+                    {guestAvailableRooms.map(r => (
+                      <button key={r.id}
+                        className="border-2 border-teal-300 rounded-xl p-3 text-center hover:border-teal-600 hover:bg-teal-100 transition-colors"
+                        onClick={() => addGuest(r.id)}>
+                        <div className="text-base font-bold text-teal-800">{r.name}</div>
+                        {r.notes && <div className="text-xs text-gray-500 mt-0.5">{r.notes}</div>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button className="btn btn-ghost text-sm" onClick={() => setGuestStep('form')}>← חזור</button>
               </div>
-              <div>
-                <label className="label">תאריך *</label>
-                <input type="date" className="input w-36" value={guestForm.specific_date}
-                  onChange={e => setGuestForm(p => ({ ...p, specific_date: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">משעה</label>
-                <input type="time" className="input w-28" value={guestForm.start_time}
-                  onChange={e => setGuestForm(p => ({ ...p, start_time: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">עד שעה</label>
-                <input type="time" className="input w-28" value={guestForm.end_time}
-                  onChange={e => setGuestForm(p => ({ ...p, end_time: e.target.value }))} />
-              </div>
-              <button className="btn btn-primary" onClick={addGuest}>שבץ</button>
-              <button className="btn btn-ghost" onClick={() => setShowGuest(false)}>ביטול</button>
-            </div>
+            )}
 
             {guests.length > 0 && (
               <div className="mt-4">

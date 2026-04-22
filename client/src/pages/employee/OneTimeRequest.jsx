@@ -16,7 +16,6 @@ export default function OneTimeRequest() {
   const [notes, setNotes] = useState('');
   const [step, setStep] = useState('form'); // form | pick-room | done
   const [availableRooms, setAvailableRooms] = useState([]);
-  const [requestId, setRequestId] = useState(null);
   const [msg, setMsg] = useState('');
   const [myRequests, setMyRequests] = useState([]);
   const [myAssignments, setMyAssignments] = useState([]);
@@ -42,7 +41,6 @@ export default function OneTimeRequest() {
       if (isAdmin && impersonateId) body.impersonate_user_id = impersonateId;
       const r = await api.post('/requests', body);
       if (type === 'room_request' && r.data.availableRooms) {
-        setRequestId(r.data.requestId);
         setAvailableRooms(r.data.availableRooms);
         setStep('pick-room');
       } else {
@@ -57,7 +55,14 @@ export default function OneTimeRequest() {
   const confirmRoom = async (roomId) => {
     setLoading(true);
     try {
-      const r = await api.post(`/requests/${requestId}/confirm`, { room_id: roomId });
+      const r = await api.post('/requests/book-room', {
+        specific_date: date,
+        start_time: startTime,
+        end_time: endTime,
+        notes,
+        room_id: roomId,
+        ...(isAdmin && impersonateId ? { impersonate_user_id: impersonateId } : {}),
+      });
       setMsg(r.data.message);
       setStep('done');
       loadRequests();

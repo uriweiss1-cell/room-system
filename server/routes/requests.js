@@ -70,23 +70,28 @@ router.post('/', (req, res) => {
     return res.json({ message: `ההיעדרות נרשמה ל-${dates.length} ימים (${specific_date} עד ${date_to})` });
   }
 
-  const r = {
-    id: nextId('one_time_requests'),
-    user_id: userId,
-    request_type,
-    specific_date,
-    day_of_week: day_of_week ?? null,
-    start_time: start_time || null,
-    end_time: end_time || null,
-    status: 'pending',
-    assigned_room_id: null,
-    notes: notes || null,
-    admin_response: null,
-    reduce_assignment_id: reduce_assignment_id ? +reduce_assignment_id : null,
-    target_room_type: target_room_type || null,
-    created_at: new Date().toISOString(),
-  };
-  db.get('one_time_requests').push(r).write();
+  // room_request is handled at the end of this route (no record created upfront)
+  // For all other types, create the record now
+  const r = request_type !== 'room_request' ? (() => {
+    const rec = {
+      id: nextId('one_time_requests'),
+      user_id: userId,
+      request_type,
+      specific_date,
+      day_of_week: day_of_week ?? null,
+      start_time: start_time || null,
+      end_time: end_time || null,
+      status: 'pending',
+      assigned_room_id: null,
+      notes: notes || null,
+      admin_response: null,
+      reduce_assignment_id: reduce_assignment_id ? +reduce_assignment_id : null,
+      target_room_type: target_room_type || null,
+      created_at: new Date().toISOString(),
+    };
+    db.get('one_time_requests').push(rec).write();
+    return rec;
+  })() : null;
 
   if (request_type === 'absence') {
     db.get('one_time_requests').find({ id: r.id }).assign({ status: 'assigned' }).write();
@@ -119,7 +124,9 @@ router.post('/', (req, res) => {
     return res.json({ requestId: r.id, message: `${roomLabel} שובץ/ה לתאריך ${specific_date} בין ${start_time}–${end_time}` });
   }
 
-  // room_request — find available rooms
+  // room_request — find available rooms WITHOUT creating a DB record yet.
+  // A record is only created when the user actually confirms a room (POST /requests/book-room),
+  // or immediately here when NO rooms are available (so admin can see the pending request).
   const dayOfWeek = new Date(specific_date).getDay();
   // Absent users' permanent rooms are free
   const absentUsers = db.get('one_time_requests')
@@ -137,7 +144,6 @@ router.post('/', (req, res) => {
     ...otBusy.filter(b => b.user_id === userId && b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
   ];
   if (userAlreadyHasRoom.length > 0) {
-    db.get('one_time_requests').remove({ id: r.id }).write();
     const details = userAlreadyHasRoom.map(b => {
       const roomId = b.room_id || b.assigned_room_id;
       const room = db.get('rooms').find({ id: roomId }).value();
@@ -154,7 +160,79 @@ router.post('/', (req, res) => {
     return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
   });
 
-  res.json({ requestId: r.id, availableRooms: available });
+  if (available.length === 0) {
+    // No rooms available — create a pending record so the admin can see and handle it
+    const pending = {
+      id: nextId('one_time_requests'),
+      user_id: userId,
+      request_type: 'room_request',
+      specific_date,
+      day_of_week: null,
+      start_time: start_time || null,
+      end_time: end_time || null,
+      status: 'pending',
+      assigned_room_id: null,
+      notes: notes || null,
+      admin_response: null,
+      reduce_assignment_id: null,
+      target_room_type: null,
+      created_at: new Date().toISOString(),
+    };
+    db.get('one_time_requests').push(pending).write();
+  }
+
+  res.json({ availableRooms: available });
+});
+
+// Called when the user picks a room from the available-rooms list.
+// Creates the record AND assigns the room in one atomic step.
+router.post('/book-room', (req, res) => {
+  const { specific_date, start_time, end_time, notes, room_id, impersonate_user_id } = req.body;
+  if (!specific_date || !start_time || !end_time || !room_id) {
+    return res.status(400).json({ error: 'חסרים פרמטרים' });
+  }
+  const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+
+  // Verify the room is still free (race-condition guard)
+  const dayOfWeek = new Date(specific_date).getDay();
+  const absentUsers = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
+    .map('user_id').value();
+  const permBusy = db.get('room_assignments')
+    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek, room_id: +room_id })
+    .value()
+    .filter(a => !absentUsers.includes(a.user_id));
+  const otBusy = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === +room_id)
+    .value();
+  const isRoomBusy = [
+    ...permBusy.filter(b => overlap(start_time, end_time, b.start_time, b.end_time)),
+    ...otBusy.filter(b => b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
+  ].length > 0;
+  if (isRoomBusy) {
+    return res.status(409).json({ error: 'החדר שנבחר כבר תפוס בינתיים — חפש שוב' });
+  }
+
+  const rec = {
+    id: nextId('one_time_requests'),
+    user_id: userId,
+    request_type: 'room_request',
+    specific_date,
+    day_of_week: null,
+    start_time: start_time || null,
+    end_time: end_time || null,
+    status: 'assigned',
+    assigned_room_id: +room_id,
+    notes: notes || null,
+    admin_response: null,
+    reduce_assignment_id: null,
+    target_room_type: null,
+    created_at: new Date().toISOString(),
+  };
+  db.get('one_time_requests').push(rec).write();
+
+  const room = db.get('rooms').find({ id: +room_id }).value();
+  res.json({ message: `הוקצה לך ${room?.name ?? 'חדר'}` });
 });
 
 router.post('/:id/confirm', (req, res) => {
