@@ -202,35 +202,24 @@ router.post('/', (req, res) => {
       imported++;
     });
 
-    // 4. Populate regular_schedules from imported assignments
+    // 4. Populate regular_schedules from imported assignments.
+    //    Creates work-day/hour entries only — preferred room is intentionally left
+    //    blank so each employee (or admin) can set it explicitly later.
     const importedUserIds = new Set(Object.values(nameToId));
     db.get('regular_schedules').remove(s => importedUserIds.has(s.user_id)).write();
 
-    const timeToMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-    const userSlots = {};    // userId -> Map<slotKey, {day,start,end}>
-    const userRoomHours = {}; // userId -> { roomId: totalMinutes }
+    const userSlots = {}; // userId -> Map<slotKey, {day,start,end}>
 
     ASSIGNMENTS.forEach(([roomNum, day, start, end, person]) => {
       const userId = nameToId[person];
-      const roomId = roomNumToId[roomNum];
-      if (!userId || !roomId) return;
-
+      if (!userId) return;
       if (!userSlots[userId]) userSlots[userId] = new Map();
-      if (!userRoomHours[userId]) userRoomHours[userId] = {};
-
       const slotKey = `${day}-${start}-${end}`;
       if (!userSlots[userId].has(slotKey)) userSlots[userId].set(slotKey, { day, start, end });
-
-      const dur = timeToMins(end) - timeToMins(start);
-      userRoomHours[userId][roomId] = (userRoomHours[userId][roomId] || 0) + dur;
     });
 
     let schedulesCreated = 0;
     Object.entries(userSlots).forEach(([userId, slotsMap]) => {
-      const roomHours = userRoomHours[userId] || {};
-      // Preferred room = the room this employee spends the most hours in per week
-      const preferredRoomId = Object.entries(roomHours).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-
       slotsMap.forEach(({ day, start, end }) => {
         db.get('regular_schedules').push({
           id: nextId('regular_schedules'),
@@ -238,7 +227,7 @@ router.post('/', (req, res) => {
           day_of_week: day,
           start_time: start,
           end_time: end,
-          preferred_room_id: preferredRoomId ? +preferredRoomId : null,
+          preferred_room_id: null, // employee sets their own preference later
         }).write();
         schedulesCreated++;
       });

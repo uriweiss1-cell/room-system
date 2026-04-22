@@ -20,6 +20,8 @@ export default function AdminAssignments() {
   const [resolving, setResolving] = useState(null); // `${pcIdx}-notify` or `${pcIdx}-${blockerIdx}`
   const [notifyMsgs, setNotifyMsgs] = useState({}); // pcIdx -> string
   const [schedules, setSchedules] = useState([]);
+  // Track room+day+time slots that were applied — used to filter out suggestions that would now conflict
+  const [occupiedSlots, setOccupiedSlots] = useState([]);
 
   useEffect(() => { load(); }, []);
   const load = async () => {
@@ -48,7 +50,7 @@ export default function AdminAssignments() {
 
   const generate = async () => {
     if (!confirm('פעולה זו תמחק את כל השיבוצים הקבועים הקיימים ותיצור חדשים. להמשיך?')) return;
-    setGenerating(true); setGenResult(null);
+    setGenerating(true); setGenResult(null); setOccupiedSlots([]);
     try {
       const r = await api.post('/assignments/generate');
       setGenResult(r.data);
@@ -58,11 +60,65 @@ export default function AdminAssignments() {
     finally { setGenerating(false); }
   };
 
-  const applySuggestion = async (action, tipKey) => {
+  const applySuggestion = async (action, tipKey, conflictUserName, slotDay, slotTime) => {
     setApplying(tipKey);
     try {
       const r = await api.post('/assignments/apply-suggestion', { action });
-      setGenResult(prev => ({ ...prev, applyMsg: r.data.message, applyError: null }));
+
+      // Determine which room+day+time slots are now occupied by the applied action
+      const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      const ovlp = (s1, e1, s2, e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s2);
+
+      let newOccupied = [];
+      if (action.type === 'split' || action.type === 'partial') {
+        newOccupied = (action.parts || []).map(p => ({ roomId: p.roomId, day: action.day, start: p.start, end: p.end }));
+      } else if (action.type === 'shift') {
+        newOccupied = [{ roomId: action.roomId, day: action.day, start: action.start, end: action.end }];
+      } else if (action.type === 'displace') {
+        newOccupied = [{ roomId: action.fromRoomId, day: action.day, start: action.conflictStart, end: action.conflictEnd }];
+      }
+
+      // All occupied slots including previously applied ones (read from closure — correct snapshot)
+      const allOccupied = [...occupiedSlots, ...newOccupied];
+
+      // Returns true if a tip's proposed assignment would conflict with any occupied slot
+      const tipUsesOccupied = tip => {
+        if (!tip.action) return false;
+        const a = tip.action;
+        if (a.type === 'split' || a.type === 'partial') {
+          return (a.parts || []).some(p =>
+            allOccupied.some(o => o.roomId === p.roomId && o.day === a.day && ovlp(p.start, p.end, o.start, o.end)));
+        }
+        if (a.type === 'shift') {
+          return allOccupied.some(o => o.roomId === a.roomId && o.day === a.day && ovlp(a.start, a.end, o.start, o.end));
+        }
+        if (a.type === 'displace') {
+          return allOccupied.some(o => o.roomId === a.fromRoomId && o.day === a.day && ovlp(a.conflictStart, a.conflictEnd, o.start, o.end));
+        }
+        return false;
+      };
+
+      // Update suggestions: remove the resolved slot and filter tips that use now-occupied rooms
+      setGenResult(prev => {
+        if (!prev) return prev;
+        const newSuggestions = (prev.suggestions ?? []).map(sg => {
+          const isResolved = sg.userName === conflictUserName;
+          return {
+            ...sg,
+            slots: sg.slots
+              // Remove the specific slot that was just resolved
+              .filter(slot => !(isResolved && slot.day === slotDay && slot.time === slotTime))
+              // Remove tips that would now conflict with occupied rooms
+              .map(slot => ({ ...slot, tips: slot.tips.filter(tip => !tipUsesOccupied(tip)) }))
+              // Remove slots with no remaining actionable tips
+              .filter(slot => slot.tips.length > 0),
+          };
+        }).filter(sg => sg.slots.length > 0); // Remove users with all conflicts resolved
+
+        return { ...prev, suggestions: newSuggestions, applyMsg: r.data.message, applyError: null };
+      });
+
+      setOccupiedSlots(allOccupied);
       load();
     } catch (e) {
       setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message), applyMsg: null }));
@@ -218,7 +274,7 @@ export default function AdminAssignments() {
                                     <button
                                       className="shrink-0 bg-white border border-gray-300 hover:bg-green-50 hover:border-green-400 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
                                       disabled={applying === `${i}-${j}-${k}`}
-                                      onClick={() => applySuggestion(tip.action, `${i}-${j}-${k}`)}>
+                                      onClick={() => applySuggestion(tip.action, `${i}-${j}-${k}`, s.userName, slot.day, slot.time)}>
                                       {applying === `${i}-${j}-${k}` ? '...' : 'אשר ↵'}
                                     </button>
                                   )}
