@@ -97,10 +97,10 @@ router.post('/', (req, res) => {
     return res.json({ requestId: r.id, message: 'הבקשה הועברה למנהל לאישור' });
   }
 
-  if (request_type === 'library_request' || request_type === 'meeting_request') {
+  if (request_type === 'library_request' || request_type === 'meeting_request' || request_type === 'mamod_request') {
+    const roomType = request_type === 'library_request' ? 'library' : request_type === 'meeting_request' ? 'meeting' : 'mamod';
+    const roomLabel = request_type === 'library_request' ? 'הספריה' : request_type === 'meeting_request' ? 'חדר הישיבות' : 'הממד';
     const isLibrary = request_type === 'library_request';
-    const roomType = isLibrary ? 'library' : 'meeting';
-    const roomLabel = isLibrary ? 'הספריה' : 'חדר הישיבות';
     const specialRoom = db.get('rooms').find({ room_type: roomType, is_active: true }).value();
     if (!specialRoom) return res.status(400).json({ error: `לא הוגדר ${roomLabel} במערכת. פנה למנהל.` });
     const dayOfWeek = new Date(specific_date).getDay();
@@ -220,6 +220,36 @@ router.get('/meeting-schedule', (req, res) => {
       });
     const permBookings = db.get('room_assignments')
       .filter(x => x.day_of_week === dayOfWeek && meetingIds.includes(x.room_id))
+      .value().map(x => {
+        const u = db.get('users').find({ id: x.user_id }).value();
+        return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
+      });
+    const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+    result[date] = all;
+  });
+  res.json(result);
+});
+
+router.get('/mamod-schedule', (req, res) => {
+  const { from, to } = req.query;
+  const mamodRooms = db.get('rooms').filter({ room_type: 'mamod', is_active: true }).value();
+  if (mamodRooms.length === 0) return res.json({});
+  const mamodIds = mamodRooms.map(r => r.id);
+  const dates = [];
+  const cur = new Date(from);
+  const end = new Date(to);
+  while (cur <= end) { dates.push(cur.toISOString().slice(0, 10)); cur.setDate(cur.getDate() + 1); }
+  const result = {};
+  dates.forEach(date => {
+    const dayOfWeek = new Date(date).getDay();
+    const otBookings = db.get('one_time_requests')
+      .filter(x => x.specific_date === date && x.status === 'assigned' && mamodIds.includes(x.assigned_room_id))
+      .value().map(x => {
+        const u = db.get('users').find({ id: x.user_id }).value();
+        return { id: x.id, user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'one_time', notes: x.notes };
+      });
+    const permBookings = db.get('room_assignments')
+      .filter(x => x.day_of_week === dayOfWeek && mamodIds.includes(x.room_id))
       .value().map(x => {
         const u = db.get('users').find({ id: x.user_id }).value();
         return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };

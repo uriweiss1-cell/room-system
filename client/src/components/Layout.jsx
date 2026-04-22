@@ -24,6 +24,7 @@ export default function Layout() {
     { to: '/one-time-request', label: 'בקשת חדרים' },
     { to: '/library',          label: 'ספריה' },
     { to: '/meeting-room',     label: 'חדר ישיבות' },
+    { to: '/mamod',            label: 'ממד' },
   ];
   const adminLinks = [
     { to: '/admin/users',       label: 'עובדים' },
