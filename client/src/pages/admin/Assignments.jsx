@@ -152,6 +152,28 @@ export default function AdminAssignments() {
     await api.delete('/assignments/clear/permanent'); load();
   };
 
+  const clearAutoSchedules = async () => {
+    if (!confirm('פעולה זו תמחק את כל לוחות הזמנים שנוצרו אוטומטית ביבוא (עובדים שלא הגדירו חדר מועדף).\nעובדים שהגדירו לוח זמנים ידנית לא יושפעו.\nלהמשיך?')) return;
+    try {
+      const r = await api.delete('/schedules/clear-auto-imported');
+      setMsg(r.data.message);
+      load();
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+  };
+
+  const dismissConflictSlot = (conflictUserName, slotDay, slotTime) => {
+    setGenResult(prev => {
+      if (!prev) return prev;
+      const newSuggestions = (prev.suggestions ?? []).map(sg => ({
+        ...sg,
+        slots: sg.slots.filter(slot =>
+          !(sg.userName === conflictUserName && slot.day === slotDay && slot.time === slotTime)
+        ),
+      })).filter(sg => sg.slots.length > 0);
+      return { ...prev, suggestions: newSuggestions };
+    });
+  };
+
   const deleteAssignment = async id => {
     await api.delete(`/assignments/${id}`); load();
   };
@@ -185,6 +207,7 @@ export default function AdminAssignments() {
               {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
             </button>
             <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); }}>+ הוסף שיבוץ ידני</button>
+            <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
             <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
           </div>
         </div>
@@ -247,7 +270,11 @@ export default function AdminAssignments() {
                       <div key={j} className="mb-3">
                         <p className="text-xs font-medium text-yellow-700 mb-1">יום {slot.day} | {slot.time}</p>
                         {slot.tips.length === 0 ? (
-                          <p className="text-xs text-red-500">לא נמצאו חדרים פנויים — יש לשנות את לוח הזמנים</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-red-500">לא נמצאו חדרים פנויים — יש לשנות את לוח הזמנים</p>
+                            <button className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
+                              onClick={() => dismissConflictSlot(s.userName, slot.day, slot.time)}>סגור</button>
+                          </div>
                         ) : (
                           <div className="space-y-1.5">
                             {slot.tips.map((tip, k) => (
@@ -281,6 +308,13 @@ export default function AdminAssignments() {
                                 </div>
                               </div>
                             ))}
+                            {/* If all tips are info-only (alt_day) with no action, show dismiss */}
+                            {slot.tips.every(t => !t.action) && (
+                              <button className="text-xs text-gray-400 hover:text-gray-600 underline mt-1"
+                                onClick={() => dismissConflictSlot(s.userName, slot.day, slot.time)}>
+                                הבנתי — סגור
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

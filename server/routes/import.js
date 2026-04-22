@@ -202,44 +202,17 @@ router.post('/', (req, res) => {
       imported++;
     });
 
-    // 4. Populate regular_schedules from imported assignments.
-    //    Creates work-day/hour entries only — preferred room is intentionally left
-    //    blank so each employee (or admin) can set it explicitly later.
-    const importedUserIds = new Set(Object.values(nameToId));
-    db.get('regular_schedules').remove(s => importedUserIds.has(s.user_id)).write();
-
-    const userSlots = {}; // userId -> Map<slotKey, {day,start,end}>
-
-    ASSIGNMENTS.forEach(([roomNum, day, start, end, person]) => {
-      const userId = nameToId[person];
-      if (!userId) return;
-      if (!userSlots[userId]) userSlots[userId] = new Map();
-      const slotKey = `${day}-${start}-${end}`;
-      if (!userSlots[userId].has(slotKey)) userSlots[userId].set(slotKey, { day, start, end });
-    });
-
-    let schedulesCreated = 0;
-    Object.entries(userSlots).forEach(([userId, slotsMap]) => {
-      slotsMap.forEach(({ day, start, end }) => {
-        db.get('regular_schedules').push({
-          id: nextId('regular_schedules'),
-          user_id: +userId,
-          day_of_week: day,
-          start_time: start,
-          end_time: end,
-          preferred_room_id: null, // employee sets their own preference later
-        }).write();
-        schedulesCreated++;
-      });
-    });
+    // NOTE: regular_schedules are intentionally NOT touched by import.
+    // The import manages room_assignments only. Employee schedules (work days,
+    // hours, preferred room) are set manually by each employee or by the admin
+    // via the "לוח זמנים" panel in the Users page.
 
     res.json({
       message: `הייבוא הושלם בהצלחה`,
-      details: `עודכנו שמות 24 חדרים • נוצרו ${created} עובדים חדשים • יובאו ${imported} שיבוצים • נוצרו ${schedulesCreated} רשומות לוח זמנים`,
+      details: `עודכנו שמות 24 חדרים • נוצרו ${created} עובדים חדשים • יובאו ${imported} שיבוצים`,
       rooms: Object.keys(roomNumToId).length,
       usersCreated: created,
       assignments: imported,
-      schedulesCreated,
     });
   } catch (e) {
     console.error(e);

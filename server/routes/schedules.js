@@ -40,6 +40,15 @@ router.put('/user/:userId', requireAdmin, (req, res) => {
   res.json({ message: 'לוח הזמנים עודכן' });
 });
 
+// Delete all auto-imported schedules (those with no preferred_room_id set).
+// Used to clean up after a bad import run that auto-created empty schedules.
+router.delete('/clear-auto-imported', requireAdmin, (req, res) => {
+  const removed = db.get('regular_schedules')
+    .remove(s => s.preferred_room_id === null || s.preferred_room_id === undefined || s.preferred_room_id === '')
+    .write();
+  res.json({ message: `נמחקו ${removed.length} לוחות זמנים שנוצרו אוטומטית` });
+});
+
 router.get('/all', requireAdmin, (req, res) => {
   const schedules = db.get('regular_schedules').value().map(s => {
     const user = db.get('users').find({ id: s.user_id }).value();
