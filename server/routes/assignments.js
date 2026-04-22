@@ -10,8 +10,14 @@ const overlap = (s1, e1, s2, e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s
 
 function enrichAssignment(a) {
   const room = db.get('rooms').find({ id: a.room_id }).value();
-  const user = db.get('users').find({ id: a.user_id }).value();
-  return { ...a, room_name: room?.name, user_name: user?.name, role: user?.role };
+  const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
+  return {
+    ...a,
+    room_name: room?.name,
+    user_name: a.user_id ? user?.name : (a.guest_name || 'אורח'),
+    role: user?.role || null,
+    is_guest: !a.user_id,
+  };
 }
 
 router.get('/my', (req, res) => {
@@ -21,6 +27,39 @@ router.get('/my', (req, res) => {
 
 router.get('/all', requireAdmin, (req, res) => {
   const list = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
+  res.json(list);
+});
+
+// Create a one-time guest assignment (admin only)
+router.post('/guest', requireAdmin, (req, res) => {
+  const { guest_name, room_id, specific_date, start_time, end_time } = req.body;
+  if (!guest_name?.trim() || !room_id || !specific_date || !start_time || !end_time)
+    return res.status(400).json({ error: 'יש למלא שם, חדר, תאריך ושעות' });
+  const a = {
+    id: nextId('room_assignments'),
+    user_id: null,
+    guest_name: guest_name.trim(),
+    room_id: +room_id,
+    day_of_week: new Date(specific_date).getDay(),
+    start_time,
+    end_time,
+    assignment_type: 'one_time',
+    specific_date,
+    created_at: new Date().toISOString(),
+  };
+  db.get('room_assignments').push(a).write();
+  const room = db.get('rooms').find({ id: +room_id }).value();
+  res.json({ id: a.id, message: `${guest_name.trim()} שובץ/ה ל${room?.name} בתאריך ${specific_date}` });
+});
+
+// List all upcoming guest assignments (admin only)
+router.get('/guests', requireAdmin, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const list = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && !a.user_id && a.specific_date >= today)
+    .value()
+    .map(enrichAssignment)
+    .sort((a, b) => a.specific_date.localeCompare(b.specific_date));
   res.json(list);
 });
 
@@ -41,7 +80,7 @@ router.get('/query', (req, res) => {
 
   let oneTime = db.get('one_time_requests')
     .filter(r => r.specific_date === date && r.status === 'assigned'
-      && ['room_request', 'library_request', 'meeting_request'].includes(r.request_type)
+      && ['room_request', 'library_request', 'meeting_request', 'mamod_request'].includes(r.request_type)
       && r.assigned_room_id && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
     .value().map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
@@ -49,13 +88,19 @@ router.get('/query', (req, res) => {
       return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name };
     });
 
+  // Guest one-time room assignments for this specific date
+  const guests = db.get('room_assignments')
+    .filter(a => a.specific_date === date && a.assignment_type === 'one_time' && !a.user_id
+      && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time))
+    .value().map(enrichAssignment);
+
   if (roomFilter) {
     const rf = roomFilter.toLowerCase();
     regular = regular.filter(a => a.room_name?.toLowerCase().includes(rf));
     oneTime = oneTime.filter(a => a.room_name?.toLowerCase().includes(rf));
   }
 
-  res.json({ date, time, dayOfWeek, regular, oneTime });
+  res.json({ date, time, dayOfWeek, regular, oneTime: [...oneTime, ...guests] });
 });
 
 router.get('/locate', (req, res) => {

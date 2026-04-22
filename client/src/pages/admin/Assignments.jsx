@@ -17,13 +17,17 @@ export default function AdminAssignments() {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
   const [msg, setMsg] = useState('');
+  const [showGuest, setShowGuest] = useState(false);
+  const [guestForm, setGuestForm] = useState({ guest_name: '', room_id: '', specific_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '17:00' });
+  const [guests, setGuests] = useState([]);
   const [resolving, setResolving] = useState(null); // `${pcIdx}-notify` or `${pcIdx}-${blockerIdx}`
   const [notifyMsgs, setNotifyMsgs] = useState({}); // pcIdx -> string
   const [schedules, setSchedules] = useState([]);
   // Track room+day+time slots that were applied — used to filter out suggestions that would now conflict
   const [occupiedSlots, setOccupiedSlots] = useState([]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadGuests(); }, []);
+  const loadGuests = () => api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
   const load = async () => {
     const [a, u, r] = await Promise.all([
       api.get('/assignments/all'),
@@ -185,6 +189,16 @@ export default function AdminAssignments() {
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
+  const addGuest = async () => {
+    try {
+      const r = await api.post('/assignments/guest', guestForm);
+      setMsg(r.data.message);
+      setShowGuest(false);
+      setGuestForm(p => ({ ...p, guest_name: '' }));
+      loadGuests();
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+  };
+
   // Group by day
   const byDay = DAYS.map((_, i) => assignments.filter(a => a.day_of_week === i));
   // Group by employee
@@ -206,7 +220,8 @@ export default function AdminAssignments() {
             <button className="btn btn-primary" onClick={generate} disabled={generating}>
               {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); }}>+ הוסף שיבוץ ידני</button>
+            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
+            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
             <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
             <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
           </div>
@@ -240,6 +255,74 @@ export default function AdminAssignments() {
               <button className="btn btn-primary" onClick={addAssignment}>הוסף</button>
               <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>ביטול</button>
             </div>
+          </div>
+        )}
+
+        {showGuest && (
+          <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 mb-4">
+            <h3 className="font-semibold mb-3 text-teal-900">שיבוץ אורח חד-פעמי</h3>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label className="label">שם האורח *</label>
+                <input className="input w-44" placeholder="שם מלא..." value={guestForm.guest_name}
+                  onChange={e => setGuestForm(p => ({ ...p, guest_name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">חדר *</label>
+                <select className="select w-32" value={guestForm.room_id} onChange={e => setGuestForm(p => ({ ...p, room_id: e.target.value }))}>
+                  <option value="">בחר...</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">תאריך *</label>
+                <input type="date" className="input w-36" value={guestForm.specific_date}
+                  onChange={e => setGuestForm(p => ({ ...p, specific_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">משעה</label>
+                <input type="time" className="input w-28" value={guestForm.start_time}
+                  onChange={e => setGuestForm(p => ({ ...p, start_time: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">עד שעה</label>
+                <input type="time" className="input w-28" value={guestForm.end_time}
+                  onChange={e => setGuestForm(p => ({ ...p, end_time: e.target.value }))} />
+              </div>
+              <button className="btn btn-primary" onClick={addGuest}>שבץ</button>
+              <button className="btn btn-ghost" onClick={() => setShowGuest(false)}>ביטול</button>
+            </div>
+
+            {guests.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-teal-800 mb-2">אורחים קרובים:</p>
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-teal-100 text-right">
+                      <th className="border border-teal-200 px-2 py-1">שם</th>
+                      <th className="border border-teal-200 px-2 py-1">חדר</th>
+                      <th className="border border-teal-200 px-2 py-1">תאריך</th>
+                      <th className="border border-teal-200 px-2 py-1">שעות</th>
+                      <th className="border border-teal-200 px-2 py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guests.map(g => (
+                      <tr key={g.id} className="hover:bg-teal-50">
+                        <td className="border border-teal-200 px-2 py-1 font-medium">{g.user_name}</td>
+                        <td className="border border-teal-200 px-2 py-1">{g.room_name}</td>
+                        <td className="border border-teal-200 px-2 py-1">{g.specific_date}</td>
+                        <td className="border border-teal-200 px-2 py-1">{g.start_time}–{g.end_time}</td>
+                        <td className="border border-teal-200 px-2 py-1">
+                          <button className="text-red-500 hover:text-red-700"
+                            onClick={async () => { await deleteAssignment(g.id); loadGuests(); }}>מחק</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -517,8 +600,8 @@ export default function AdminAssignments() {
                         {slots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
                           return (
-                            <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 group relative ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-blue-50 border-blue-200'}`}>
-                              <div className={`font-medium leading-tight ${highlighted ? 'text-yellow-900' : 'text-blue-900'}`}>{a.user_name}</div>
+                            <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 group relative ${highlighted ? 'bg-yellow-100 border-yellow-400' : a.is_guest ? 'bg-teal-50 border-teal-300' : 'bg-blue-50 border-blue-200'}`}>
+                              <div className={`font-medium leading-tight ${highlighted ? 'text-yellow-900' : a.is_guest ? 'text-teal-900' : 'text-blue-900'}`}>{a.user_name}{a.is_guest && ' 👤'}</div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
                               <button onClick={() => deleteAssignment(a.id)} className="absolute top-0 left-0 hidden group-hover:flex items-center justify-center w-4 h-4 bg-red-500 text-white rounded-full text-xs leading-none">×</button>
                             </div>
