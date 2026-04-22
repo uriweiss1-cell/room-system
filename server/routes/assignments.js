@@ -36,38 +36,6 @@ router.post('/guest', requireAdmin, (req, res) => {
   if (!guest_name?.trim() || !room_id || !specific_date || !start_time || !end_time)
     return res.status(400).json({ error: 'יש למלא שם, חדר, תאריך ושעות' });
 
-  // Conflict check — same as any other room booking
-  const dayOfWeek = new Date(specific_date).getDay();
-  const absentUsers = db.get('one_time_requests')
-    .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
-    .map('user_id').value();
-  const conflictPerm = db.get('room_assignments')
-    .filter({ room_id: +room_id, day_of_week: dayOfWeek, assignment_type: 'permanent' })
-    .value()
-    .filter(a => !absentUsers.includes(a.user_id) && overlap(start_time, end_time, a.start_time, a.end_time));
-  const conflictOt = db.get('one_time_requests')
-    .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === +room_id && x.start_time)
-    .value()
-    .filter(x => overlap(start_time, end_time, x.start_time, x.end_time));
-  const conflictGuest = db.get('room_assignments')
-    .filter(a => a.assignment_type === 'one_time' && a.specific_date === specific_date && a.room_id === +room_id)
-    .value()
-    .filter(a => overlap(start_time, end_time, a.start_time, a.end_time));
-
-  const allConflicts = [...conflictPerm, ...conflictOt, ...conflictGuest];
-  if (allConflicts.length > 0) {
-    const names = allConflicts.map(c => {
-      if (c.guest_name) return `${c.guest_name} (${c.start_time}–${c.end_time})`;
-      if (c.user_id) {
-        const u = db.get('users').find({ id: c.user_id }).value();
-        return `${u?.name || 'עובד'} (${c.start_time || start_time}–${c.end_time || end_time})`;
-      }
-      return `(${c.start_time}–${c.end_time})`;
-    }).join(', ');
-    const room = db.get('rooms').find({ id: +room_id }).value();
-    return res.status(409).json({ error: `${room?.name} תפוס בשעות אלו: ${names}` });
-  }
-
   const a = {
     id: nextId('room_assignments'),
     user_id: null,
