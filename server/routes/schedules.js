@@ -7,7 +7,7 @@ router.use(authenticate);
 
 function getSchedule(userId) {
   return db.get('regular_schedules').filter({ user_id: userId }).value().map(s => {
-    const room = s.preferred_room_id ? db.get('rooms').find({ id: s.preferred_room_id }).value() : null;
+    const room = s.preferred_room_id ? db.get('rooms').find({ id: +s.preferred_room_id }).value() : null;
     return { ...s, room_name: room?.name || null };
   });
 }
@@ -43,7 +43,7 @@ router.put('/user/:userId', requireAdmin, (req, res) => {
 router.get('/all', requireAdmin, (req, res) => {
   const schedules = db.get('regular_schedules').value().map(s => {
     const user = db.get('users').find({ id: s.user_id }).value();
-    const room = s.preferred_room_id ? db.get('rooms').find({ id: s.preferred_room_id }).value() : null;
+    const room = s.preferred_room_id ? db.get('rooms').find({ id: +s.preferred_room_id }).value() : null;
     return { ...s, user_name: user?.name, role: user?.role, room_name: room?.name || null };
   }).filter(s => s.user_name);
   res.json(schedules);
