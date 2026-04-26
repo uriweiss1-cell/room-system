@@ -50,8 +50,13 @@ router.put('/:id', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requireAdmin, (req, res) => {
-  db.get('users').find({ id: +req.params.id }).assign({ is_active: false }).write();
-  res.json({ message: 'המשתמש הושבת' });
+  const uid = +req.params.id;
+  db.get('room_assignments').remove({ user_id: uid }).write();
+  db.get('regular_schedules').remove({ user_id: uid }).write();
+  db.get('one_time_requests').remove({ user_id: uid }).write();
+  db.get('notifications').remove({ user_id: uid }).write();
+  db.get('users').remove({ id: uid }).write();
+  res.json({ message: 'העובד נמחק מהמערכת' });
 });
 
 // Admin: set or clear employee PIN

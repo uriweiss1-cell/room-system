@@ -23,6 +23,7 @@ export default function OneTimeRequest() {
   const [reduceAssignmentId, setReduceAssignmentId] = useState('');
   const [allUsers, setAllUsers] = useState([]);
   const [impersonateId, setImpersonateId] = useState('');
+  const [userSearch, setUserSearch] = useState('');
 
   useEffect(() => {
     loadRequests();
@@ -80,11 +81,25 @@ export default function OneTimeRequest() {
         {step === 'form' && (
           <div className="space-y-4">
             {isAdmin && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+              <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 space-y-2">
                 <label className="label text-purple-800">🎭 הגשה בשם עובד (אופציונלי)</label>
-                <select className="select w-full" value={impersonateId} onChange={e => setImpersonateId(e.target.value)}>
+                <input
+                  type="text"
+                  className="input w-full"
+                  placeholder="חיפוש לפי שם..."
+                  value={userSearch}
+                  onChange={e => { setUserSearch(e.target.value); setImpersonateId(''); }}
+                />
+                <select
+                  className="select w-full"
+                  value={impersonateId}
+                  onChange={e => { setImpersonateId(e.target.value); setUserSearch(''); }}
+                  size={userSearch ? Math.min(allUsers.filter(u => u.name.includes(userSearch)).length + 1, 6) : 1}
+                >
                   <option value="">הגש בשמי ({user?.name})</option>
-                  {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {allUsers
+                    .filter(u => !userSearch || u.name.includes(userSearch))
+                    .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
             )}
