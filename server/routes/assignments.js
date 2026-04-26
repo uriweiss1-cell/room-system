@@ -293,6 +293,12 @@ function generateAssignments() {
   const rooms = db.get('rooms').filter({ is_active: true }).value();
   const schedules = db.get('regular_schedules').value();
 
+  // Remove stale assignments for inactive/deleted users so they don't block rooms
+  const activeIds = new Set(users.map(u => u.id));
+  db.get('room_assignments')
+    .remove(a => a.assignment_type === 'permanent' && a.user_id && !activeIds.has(a.user_id))
+    .write();
+
   const userSched = {};
   schedules.forEach(s => { (userSched[s.user_id] = userSched[s.user_id] || []).push(s); });
 
