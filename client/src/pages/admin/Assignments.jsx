@@ -31,6 +31,8 @@ export default function AdminAssignments() {
   const [debugUserId, setDebugUserId] = useState('');
   const [debugResult, setDebugResult] = useState(null);
   const [debugLoading, setDebugLoading] = useState(false);
+  const [editingSlot, setEditingSlot] = useState(null); // { id, user_name, room_name, day }
+  const [editForm, setEditForm] = useState({ start_time: '', end_time: '' });
 
   useEffect(() => { load(); loadGuests(); }, []);
   const loadGuests = () => api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
@@ -188,6 +190,14 @@ export default function AdminAssignments() {
     await api.delete(`/assignments/${id}`); load();
   };
 
+  const saveEdit = async () => {
+    try {
+      await api.put(`/assignments/${editingSlot.id}`, editForm);
+      setEditingSlot(null);
+      load();
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+  };
+
   const addAssignment = async () => {
     try {
       await api.post('/assignments', addForm);
@@ -229,6 +239,34 @@ export default function AdminAssignments() {
 
   return (
     <div className="space-y-5">
+      {/* Edit slot modal */}
+      {editingSlot && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingSlot(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg">עריכת שעות שיבוץ</h3>
+            <div className="text-sm text-gray-600">
+              <div><span className="font-medium">{editingSlot.user_name}</span> — {editingSlot.room_name}</div>
+              <div>יום {DAYS[editingSlot.day]}</div>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="label">משעה</label>
+                <input type="time" className="input w-full" value={editForm.start_time}
+                  onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))} />
+              </div>
+              <div className="flex-1">
+                <label className="label">עד שעה</label>
+                <input type="time" className="input w-full" value={editForm.end_time}
+                  onChange={e => setEditForm(p => ({ ...p, end_time: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="btn btn-ghost" onClick={() => setEditingSlot(null)}>ביטול</button>
+              <button className="btn btn-primary" onClick={saveEdit}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Controls */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-3 justify-between mb-3">
@@ -707,7 +745,10 @@ export default function AdminAssignments() {
                             <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 group relative ${highlighted ? 'bg-yellow-100 border-yellow-400' : a.is_guest ? 'bg-teal-50 border-teal-300' : 'bg-blue-50 border-blue-200'}`}>
                               <div className={`font-medium leading-tight ${highlighted ? 'text-yellow-900' : a.is_guest ? 'text-teal-900' : 'text-blue-900'}`}>{a.user_name}{a.is_guest && ' 👤'}</div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
-                              <button onClick={() => deleteAssignment(a.id)} className="absolute top-0 left-0 hidden group-hover:flex items-center justify-center w-4 h-4 bg-red-500 text-white rounded-full text-xs leading-none">×</button>
+                              <div className="absolute top-0 left-0 hidden group-hover:flex gap-0.5">
+                                <button onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time }); }} className="flex items-center justify-center w-4 h-4 bg-blue-500 text-white rounded-full text-xs leading-none" title="ערוך שעות">✎</button>
+                                <button onClick={() => deleteAssignment(a.id)} className="flex items-center justify-center w-4 h-4 bg-red-500 text-white rounded-full text-xs leading-none" title="מחק">×</button>
+                              </div>
                             </div>
                           );
                         })}
@@ -750,7 +791,10 @@ export default function AdminAssignments() {
                       <td><span className={`badge ${ROLE_COLORS[a.role]||'badge-gray'}`}>{ROLES[a.role]}</span></td>
                       <td>{a.start_time}</td>
                       <td>{a.end_time}</td>
-                      <td><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => deleteAssignment(a.id)}>מחק</button></td>
+                      <td className="flex gap-2">
+                        <button className="text-blue-500 hover:text-blue-700 text-xs" onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time }); }}>ערוך</button>
+                        <button className="text-red-500 hover:text-red-700 text-xs" onClick={() => deleteAssignment(a.id)}>מחק</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

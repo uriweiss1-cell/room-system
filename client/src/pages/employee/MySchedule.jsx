@@ -195,13 +195,13 @@ export default function MySchedule() {
                   <div className="text-gray-400 text-xs">לא מוקצה</div>
                 ) : (
                   byDay[i].map(a => (
-                    <div key={a.id} className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-1 mb-1 flex items-start justify-between gap-1 group">
+                    <div key={a.id} className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-1 mb-1 flex items-start justify-between gap-1">
                       <div>
                         <div className="font-medium">{a.room_name}</div>
                         <div>{a.start_time}–{a.end_time}</div>
                       </div>
                       <button
-                        className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5"
+                        className="text-red-400 hover:text-red-600 shrink-0 mt-0.5"
                         title="מחק שיבוץ זה לצמיתות"
                         onClick={() => deleteAssignment(a.id, `${a.room_name} ${DAYS[i]} ${a.start_time}–${a.end_time}`)}>
                         ✕

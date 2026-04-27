@@ -229,6 +229,15 @@ router.post('/', requireAdmin, (req, res) => {
   res.json({ id: a.id });
 });
 
+router.put('/:id', requireAdmin, (req, res) => {
+  const { start_time, end_time } = req.body;
+  if (!start_time || !end_time) return res.status(400).json({ error: 'נדרשות שעת התחלה וסיום' });
+  const a = db.get('room_assignments').find({ id: +req.params.id }).value();
+  if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
+  db.get('room_assignments').find({ id: +req.params.id }).assign({ start_time, end_time }).write();
+  res.json({ message: 'שיבוץ עודכן' });
+});
+
 router.delete('/clear/permanent', requireAdmin, (req, res) => {
   db.get('room_assignments').remove({ assignment_type: 'permanent' }).write();
   res.json({ message: 'כל השיבוצים הקבועים נמחקו' });
