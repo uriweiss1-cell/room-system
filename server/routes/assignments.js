@@ -639,12 +639,16 @@ function generateAssignments() {
 
       const targetRoomId = preferredId || currentRoomId;
       for (const s of toProcess) {
+        // Is this an extension of an existing day, or a brand-new day for this user?
+        const hasExistingOnDay = (existingByUser[user.id] || []).some(a => a.day_of_week === s.day_of_week);
         let slotRoom = null;
-        // Preferred/current room first (user stays in their room if possible)
+        // Always try preferred/current room first
         if (targetRoomId && isAvail(targetRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
-        // Any free room as fallback
-        if (!slotRoom)
+        // For new days (no existing assignment on this day): fall back to any free room
+        // For hour extensions (user already has a room on this day): don't move to a different room —
+        // show a conflict instead so the admin is aware and can decide.
+        if (!slotRoom && !hasExistingOnDay)
           slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
         else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
