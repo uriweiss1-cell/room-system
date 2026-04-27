@@ -635,6 +635,26 @@ function generateAssignments() {
     }
   }
 
+  // ── Cleanup: remove assignments that no longer have a schedule slot ───────
+  // If an employee removed a day (or hours) from their regular_schedule,
+  // any existing assignment that no longer overlaps with ANY schedule slot
+  // on that day should be released automatically.
+  // Applies only to stay/extend users — wantToMove users are handled below.
+  const staleIds = [];
+  for (const [uidStr, existing] of Object.entries(existingByUser)) {
+    const uid = +uidStr;
+    if (wantToMoveIds.has(uid)) continue;
+    for (const a of existing) {
+      const stillNeeded = (userSched[uid] || []).some(s =>
+        s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+      );
+      if (!stillNeeded) staleIds.push(a.id);
+    }
+  }
+  if (staleIds.length) {
+    db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
+  }
+
   // ── Write changes ─────────────────────────────────────────────────────────
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
