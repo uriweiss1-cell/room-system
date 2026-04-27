@@ -28,6 +28,9 @@ export default function AdminAssignments() {
   const [schedules, setSchedules] = useState([]);
   // Track room+day+time slots that were applied — used to filter out suggestions that would now conflict
   const [occupiedSlots, setOccupiedSlots] = useState([]);
+  const [debugUserId, setDebugUserId] = useState('');
+  const [debugResult, setDebugResult] = useState(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   useEffect(() => { load(); loadGuests(); }, []);
   const loadGuests = () => api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
@@ -732,6 +735,122 @@ export default function AdminAssignments() {
           </div>
         </div>
       )}
+      {/* Algorithm debugger per employee */}
+      <div className="card">
+        <h3 className="font-semibold mb-3 text-gray-700">🔍 אבחון אלגוריתם לפי עובד</h3>
+        <div className="flex gap-3 items-end mb-4">
+          <div className="flex-1">
+            <label className="label">בחר עובד</label>
+            <select className="select" value={debugUserId} onChange={e => { setDebugUserId(e.target.value); setDebugResult(null); }}>
+              <option value="">בחר עובד...</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-primary" disabled={!debugUserId || debugLoading}
+            onClick={async () => {
+              setDebugLoading(true);
+              try { const r = await api.get(`/assignments/user-debug/${debugUserId}`); setDebugResult(r.data); }
+              catch (e) { setDebugResult({ error: e.response?.data?.error || e.message }); }
+              finally { setDebugLoading(false); }
+            }}>
+            {debugLoading ? 'טוען...' : 'בדוק'}
+          </button>
+        </div>
+
+        {debugResult?.error && <div className="text-red-600 text-sm">{debugResult.error}</div>}
+
+        {debugResult && !debugResult.error && (
+          <div className="space-y-4 text-sm">
+            {/* Issues */}
+            {debugResult.issues.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="font-semibold text-yellow-800 mb-1">⚠️ בעיות שזוהו:</p>
+                <ul className="space-y-1">
+                  {debugResult.issues.map((iss, i) => <li key={i} className="text-yellow-900">• {iss}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* Summary row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'חדר מועדף', value: debugResult.preferredRoomName || '—', color: debugResult.preferredRoomName ? 'text-blue-700' : 'text-gray-400' },
+                { label: 'חדר נוכחי (לפי אלגוריתם)', value: debugResult.currentRoomName || '—', color: debugResult.currentRoomName ? 'text-green-700' : 'text-gray-400' },
+                { label: 'Pass 1 אפשרי?', value: debugResult.pass1Eligible ? 'כן ✅' : 'לא ❌', color: debugResult.pass1Eligible ? 'text-green-700' : 'text-red-600' },
+                { label: 'מתחרים על חדר מועדף', value: debugResult.othersWantPreferred.join(', ') || 'אין', color: debugResult.othersWantPreferred.length ? 'text-orange-600' : 'text-gray-500' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 mb-1">{label}</div>
+                  <div className={`font-semibold ${color}`}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Schedule slots */}
+            {debugResult.schedules.length > 0 && (
+              <div>
+                <p className="font-medium text-gray-700 mb-2">לוח זמנים:</p>
+                <table className="tbl">
+                  <thead><tr><th>יום</th><th>משעה</th><th>עד</th><th>חדר מועדף</th></tr></thead>
+                  <tbody>
+                    {debugResult.schedules.map((s, i) => (
+                      <tr key={i}>
+                        <td>{DAYS[s.day_of_week]}</td>
+                        <td>{s.start_time}</td>
+                        <td>{s.end_time}</td>
+                        <td>{s.preferred_room_name || <span className="text-gray-400">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Current assignments */}
+            {debugResult.assignments.length > 0 && (
+              <div>
+                <p className="font-medium text-gray-700 mb-2">שיבוצים קבועים נוכחיים:</p>
+                <table className="tbl">
+                  <thead><tr><th>יום</th><th>חדר</th><th>משעה</th><th>עד</th></tr></thead>
+                  <tbody>
+                    {debugResult.assignments.map((a, i) => (
+                      <tr key={i}>
+                        <td>{a.day_name}</td>
+                        <td className="font-medium">{a.room_name}</td>
+                        <td>{a.start_time}</td>
+                        <td>{a.end_time}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Also show from last algo run if available */}
+            {genResult?.assignmentTrace && (() => {
+              const t = genResult.assignmentTrace.find(t => t.userId === +debugUserId);
+              if (!t) return null;
+              return (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="font-semibold text-blue-800 mb-1">תוצאת הרצת האלגוריתם האחרונה:</p>
+                  <div className="text-blue-900">
+                    {t.result === 'got_wanted' && <span>✅ קיבל/ה את החדר הרצוי ({t.wanted})</span>}
+                    {t.result === 'got_other' && <span>🔄 רצה/תה <b>{t.wanted}</b>, קיבל/ה <b>{t.gotRoom}</b></span>}
+                    {t.result === 'unassigned' && <span className="text-red-600">❌ לא שובץ/ה</span>}
+                    {t.result === 'no_preference' && <span>ℹ️ ללא העדפה, שובץ/ה ל-<b>{t.gotRoom}</b></span>}
+                    {t.blockedReasons?.length > 0 && (
+                      <div className="mt-1 text-xs text-blue-700">
+                        חסום ע"י: {t.blockedReasons.map((b, i) => <span key={i} className="mr-2">{b.day}: {b.blockedBy}</span>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
       {/* Preferred room summary */}
       <div className="card">
         <h3 className="font-semibold mb-3 text-gray-700">חדר מועדף לפי עובד</h3>

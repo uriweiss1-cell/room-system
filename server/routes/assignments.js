@@ -53,6 +53,76 @@ router.post('/guest', requireAdmin, (req, res) => {
   res.json({ id: a.id, message: `${guest_name.trim()} שובץ/ה ל${room?.name} בתאריך ${specific_date}` });
 });
 
+// Diagnostic summary for a single user — shows schedule, preferred/current room,
+// and explains why the algorithm would or wouldn't keep them in their preferred room.
+router.get('/user-debug/:userId', requireAdmin, (req, res) => {
+  const userId = +req.params.userId;
+  const user = db.get('users').find({ id: userId }).value();
+  if (!user) return res.status(404).json({ error: 'עובד לא נמצא' });
+
+  const DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+
+  const schedules = db.get('regular_schedules').filter({ user_id: userId }).value().map(s => {
+    const room = s.preferred_room_id ? db.get('rooms').find({ id: +s.preferred_room_id }).value() : null;
+    return { ...s, preferred_room_name: room?.name || null };
+  });
+
+  const assignments = db.get('room_assignments')
+    .filter({ user_id: userId, assignment_type: 'permanent' })
+    .value().map(a => {
+      const room = db.get('rooms').find({ id: a.room_id }).value();
+      return { ...a, room_name: room?.name, day_name: DAYS_HE[a.day_of_week] };
+    });
+
+  // Compute currentRoomId (same logic as the algorithm)
+  const roomCounts = {};
+  assignments.forEach(a => { roomCounts[a.room_id] = (roomCounts[a.room_id] || 0) + 1; });
+  const currentRoomId = Object.keys(roomCounts).length
+    ? +Object.entries(roomCounts).sort((a, b) => b[1] - a[1])[0][0] : null;
+  const currentRoom = currentRoomId ? db.get('rooms').find({ id: currentRoomId }).value() : null;
+
+  const rawPreferredId = schedules.find(s => s.preferred_room_id)?.preferred_room_id;
+  const preferredRoomId = rawPreferredId ? +rawPreferredId : null;
+  const preferredRoom = preferredRoomId ? db.get('rooms').find({ id: preferredRoomId }).value() : null;
+
+  // Who else prefers the same rooms?
+  const allSchedules = db.get('regular_schedules').value();
+  const othersWantPreferred = preferredRoomId
+    ? allSchedules.filter(s => s.user_id !== userId && s.preferred_room_id && +s.preferred_room_id === preferredRoomId)
+        .map(s => db.get('users').find({ id: s.user_id }).value()?.name).filter(Boolean)
+    : [];
+  const othersWantCurrent = currentRoomId && currentRoomId !== preferredRoomId
+    ? allSchedules.filter(s => s.user_id !== userId && s.preferred_room_id && +s.preferred_room_id === currentRoomId)
+        .map(s => db.get('users').find({ id: s.user_id }).value()?.name).filter(Boolean)
+    : [];
+
+  // Pass-1 eligibility: preferred === current AND all slots available
+  const pass1Eligible = preferredRoomId && preferredRoomId === currentRoomId;
+
+  // Diagnose
+  const issues = [];
+  if (!schedules.length) issues.push('אין לוח זמנים מוגדר — האלגוריתם לא יגע בשיבוצים של עובד זה');
+  if (schedules.length && !preferredRoomId) issues.push('לא הוגדר חדר מועדף');
+  if (preferredRoomId && preferredRoomId !== currentRoomId)
+    issues.push(`חדר מועדף (${preferredRoom?.name}) ≠ חדר נוכחי (${currentRoom?.name || '—'}) → Pass 1 לא יפעל, חייב להיות פנוי ב-Pass 2`);
+  if (othersWantPreferred.length)
+    issues.push(`גם ${othersWantPreferred.join(', ')} מבקש/ת את חדר ${preferredRoom?.name} — תחרות על אותו חדר`);
+  if (othersWantCurrent.length)
+    issues.push(`${othersWantCurrent.join(', ')} מבקש/ת את חדר ${currentRoom?.name} כמועדף → blocksPreference ימנע מהאלגוריתם לנסות את החדר הנוכחי`);
+
+  res.json({
+    user: { id: user.id, name: user.name, role: user.role },
+    schedules,
+    assignments,
+    preferredRoomId, preferredRoomName: preferredRoom?.name || null,
+    currentRoomId, currentRoomName: currentRoom?.name || null,
+    pass1Eligible,
+    othersWantPreferred,
+    othersWantCurrent,
+    issues,
+  });
+});
+
 // List all upcoming guest assignments (admin only)
 router.get('/guests', requireAdmin, (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
