@@ -149,11 +149,15 @@ router.post('/', (req, res) => {
     let created = 0;
 
     allNames.forEach(name => {
-      // Check for any user with this name — including inactive/deleted ones.
-      // If found (even inactive), use their existing ID to avoid recreating deleted users.
-      const existing = db.get('users').find(u => u.name === name).value();
+      // Look up by import_name first (handles renamed users), then fall back to current name.
+      // Always includes inactive users so deleted people aren't recreated.
+      const existing = db.get('users').find(u => u.import_name === name || u.name === name).value();
       if (existing) {
         nameToId[name] = existing.id;
+        // Stamp import_name if missing so future imports can find this user even after renaming
+        if (!existing.import_name) {
+          db.get('users').find({ id: existing.id }).assign({ import_name: name }).write();
+        }
       } else {
         const safeEmail = `${name.replace(/[\s'.\/]/g, '_')}_${nextId('users')}@clinic.local`;
         const user = {
@@ -173,7 +177,7 @@ router.post('/', (req, res) => {
         // Actually just do it properly:
         const uid = db.get('_ids.users').value();
         db.set('_ids.users', uid + 1).write();
-        const newUser = { ...user, id: uid };
+        const newUser = { ...user, id: uid, import_name: name };
         db.get('users').push(newUser).write();
         nameToId[name] = uid;
         created++;
