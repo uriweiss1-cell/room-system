@@ -343,6 +343,20 @@ router.post('/assign-contested', requireAdmin, (req, res) => {
 });
 
 // Employee deletes one of their own permanent assignments (and matching schedule slot).
+// Employee edits their own assignment times
+router.put('/my/:id', (req, res) => {
+  const aId = +req.params.id;
+  const { start_time, end_time } = req.body;
+  if (!start_time || !end_time) return res.status(400).json({ error: 'נדרשות שעת התחלה וסיום' });
+  const a = db.get('room_assignments').find({ id: aId, user_id: req.user.id, assignment_type: 'permanent' }).value();
+  if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
+  // Update regular_schedule to match new times
+  db.get('regular_schedules').find({ user_id: req.user.id, day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time })
+    .assign({ start_time, end_time }).write();
+  db.get('room_assignments').find({ id: aId }).assign({ start_time, end_time }).write();
+  res.json({ message: 'שיבוץ עודכן' });
+});
+
 router.delete('/my/:id', (req, res) => {
   const aId = +req.params.id;
   const a = db.get('room_assignments').find({ id: aId, user_id: req.user.id, assignment_type: 'permanent' }).value();

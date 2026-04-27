@@ -52,6 +52,8 @@ export default function MySchedule() {
   const [slots, setSlots] = useState([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editingAssignment, setEditingAssignment] = useState(null); // { id, room_name, day_of_week, start_time, end_time }
+  const [editAssignForm, setEditAssignForm] = useState({ start_time: '', end_time: '' });
 
   useEffect(() => {
     Promise.all([
@@ -76,6 +78,16 @@ export default function MySchedule() {
     const [s, a] = await Promise.all([api.get('/schedules/my'), api.get('/assignments/my')]);
     setSchedule(s.data); setAssignments(a.data);
     setMsg('השיבוץ נמחק');
+  };
+
+  const saveAssignmentEdit = async () => {
+    try {
+      await api.put(`/assignments/my/${editingAssignment.id}`, editAssignForm);
+      const [s, a] = await Promise.all([api.get('/schedules/my'), api.get('/assignments/my')]);
+      setSchedule(s.data); setAssignments(a.data);
+      setEditingAssignment(null);
+      setMsg('השעות עודכנו');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
   const deleteDay = async (dayIdx) => {
@@ -104,6 +116,33 @@ export default function MySchedule() {
 
   return (
     <div className="space-y-5">
+      {/* Edit assignment modal */}
+      {editingAssignment && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingAssignment(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg">עריכת שעות שיבוץ</h3>
+            <div className="text-sm text-gray-600">
+              <div><span className="font-medium">{editingAssignment.room_name}</span> — יום {DAYS[editingAssignment.day_of_week]}</div>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="label">משעה</label>
+                <input type="time" className="input w-full" value={editAssignForm.start_time}
+                  onChange={e => setEditAssignForm(p => ({ ...p, start_time: e.target.value }))} />
+              </div>
+              <div className="flex-1">
+                <label className="label">עד שעה</label>
+                <input type="time" className="input w-full" value={editAssignForm.end_time}
+                  onChange={e => setEditAssignForm(p => ({ ...p, end_time: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="btn btn-ghost" onClick={() => setEditingAssignment(null)}>ביטול</button>
+              <button className="btn btn-primary" onClick={saveAssignmentEdit}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
       <Notifications />
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -200,12 +239,20 @@ export default function MySchedule() {
                         <div className="font-medium">{a.room_name}</div>
                         <div>{a.start_time}–{a.end_time}</div>
                       </div>
-                      <button
-                        className="text-red-400 hover:text-red-600 shrink-0 mt-0.5"
-                        title="מחק שיבוץ זה לצמיתות"
-                        onClick={() => deleteAssignment(a.id, `${a.room_name} ${DAYS[i]} ${a.start_time}–${a.end_time}`)}>
-                        ✕
-                      </button>
+                      <div className="flex gap-1 shrink-0 mt-0.5">
+                        <button
+                          className="text-blue-500 hover:text-blue-700"
+                          title="ערוך שעות"
+                          onClick={() => { setEditingAssignment(a); setEditAssignForm({ start_time: a.start_time, end_time: a.end_time }); }}>
+                          ✎
+                        </button>
+                        <button
+                          className="text-red-400 hover:text-red-600"
+                          title="מחק שיבוץ זה לצמיתות"
+                          onClick={() => deleteAssignment(a.id, `${a.room_name} ${DAYS[i]} ${a.start_time}–${a.end_time}`)}>
+                          ✕
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
