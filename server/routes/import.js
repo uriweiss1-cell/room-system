@@ -207,14 +207,58 @@ router.post('/', (req, res) => {
       imported++;
     });
 
-    // NOTE: regular_schedules are intentionally NOT touched by import.
-    // The import manages room_assignments only. Employee schedules (work days,
-    // hours, preferred room) are set manually by each employee or by the admin
-    // via the "לוח זמנים" panel in the Users page.
+    // 4. Auto-create regular_schedules for employees who don't have any yet.
+    // Uses their import assignment slots as the baseline schedule, and sets the
+    // preferred_room_id to the room they have the most assignment slots in.
+    // Employees who have already set their schedule manually are NOT touched.
+
+    // Group import slots by person (userId)
+    const personSlots = {}; // userId -> [{ roomId, day, start, end }]
+    ASSIGNMENTS.forEach(([roomNum, day, start, end, person]) => {
+      const userId = nameToId[person];
+      const roomId = roomNumToId[roomNum];
+      if (!userId || !roomId) return;
+      const u = db.get('users').find({ id: userId }).value();
+      if (!u?.is_active) return;
+      if (!personSlots[userId]) personSlots[userId] = [];
+      personSlots[userId].push({ roomId, day, start, end });
+    });
+
+    let schedulesCreated = 0;
+    Object.entries(personSlots).forEach(([userId, slots]) => {
+      // Skip employees who already have a manually configured schedule
+      const existing = db.get('regular_schedules').filter({ user_id: +userId }).value();
+      if (existing.length > 0) return;
+
+      // Preferred room = room with most assignment slots
+      const roomCounts = {};
+      slots.forEach(s => { roomCounts[s.roomId] = (roomCounts[s.roomId] || 0) + 1; });
+      const preferredRoomId = +Object.entries(roomCounts).sort((a, b) => b[1] - a[1])[0][0];
+
+      // Create one schedule entry per unique (day, start, end) combination
+      const seen = new Set();
+      slots.forEach(s => {
+        const key = `${s.day}-${s.start}-${s.end}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const sid = db.get('_ids.regular_schedules').value() || 0;
+        db.set('_ids.regular_schedules', sid + 1).write();
+        db.get('regular_schedules').push({
+          id: sid,
+          user_id: +userId,
+          day_of_week: s.day,
+          start_time: s.start,
+          end_time: s.end,
+          preferred_room_id: preferredRoomId,
+          created_at: new Date().toISOString(),
+        }).write();
+        schedulesCreated++;
+      });
+    });
 
     res.json({
       message: `הייבוא הושלם בהצלחה`,
-      details: `עודכנו שמות 24 חדרים • נוצרו ${created} עובדים חדשים • יובאו ${imported} שיבוצים`,
+      details: `עודכנו שמות 24 חדרים • נוצרו ${created} עובדים חדשים • יובאו ${imported} שיבוצים • נוצרו ${schedulesCreated} רשומות לוח זמנים אוטומטיות`,
       rooms: Object.keys(roomNumToId).length,
       usersCreated: created,
       assignments: imported,

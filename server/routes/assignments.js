@@ -603,8 +603,14 @@ function generateAssignments() {
       }
     }
 
-    // 3. Find any free room
-    if (!chosenRoom) {
+    // 3. Find any free room — but skip if the preferred room is at least partially
+    // available. In that case, the per-slot fallback below will assign the preferred
+    // room on the slots where it IS free, which is better than grabbing a different
+    // whole-week room and ignoring the preference entirely.
+    const preferredPartiallyAvail = preferredId && !contestedRoomsMap.has(preferredId) &&
+      slots.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
+
+    if (!chosenRoom && !preferredPartiallyAvail) {
       for (const room of regularRooms) {
         if (slots.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
       }
