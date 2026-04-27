@@ -512,8 +512,10 @@ function generateAssignments() {
   };
 
   // ─── Contested rooms ─────────────────────────────────────────────────────────
-  // A room is contested when 2+ users explicitly prefer it AND their schedule slots
-  // overlap. The algorithm skips contested rooms entirely — admin must assign manually.
+  // A room is contested when 2+ users explicitly prefer it AND some of their
+  // schedule slots overlap. Only the SPECIFIC overlapping slots are contested —
+  // non-overlapping slots are assigned normally so users keep their room on other
+  // days/hours.
   const contestedRoomsMap = new Map(); // roomId -> [{user, slots}]
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
@@ -535,20 +537,47 @@ function generateAssignments() {
     if (!hasOverlap) contestedRoomsMap.delete(roomId);
   }
 
+  // ─── Slot-level contested map ─────────────────────────────────────────────────
+  // For each user, which specific (day-start-end) slots are contested in their
+  // preferred room. Only these slots are withheld from automatic assignment.
+  const contestedSlotsForUser = new Map(); // userId -> Set of "day-start-end"
+  for (const [, claimants] of contestedRoomsMap) {
+    for (let i = 0; i < claimants.length; i++) {
+      for (let j = i + 1; j < claimants.length; j++) {
+        for (const sa of claimants[i].slots) {
+          for (const sb of claimants[j].slots) {
+            if (sa.day_of_week === sb.day_of_week && overlap(sa.start_time, sa.end_time, sb.start_time, sb.end_time)) {
+              const add = (uid, s) => {
+                if (!contestedSlotsForUser.has(uid)) contestedSlotsForUser.set(uid, new Set());
+                contestedSlotsForUser.get(uid).add(`${s.day_of_week}-${s.start_time}-${s.end_time}`);
+              };
+              add(claimants[i].user.id, sa);
+              add(claimants[j].user.id, sb);
+            }
+          }
+        }
+      }
+    }
+  }
+  const slotIsContested = (userId, s) => {
+    const m = contestedSlotsForUser.get(userId);
+    return !!(m && m.has(`${s.day_of_week}-${s.start_time}-${s.end_time}`));
+  };
+  const userHasContested = (userId) => !!(contestedSlotsForUser.get(userId)?.size);
+
   // ─── Pass 1: Pre-reservation ────────────────────────────────────────────────
   // Users whose preferred room matches their current room get it guaranteed,
-  // before role-priority even applies. This implements: "if you're already in
-  // room X and request room X, you keep it regardless of who else wants it."
-  // Exception: contested rooms are skipped here — admin resolves them manually.
+  // before role-priority even applies.
+  // Exception: users with ANY contested slot skip Pass 1 and go to Pass 2
+  // where per-slot fallback assigns the preferred room only for non-contested slots.
   const preReserved = new Set(); // user IDs handled in this pass
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const preferredId = getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
-    // Both preferred AND current must point to the same room; contested rooms skipped
     if (!preferredId || preferredId !== currentRoomId) continue;
-    if (contestedRoomsMap.has(preferredId)) continue;
+    if (userHasContested(user.id)) continue; // has contested slots — handle in Pass 2
     const pr = regularRooms.find(r => r.id === preferredId);
     if (!pr) continue;
     const slots = effectiveSlots(user.role, rawSlots);
@@ -557,29 +586,28 @@ function generateAssignments() {
       preReserved.add(user.id);
       assignmentTrace.push({ userId: user.id, userName: user.name, role: user.role, wanted: pr.name, wantedType: 'preferred+current', result: 'got_wanted' });
     }
-    // If room unavailable even for pre-reserved candidate, fall through to pass 2
   }
 
   // ─── Pass 2: Main assignment ─────────────────────────────────────────────────
   for (const user of sorted) {
-    if (preReserved.has(user.id)) continue; // already handled
+    if (preReserved.has(user.id)) continue;
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const slots = effectiveSlots(user.role, rawSlots);
 
     const preferredId = getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
+    const hasContested = userHasContested(user.id);
     let chosenRoom = null;
 
-    // 1. Try preferred room (explicit preference takes priority)
-    // Skip if room is contested — admin must assign manually after reviewing conflict.
+    // 1. Try preferred room for ALL slots.
+    // If user has contested slots, skip whole-room assignment — per-slot handles it.
     let preferredBlocked = null;
-    if (preferredId && !contestedRoomsMap.has(preferredId)) {
+    if (preferredId && !hasContested) {
       const pr = regularRooms.find(r => r.id === preferredId);
       if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
         chosenRoom = pr;
       } else if (pr) {
-        // Record what's blocking the preferred room
         const blockedSlots = slots.filter(s => !isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
         preferredBlocked = blockedSlots.map(s => {
           const blocker = (grid[preferredId] || []).find(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end));
@@ -588,9 +616,10 @@ function generateAssignments() {
       }
     }
 
-    // 2. Try current room (maintain continuity) — but not if someone else explicitly prefers it
+    // 2. Try current room (maintain continuity).
+    // Skip if user has contested slots — per-slot will give preferred on free slots.
     let currentBlocked = null;
-    if (!chosenRoom && currentRoomId && !blocksPreference(currentRoomId, user.id)) {
+    if (!chosenRoom && !hasContested && currentRoomId && !blocksPreference(currentRoomId, user.id)) {
       const cr = regularRooms.find(r => r.id === currentRoomId);
       if (cr && slots.every(s => isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))) {
         chosenRoom = cr;
@@ -603,20 +632,20 @@ function generateAssignments() {
       }
     }
 
-    // 3. Find any free room — but skip if the preferred room is at least partially
-    // available. In that case, the per-slot fallback below will assign the preferred
-    // room on the slots where it IS free, which is better than grabbing a different
-    // whole-week room and ignoring the preference entirely.
-    const preferredPartiallyAvail = preferredId && !contestedRoomsMap.has(preferredId) &&
-      slots.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
+    // 3. Find any free room — skip if:
+    //   a) user has contested slots (per-slot will handle preferred + contested separately), OR
+    //   b) preferred room is partially available (per-slot assigns it where free)
+    const nonContestedSlots = slots.filter(s => !slotIsContested(user.id, s));
+    const preferredPartiallyAvail = preferredId &&
+      nonContestedSlots.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
 
-    if (!chosenRoom && !preferredPartiallyAvail) {
+    if (!chosenRoom && !hasContested && !preferredPartiallyAvail) {
       for (const room of regularRooms) {
         if (slots.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
       }
     }
 
-    // Record trace for this user
+    // Record trace
     const wantedRoom = preferredId ? rooms.find(r => r.id === preferredId) : (currentRoomId ? rooms.find(r => r.id === currentRoomId) : null);
     if (wantedRoom || chosenRoom) {
       const traceEntry = { userId: user.id, userName: user.name, role: user.role };
@@ -639,10 +668,9 @@ function generateAssignments() {
     }
 
     // Detect preference conflict: user wanted a specific room but didn't get it.
-    // Skip contested rooms — they are reported separately after the loop.
-    // Collect ALL blockers (not just first) so admin can choose whom to displace.
+    // Skip users with contested slots — they are reported in the contested section.
     const wantedRoomId = preferredId || currentRoomId;
-    if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId) && !contestedRoomsMap.has(preferredId)) {
+    if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId) && !hasContested) {
       const wantedRoomObj = rooms.find(r => r.id === wantedRoomId);
       const blockersMap = new Map();
       slots.forEach(s => {
@@ -654,16 +682,12 @@ function generateAssignments() {
               blockersMap.set(key, { userId: b.userId, userName: b.userName, day: b.day, start: b.start, end: b.end });
           });
       });
-      const allBlockers = [...blockersMap.values()];
+      const allBlockers = [...blockersMap.values()].filter(b => b.userId);
       if (allBlockers.length > 0) {
         preferenceConflicts.push({
-          userId: user.id,
-          userName: user.name,
-          role: user.role,
-          wantedRoomId,
-          wantedRoomName: wantedRoomObj?.name,
-          takenByUserId: allBlockers[0].userId,
-          takenByUserName: allBlockers[0].userName,
+          userId: user.id, userName: user.name, role: user.role,
+          wantedRoomId, wantedRoomName: wantedRoomObj?.name,
+          takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
           assignedRoomName: chosenRoom?.name || null,
           blockers: allBlockers,
           slots: slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
@@ -674,11 +698,12 @@ function generateAssignments() {
     if (chosenRoom) {
       slots.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
     } else {
-      // No single room fits all days — assign per slot, preferring preferred→current→any
+      // Per-slot fallback: preferred (skipping contested slots) → current → any
       const unassigned = [];
       for (const s of slots) {
         let slotRoom = null;
-        if (preferredId && !contestedRoomsMap.has(preferredId) && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
+        // Use preferred room for this slot only if it is NOT a contested slot
+        if (preferredId && !slotIsContested(user.id, s) && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === preferredId) || null;
         if (!slotRoom && currentRoomId && !blocksPreference(currentRoomId, user.id) && isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === currentRoomId) || null;
@@ -691,8 +716,10 @@ function generateAssignments() {
     }
   }
 
-  // ─── Contested room conflicts ────────────────────────────────────────────────
-  // Build a lookup of final assigned room per user (from newAssignments)
+  // ─── Contested slot conflicts ─────────────────────────────────────────────────
+  // Report only the SPECIFIC slots that are contested (where 2+ users want the same
+  // room at the same time). The admin sees who is already assigned on other hours
+  // and can decide who gets the contested slot.
   const assignedRoomByUser = {};
   newAssignments.forEach(a => { if (!assignedRoomByUser[a.user_id]) assignedRoomByUser[a.user_id] = a.room_id; });
 
@@ -705,10 +732,13 @@ function generateAssignments() {
       claimants: claimants.map(c => {
         const arId = assignedRoomByUser[c.user.id] || null;
         const ar = arId ? rooms.find(r => r.id === arId) : null;
+        // Show only the contested (overlapping) slots, not the full schedule
+        const myContestedKeys = contestedSlotsForUser.get(c.user.id) || new Set();
+        const contestedOnly = c.slots.filter(s => myContestedKeys.has(`${s.day_of_week}-${s.start_time}-${s.end_time}`));
         return {
           userId: c.user.id, userName: c.user.name, role: c.user.role,
           assignedRoomId: arId, assignedRoomName: ar?.name || null,
-          slots: c.slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+          slots: contestedOnly.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
         };
       }),
     });
