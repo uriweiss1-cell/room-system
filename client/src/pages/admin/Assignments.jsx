@@ -447,10 +447,73 @@ export default function AdminAssignments() {
                 ))}
               </div>
             )}
-            {genResult.preferenceConflicts?.length > 0 && (
+            {genResult.preferenceConflicts?.some(pc => pc.type === 'contested') && (
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-red-700">🔴 חדרים שנדרשו על ידי יותר מעובד אחד — יש להכריע ידנית:</p>
+                {genResult.preferenceConflicts.filter(pc => pc.type === 'contested').map((pc, i) => {
+                  const [resolving2, setResolving2] = [null, () => {}]; // local stub — handled via assignConflict below
+                  return (
+                    <div key={i} className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-2">
+                      <p className="font-semibold text-red-800">חדר {pc.roomName} — נדרש על ידי {pc.claimants.length} עובדים</p>
+                      <p className="text-xs text-red-600">האלגוריתם לא שיבץ אף אחד לחדר זה — הכרע מי יקבל אותו:</p>
+                      <div className="space-y-2">
+                        {pc.claimants.map((c, j) => (
+                          <div key={j} className="bg-white border border-red-100 rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
+                            <div className="flex-1 text-xs">
+                              <span className="font-semibold">{c.userName}</span>
+                              {c.assignedRoomName
+                                ? <span className="text-gray-500"> — שובץ כעת ל{c.assignedRoomName}</span>
+                                : <span className="text-red-500"> — לא שובץ</span>}
+                              <span className="text-gray-400 mr-1">
+                                ({c.slots.map(s => `${DAYS[s.day_of_week]} ${s.start_time}–${s.end_time}`).join(', ')})
+                              </span>
+                            </div>
+                            <button
+                              className="btn text-xs bg-blue-50 border border-blue-300 text-blue-800 hover:bg-blue-100"
+                              onClick={async () => {
+                                if (!confirm(`לשבץ את ${c.userName} לחדר ${pc.roomName}?`)) return;
+                                try {
+                                  const r = await api.post('/assignments/assign-contested', {
+                                    assignments: [{ userId: c.userId, slots: c.slots }],
+                                    roomId: pc.roomId,
+                                  });
+                                  setGenResult(prev => ({ ...prev, applyMsg: r.data.message, applyError: null }));
+                                  load();
+                                } catch (e) {
+                                  setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+                                }
+                              }}>
+                              שבץ {c.userName} לחדר {pc.roomName}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        className="btn text-xs bg-purple-50 border border-purple-300 text-purple-800 hover:bg-purple-100 w-full"
+                        onClick={async () => {
+                          if (!confirm(`לשבץ את כולם יחד בחדר ${pc.roomName}?`)) return;
+                          try {
+                            const r = await api.post('/assignments/assign-contested', {
+                              assignments: pc.claimants.map(c => ({ userId: c.userId, slots: c.slots })),
+                              roomId: pc.roomId,
+                            });
+                            setGenResult(prev => ({ ...prev, applyMsg: r.data.message, applyError: null }));
+                            load();
+                          } catch (e) {
+                            setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+                          }
+                        }}>
+                        שבץ את כולם יחד בחדר {pc.roomName}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {genResult.preferenceConflicts?.some(pc => !pc.type) && (
               <div className="mt-4 space-y-3">
                 <p className="text-sm font-semibold text-orange-700">⚠️ חדר מועדף תפוס — עובדים שרצו חדר ספציפי אך שובצו לאחר:</p>
-                {genResult.preferenceConflicts.map((pc, i) => {
+                {genResult.preferenceConflicts.filter(pc => !pc.type).map((pc, i) => {
                   const stats = genResult.userStats?.[pc.userId];
                   const blockers = pc.blockers || (pc.takenByUserId ? [{ userId: pc.takenByUserId, userName: pc.takenByUserName }] : []);
                   const room = rooms.find(r => r.name === pc.wantedRoomName);

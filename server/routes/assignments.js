@@ -296,6 +296,48 @@ router.post('/resolve-preference', requireAdmin, (req, res) => {
   }
 });
 
+// Assign one or more users to a contested room (admin resolves conflict manually).
+// Removes any existing permanent assignment for those users on those slots, then
+// creates new assignments in the chosen room.
+router.post('/assign-contested', requireAdmin, (req, res) => {
+  const { assignments, roomId } = req.body;
+  if (!assignments?.length || !roomId) return res.status(400).json({ error: 'חסרים פרמטרים' });
+  for (const { userId, slots } of assignments) {
+    for (const slot of slots) {
+      db.get('room_assignments').remove(a =>
+        a.user_id === +userId && a.day_of_week === slot.day_of_week &&
+        a.assignment_type === 'permanent' &&
+        overlap(a.start_time, a.end_time, slot.start_time, slot.end_time)
+      ).write();
+      db.get('room_assignments').push({
+        id: nextId('room_assignments'),
+        user_id: +userId, room_id: +roomId,
+        day_of_week: slot.day_of_week,
+        start_time: slot.start_time, end_time: slot.end_time,
+        assignment_type: 'permanent', specific_date: null,
+        created_at: new Date().toISOString(),
+      }).write();
+    }
+  }
+  const room = db.get('rooms').find({ id: +roomId }).value();
+  const names = assignments.map(({ userId }) => db.get('users').find({ id: +userId }).value()?.name).filter(Boolean).join(', ');
+  res.json({ message: `${names} שובץ/ו ל${room?.name}` });
+});
+
+// Employee deletes one of their own permanent assignments (and matching schedule slot).
+router.delete('/my/:id', (req, res) => {
+  const aId = +req.params.id;
+  const a = db.get('room_assignments').find({ id: aId, user_id: req.user.id, assignment_type: 'permanent' }).value();
+  if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
+  db.get('room_assignments').remove({ id: aId }).write();
+  // Also remove the matching regular_schedule entry so the algorithm won't recreate it
+  db.get('regular_schedules').remove(s =>
+    s.user_id === req.user.id && s.day_of_week === a.day_of_week &&
+    s.start_time === a.start_time && s.end_time === a.end_time
+  ).write();
+  res.json({ message: 'השיבוץ נמחק' });
+});
+
 router.post('/generate', requireAdmin, (req, res) => {
   try { res.json(generateAssignments()); }
   catch (e) { res.status(500).json({ error: e.message }); }
@@ -459,18 +501,44 @@ function generateAssignments() {
     return preferrers && [...preferrers].some(uid => uid !== userId);
   };
 
+  // ─── Contested rooms ─────────────────────────────────────────────────────────
+  // A room is contested when 2+ users explicitly prefer it AND their schedule slots
+  // overlap. The algorithm skips contested rooms entirely — admin must assign manually.
+  const contestedRoomsMap = new Map(); // roomId -> [{user, slots}]
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    const pid = getPreferredId(rawSlots);
+    if (!pid) continue;
+    if (!contestedRoomsMap.has(pid)) contestedRoomsMap.set(pid, []);
+    contestedRoomsMap.get(pid).push({ user, slots: effectiveSlots(user.role, rawSlots) });
+  }
+  for (const [roomId, claimants] of [...contestedRoomsMap]) {
+    if (claimants.length < 2) { contestedRoomsMap.delete(roomId); continue; }
+    const hasOverlap = claimants.some((a, i) =>
+      claimants.slice(i + 1).some(b =>
+        a.slots.some(sa => b.slots.some(sb =>
+          sa.day_of_week === sb.day_of_week && overlap(sa.start_time, sa.end_time, sb.start_time, sb.end_time)
+        ))
+      )
+    );
+    if (!hasOverlap) contestedRoomsMap.delete(roomId);
+  }
+
   // ─── Pass 1: Pre-reservation ────────────────────────────────────────────────
   // Users whose preferred room matches their current room get it guaranteed,
   // before role-priority even applies. This implements: "if you're already in
   // room X and request room X, you keep it regardless of who else wants it."
+  // Exception: contested rooms are skipped here — admin resolves them manually.
   const preReserved = new Set(); // user IDs handled in this pass
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const preferredId = getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
-    // Both preferred AND current must point to the same room
+    // Both preferred AND current must point to the same room; contested rooms skipped
     if (!preferredId || preferredId !== currentRoomId) continue;
+    if (contestedRoomsMap.has(preferredId)) continue;
     const pr = regularRooms.find(r => r.id === preferredId);
     if (!pr) continue;
     const slots = effectiveSlots(user.role, rawSlots);
@@ -494,8 +562,9 @@ function generateAssignments() {
     let chosenRoom = null;
 
     // 1. Try preferred room (explicit preference takes priority)
+    // Skip if room is contested — admin must assign manually after reviewing conflict.
     let preferredBlocked = null;
-    if (preferredId) {
+    if (preferredId && !contestedRoomsMap.has(preferredId)) {
       const pr = regularRooms.find(r => r.id === preferredId);
       if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
         chosenRoom = pr;
@@ -554,9 +623,10 @@ function generateAssignments() {
     }
 
     // Detect preference conflict: user wanted a specific room but didn't get it.
+    // Skip contested rooms — they are reported separately after the loop.
     // Collect ALL blockers (not just first) so admin can choose whom to displace.
     const wantedRoomId = preferredId || currentRoomId;
-    if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId)) {
+    if (wantedRoomId && (!chosenRoom || chosenRoom.id !== wantedRoomId) && !contestedRoomsMap.has(preferredId)) {
       const wantedRoomObj = rooms.find(r => r.id === wantedRoomId);
       const blockersMap = new Map();
       slots.forEach(s => {
@@ -592,7 +662,7 @@ function generateAssignments() {
       const unassigned = [];
       for (const s of slots) {
         let slotRoom = null;
-        if (preferredId && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
+        if (preferredId && !contestedRoomsMap.has(preferredId) && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === preferredId) || null;
         if (!slotRoom && currentRoomId && !blocksPreference(currentRoomId, user.id) && isAvail(currentRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === currentRoomId) || null;
@@ -603,6 +673,29 @@ function generateAssignments() {
       }
       if (unassigned.length) conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: unassigned });
     }
+  }
+
+  // ─── Contested room conflicts ────────────────────────────────────────────────
+  // Build a lookup of final assigned room per user (from newAssignments)
+  const assignedRoomByUser = {};
+  newAssignments.forEach(a => { if (!assignedRoomByUser[a.user_id]) assignedRoomByUser[a.user_id] = a.room_id; });
+
+  for (const [roomId, claimants] of contestedRoomsMap) {
+    const room = rooms.find(r => r.id === roomId);
+    preferenceConflicts.unshift({
+      type: 'contested',
+      roomId,
+      roomName: room?.name,
+      claimants: claimants.map(c => {
+        const arId = assignedRoomByUser[c.user.id] || null;
+        const ar = arId ? rooms.find(r => r.id === arId) : null;
+        return {
+          userId: c.user.id, userName: c.user.name, role: c.user.role,
+          assignedRoomId: arId, assignedRoomName: ar?.name || null,
+          slots: c.slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+        };
+      }),
+    });
   }
 
   // Build userStats for conflict resolution UI

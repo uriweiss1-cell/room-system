@@ -70,6 +70,24 @@ export default function MySchedule() {
   const removeSlot = i => setSlots(p => p.filter((_, j) => j !== i));
   const updateSlot = (i, k, v) => setSlots(p => p.map((s, j) => j === i ? { ...s, [k]: v } : s));
 
+  const deleteAssignment = async (id, label) => {
+    if (!confirm(`למחוק לצמיתות את השיבוץ ${label}?\nהשינוי קבוע — השיבוץ לא יחזור גם אחרי הפעלת האלגוריתם.`)) return;
+    await api.delete(`/assignments/my/${id}`);
+    const [s, a] = await Promise.all([api.get('/schedules/my'), api.get('/assignments/my')]);
+    setSchedule(s.data); setAssignments(a.data);
+    setMsg('השיבוץ נמחק');
+  };
+
+  const deleteDay = async (dayIdx) => {
+    const daySlots = byDay[dayIdx];
+    if (!daySlots.length) return;
+    if (!confirm(`למחוק לצמיתות את כל השיבוצים ביום ${DAYS[dayIdx]}?\nהשינוי קבוע.`)) return;
+    await Promise.all(daySlots.map(a => api.delete(`/assignments/my/${a.id}`)));
+    const [s, a] = await Promise.all([api.get('/schedules/my'), api.get('/assignments/my')]);
+    setSchedule(s.data); setAssignments(a.data);
+    setMsg(`שיבוצי יום ${DAYS[dayIdx]} נמחקו`);
+  };
+
   const save = async () => {
     try {
       await api.put('/schedules/my', { schedules: slots.map(s => ({ ...s, preferred_room_id: s.preferred_room_id || null })) });
@@ -166,14 +184,28 @@ export default function MySchedule() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
             {DAYS.map((day, i) => (
               <div key={i} className="bg-gray-50 rounded-lg p-3">
-                <div className="font-semibold text-blue-700 mb-2 text-sm">{day}</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold text-blue-700 text-sm">{day}</div>
+                  {byDay[i].length > 1 && (
+                    <button className="text-xs text-red-400 hover:text-red-600" title="מחק את כל היום"
+                      onClick={() => deleteDay(i)}>מחק יום</button>
+                  )}
+                </div>
                 {byDay[i].length === 0 ? (
                   <div className="text-gray-400 text-xs">לא מוקצה</div>
                 ) : (
                   byDay[i].map(a => (
-                    <div key={a.id} className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-1 mb-1">
-                      <div className="font-medium">{a.room_name}</div>
-                      <div>{a.start_time}–{a.end_time}</div>
+                    <div key={a.id} className="text-xs bg-blue-100 text-blue-800 rounded px-2 py-1 mb-1 flex items-start justify-between gap-1 group">
+                      <div>
+                        <div className="font-medium">{a.room_name}</div>
+                        <div>{a.start_time}–{a.end_time}</div>
+                      </div>
+                      <button
+                        className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5"
+                        title="מחק שיבוץ זה לצמיתות"
+                        onClick={() => deleteAssignment(a.id, `${a.room_name} ${DAYS[i]} ${a.start_time}–${a.end_time}`)}>
+                        ✕
+                      </button>
                     </div>
                   ))
                 )}
