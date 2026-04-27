@@ -491,11 +491,23 @@ function generateAssignments() {
     if (pid && cur && pid !== cur) wantToMoveIds.add(user.id);
   }
 
-  // Helper: does this user already have an assignment covering a given slot?
-  const alreadyCovered = (userId, day, start, end) =>
-    (existingByUser[userId] || []).some(a =>
-      a.day_of_week === day && overlap(a.start_time, a.end_time, start, end)
-    );
+  // Returns sub-slots of [start,end] on [day] NOT yet covered by any existing assignment.
+  // e.g. schedule=14:00-17:00, existing=15:00-17:00 → returns [{14:00-15:00}]
+  const uncoveredSubSlots = (userId, day, start, end, template) => {
+    const startM = toMin(start), endM = toMin(end);
+    const covered = (existingByUser[userId] || [])
+      .filter(a => a.day_of_week === day && overlap(a.start_time, a.end_time, start, end))
+      .map(a => ({ s: Math.max(toMin(a.start_time), startM), e: Math.min(toMin(a.end_time), endM) }))
+      .sort((a, b) => a.s - b.s);
+    const gaps = [];
+    let cur = startM;
+    for (const c of covered) {
+      if (c.s > cur) gaps.push({ start_time: minToTime(cur), end_time: minToTime(c.s) });
+      cur = Math.max(cur, c.e);
+    }
+    if (cur < endM) gaps.push({ start_time: minToTime(cur), end_time: minToTime(endM) });
+    return gaps.map(g => ({ ...template, start_time: g.start_time, end_time: g.end_time }));
+  };
 
   // ── Build room grid ───────────────────────────────────────────────────────
   // Seed the grid with ALL existing permanent assignments EXCEPT wantToMove users
@@ -616,12 +628,17 @@ function generateAssignments() {
       });
 
     } else {
-      // ── Stay / extend / new: only process unassigned slots ────────────────
-      const unassignedSlots = slots.filter(s => !alreadyCovered(user.id, s.day_of_week, s.start_time, s.end_time));
-      if (!unassignedSlots.length) continue; // already fully covered — keep as-is
+      // ── Stay / extend / new: process sub-slots not yet covered ────────────
+      // Compute actual gaps: schedule says 14:00-17:00, existing covers 15:00-17:00
+      // → only 14:00-15:00 needs to be assigned (and will show as conflict if blocked).
+      const toProcess = [];
+      for (const s of slots) {
+        toProcess.push(...uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s));
+      }
+      if (!toProcess.length) continue; // fully covered — keep as-is
 
       const targetRoomId = preferredId || currentRoomId;
-      for (const s of unassignedSlots) {
+      for (const s of toProcess) {
         let slotRoom = null;
         // Preferred/current room first (user stays in their room if possible)
         if (targetRoomId && isAvail(targetRoomId, s.day_of_week, s.start_time, s.end_time))
