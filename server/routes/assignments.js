@@ -433,8 +433,9 @@ function generateAssignments() {
       if (!roomCounts[a.user_id]) roomCounts[a.user_id] = {};
       roomCounts[a.user_id][a.room_id] = (roomCounts[a.user_id][a.room_id] || 0) + 1;
     } else if (grid[a.room_id]) {
-      // Inactive users / users without schedules — protect their rooms in the grid
-      grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time });
+      // Active users without schedules — protect their rooms in the grid
+      const u2 = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
+      grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u2?.name || null });
     }
   });
 

@@ -117,7 +117,7 @@ export default function MySchedule() {
 
         {!editing ? (
           <div>
-            <h3 className="font-semibold mb-3 text-gray-700">ימי ושעות נוכחות קבועה</h3>
+            <h3 className="font-semibold mb-3 text-gray-700">ימים ושעות בהן צריך חדר</h3>
             {schedule.length === 0 ? (
               <p className="text-gray-400 text-sm">לא הוגדר לוח זמנים. לחץ על "עריכת לוח הזמנים" להגדרה.</p>
             ) : (

@@ -149,7 +149,9 @@ router.post('/', (req, res) => {
     let created = 0;
 
     allNames.forEach(name => {
-      const existing = db.get('users').find(u => u.name === name && u.is_active).value();
+      // Check for any user with this name — including inactive/deleted ones.
+      // If found (even inactive), use their existing ID to avoid recreating deleted users.
+      const existing = db.get('users').find(u => u.name === name).value();
       if (existing) {
         nameToId[name] = existing.id;
       } else {
@@ -186,6 +188,9 @@ router.post('/', (req, res) => {
       const roomId = roomNumToId[roomNum];
       const userId = nameToId[person];
       if (!roomId || !userId) return;
+      // Skip assignments for inactive/deleted users — they shouldn't come back
+      const assignUser = db.get('users').find({ id: userId }).value();
+      if (!assignUser?.is_active) return;
       const id = db.get('_ids.room_assignments').value();
       db.set('_ids.room_assignments', id + 1).write();
       db.get('room_assignments').push({

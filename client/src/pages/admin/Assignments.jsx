@@ -521,12 +521,12 @@ export default function AdminAssignments() {
                   return (
                     <div key={i} className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm space-y-2">
                       {/* Header */}
-                      <div>
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold">{pc.userName}</span>
-                        <span className="text-orange-700"> ביקש את חדר {pc.wantedRoomName}</span>
+                        <span className="text-orange-700 text-xs">ביקש חדר {pc.wantedRoomName}</span>
                         {pc.assignedRoomName
-                          ? <span className="text-gray-600"> — שובץ בחדר {pc.assignedRoomName}</span>
-                          : <span className="text-red-600 font-medium"> — לא שובץ כלל</span>}
+                          ? <span className="inline-flex items-center gap-1 bg-green-100 border border-green-300 text-green-800 font-semibold px-2 py-0.5 rounded text-xs">✓ שובץ בפועל: {pc.assignedRoomName}</span>
+                          : <span className="inline-flex items-center bg-red-100 border border-red-300 text-red-700 font-semibold px-2 py-0.5 rounded text-xs">✗ לא שובץ כלל</span>}
                       </div>
 
                       {/* Stats for requested user */}
