@@ -224,8 +224,36 @@ router.get('/locate', (req, res) => {
 
 router.post('/', requireAdmin, (req, res) => {
   const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date } = req.body;
-  const a = { id: nextId('room_assignments'), user_id: +user_id, room_id: +room_id, day_of_week: +day_of_week, start_time, end_time, assignment_type: assignment_type ?? 'permanent', specific_date: specific_date || null, created_at: new Date().toISOString() };
+  const aType = assignment_type ?? 'permanent';
+  const a = {
+    id: nextId('room_assignments'),
+    user_id: +user_id, room_id: +room_id, day_of_week: +day_of_week,
+    start_time, end_time, assignment_type: aType,
+    specific_date: specific_date || null, created_at: new Date().toISOString(),
+  };
   db.get('room_assignments').push(a).write();
+
+  // For permanent manual assignments to a real user: also create a matching
+  // regular_schedule entry if none exists for that day/time, so the assignment
+  // survives the algorithm's cleanup pass and the employee's work-days are updated.
+  if (aType === 'permanent' && user_id) {
+    const existingSched = db.get('regular_schedules')
+      .filter({ user_id: +user_id, day_of_week: +day_of_week })
+      .value()
+      .some(s => overlap(s.start_time, s.end_time, start_time, end_time));
+    if (!existingSched) {
+      db.get('regular_schedules').push({
+        id: nextId('regular_schedules'),
+        user_id: +user_id,
+        day_of_week: +day_of_week,
+        start_time,
+        end_time,
+        preferred_room_id: +room_id,
+        created_at: new Date().toISOString(),
+      }).write();
+    }
+  }
+
   res.json({ id: a.id });
 });
 
