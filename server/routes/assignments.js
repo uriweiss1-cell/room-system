@@ -407,15 +407,45 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     assignment_type: 'permanent', specific_date: null, created_at: new Date().toISOString(),
   }).write();
 
+  // After applying a suggestion, sync the regular_schedule so the algorithm
+  // won't re-flag the resolved slot as a conflict or a wantToMove on the next run.
+  // Sets preferred_room_id = assigned room, and trims schedule hours to match.
+  const syncSchedule = (userId, day, roomId, start, end) => {
+    const uid = +userId; const rid = +roomId; const d = +day;
+    db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week === d).value()
+      .forEach(s => {
+        db.get('regular_schedules').find({ id: s.id }).assign({
+          preferred_room_id: rid,
+          start_time: start,
+          end_time: end,
+        }).write();
+      });
+    // If no schedule entry exists yet for this day, create one
+    const hasSched = db.get('regular_schedules').find({ user_id: uid, day_of_week: d }).value();
+    if (!hasSched) {
+      db.get('regular_schedules').push({
+        id: nextId('regular_schedules'), user_id: uid, day_of_week: d,
+        start_time: start, end_time: end, preferred_room_id: rid,
+        created_at: new Date().toISOString(),
+      }).write();
+    }
+  };
+
   try {
 
   if (action.type === 'split' || action.type === 'partial') {
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
+    // For split: sync preferred to the room with the most hours; trim schedule to what was assigned
+    const longest = action.parts.reduce((a, b) => (toMin(b.end) - toMin(b.start) > toMin(a.end) - toMin(a.start) ? b : a));
+    const splitStart = action.parts[0].start;
+    const splitEnd = action.parts[action.parts.length - 1].end;
+    syncSchedule(action.conflictUserId, action.day, longest.roomId, splitStart, splitEnd);
     return res.json({ message: 'שיבוץ חלקי הוחל בהצלחה' });
   }
 
   if (action.type === 'shift') {
     push({ user_id: action.conflictUserId, room_id: action.roomId, day_of_week: action.day, start_time: action.start, end_time: action.end });
+    syncSchedule(action.conflictUserId, action.day, action.roomId, action.start, action.end);
     return res.json({ message: 'שיבוץ עם שעות מותאמות הוחל' });
   }
 
@@ -431,8 +461,10 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     if (existing) db.get('room_assignments').remove({ id: existing.id }).write();
     // Move blocker to alt room
     push({ user_id: +action.displaceUserId, room_id: +action.toRoomId, day_of_week: +action.day, start_time: action.displaceStart, end_time: action.displaceEnd });
+    syncSchedule(action.displaceUserId, action.day, action.toRoomId, action.displaceStart, action.displaceEnd);
     // Assign conflict user to freed room
     push({ user_id: +action.conflictUserId, room_id: +action.fromRoomId, day_of_week: +action.day, start_time: action.conflictStart, end_time: action.conflictEnd });
+    syncSchedule(action.conflictUserId, action.day, action.fromRoomId, action.conflictStart, action.conflictEnd);
     // Notify the displaced user (safely, in case notifications collection isn't initialized)
     try {
       if (!db.get('notifications').value()) db.set('notifications', []).write();
@@ -847,14 +879,7 @@ function suggestResolutions(conflicts, grid, regularRooms) {
         }
       }
 
-      // 3. Alternative days (info only — schedule change required)
-      const altDays = [];
-      for (let d = 0; d <= 4; d++) {
-        if (d === day) continue;
-        const room = regularRooms.find(r => gridAvail(grid, r.id, d, start, end));
-        if (room) altDays.push(`יום ${DAYS_HE[d]} — ${room.name}`);
-      }
-      if (altDays.length) tips.push({ type: 'alt_day', label: 'ימים חלופיים עם חדר פנוי', items: altDays.slice(0, 3) });
+      // (alt_day suggestions removed — changing schedule days is not relevant here)
 
       // 4. Displacement — move a lower-priority user to free up space
       const PRIORITY = { psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4 };

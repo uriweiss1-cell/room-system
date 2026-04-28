@@ -127,7 +127,9 @@ export default function AdminAssignments() {
           };
         }).filter(sg => sg.slots.length > 0); // Remove users with all conflicts resolved
 
-        return { ...prev, suggestions: newSuggestions, applyMsg: r.data.message, applyError: null };
+        const updated = { ...prev, suggestions: newSuggestions, applyMsg: r.data.message, applyError: null };
+        localStorage.setItem('lastGenResult', JSON.stringify(updated)); // keep localStorage in sync
+        return updated;
       });
 
       setOccupiedSlots(allOccupied);
