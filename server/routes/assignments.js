@@ -244,16 +244,11 @@ router.delete('/clear/permanent', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requireAdmin, (req, res) => {
-  const a = db.get('room_assignments').find({ id: +req.params.id }).value();
+  // Admin delete: removes only the room_assignment, keeps regular_schedule intact.
+  // The employee stays in the "needs assignment" pool — the algorithm will reassign
+  // them on the next run.
+  // (Employee self-delete via DELETE /my/:id removes both assignment AND schedule.)
   db.get('room_assignments').remove({ id: +req.params.id }).write();
-  // For permanent assignments: also remove the matching regular_schedule entry so
-  // the algorithm won't recreate the slot on the next run.
-  if (a && a.assignment_type === 'permanent' && a.user_id) {
-    db.get('regular_schedules').remove(s =>
-      s.user_id === a.user_id && s.day_of_week === a.day_of_week &&
-      s.start_time === a.start_time && s.end_time === a.end_time
-    ).write();
-  }
   res.json({ message: 'השיבוץ נמחק' });
 });
 
