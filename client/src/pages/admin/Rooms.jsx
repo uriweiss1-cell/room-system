@@ -3,7 +3,7 @@ import api from '../../api';
 
 const ROOM_TYPES = { regular: 'טיפול רגיל', library: 'ספריה', meeting: 'חדר ישיבות', mamod: 'ממד', staff: 'חדר צוות', committee: 'חדר ועדה', art_therapy: 'טיפול באמנות' };
 const TYPE_COLORS = { regular: 'badge-blue', library: 'badge-green', meeting: 'badge-purple', mamod: 'badge-teal', staff: 'badge-gray', committee: 'badge-yellow', art_therapy: 'badge-red' };
-const emptyRoom = { name: '', capacity: 1, room_type: 'regular', notes: '' };
+const emptyRoom = { name: '', capacity: 1, room_type: 'regular', notes: '', has_camera: false };
 
 export default function AdminRooms() {
   const [rooms, setRooms] = useState([]);
@@ -73,8 +73,12 @@ export default function AdminRooms() {
                 </select>
               </div>
               <div><label className="label">הערות</label><input className="input" value={form.notes||''} onChange={e => setForm(p=>({...p,notes:e.target.value}))} /></div>
+              <div className="flex items-center gap-2 pt-5">
+                <input type="checkbox" id="hc" checked={!!form.has_camera} onChange={e => setForm(p=>({...p,has_camera:e.target.checked}))} />
+                <label htmlFor="hc" className="text-sm">📷 יש מצלמה בחדר</label>
+              </div>
               {editing && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-5">
                   <input type="checkbox" id="ra" checked={!!form.is_active} onChange={e => setForm(p=>({...p,is_active:e.target.checked}))} />
                   <label htmlFor="ra" className="text-sm">חדר פעיל</label>
                 </div>
@@ -89,13 +93,14 @@ export default function AdminRooms() {
 
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>שם</th><th>סוג</th><th>קיבולת</th><th>הערות</th><th>פעולות</th></tr></thead>
+            <thead><tr><th>שם</th><th>סוג</th><th>קיבולת</th><th>מצלמה</th><th>הערות</th><th>פעולות</th></tr></thead>
             <tbody>
               {rooms.map(r => (
                 <tr key={r.id}>
                   <td className="font-medium">{r.name}</td>
                   <td><span className={`badge ${TYPE_COLORS[r.room_type]||'badge-gray'}`}>{ROOM_TYPES[r.room_type]}</span></td>
                   <td>{r.capacity}</td>
+                  <td className="text-center">{r.has_camera ? <span title="יש מצלמה">📷</span> : <span className="text-gray-300 text-xs">—</span>}</td>
                   <td className="text-gray-500 text-xs">{r.notes||'—'}</td>
                   <td>
                     <div className="flex gap-1">

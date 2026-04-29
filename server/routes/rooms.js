@@ -18,15 +18,15 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { name, capacity, room_type, notes } = req.body;
-  const room = { id: nextId('rooms'), name, capacity: capacity ?? 1, room_type: room_type ?? 'regular', notes: notes || null, is_active: true };
+  const { name, capacity, room_type, notes, has_camera } = req.body;
+  const room = { id: nextId('rooms'), name, capacity: capacity ?? 1, room_type: room_type ?? 'regular', notes: notes || null, has_camera: !!has_camera, is_active: true };
   db.get('rooms').push(room).write();
   res.json({ id: room.id });
 });
 
 router.put('/:id', requireAdmin, (req, res) => {
-  const { name, capacity, room_type, notes, is_active } = req.body;
-  db.get('rooms').find({ id: +req.params.id }).assign({ name, capacity: capacity ?? 1, room_type, notes: notes || null, is_active: !!is_active }).write();
+  const { name, capacity, room_type, notes, is_active, has_camera } = req.body;
+  db.get('rooms').find({ id: +req.params.id }).assign({ name, capacity: capacity ?? 1, room_type, notes: notes || null, has_camera: !!has_camera, is_active: !!is_active }).write();
   res.json({ message: 'עודכן' });
 });
 

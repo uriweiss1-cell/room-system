@@ -302,7 +302,7 @@ export default function AdminAssignments() {
               <div><label className="label">חדר</label>
                 <select className="select w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
                   <option value="">בחר...</option>
-                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 📷' : ''}</option>)}
                 </select>
               </div>
               <div><label className="label">יום</label>
