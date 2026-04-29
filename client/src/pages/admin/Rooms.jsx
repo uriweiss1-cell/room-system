@@ -75,7 +75,7 @@ export default function AdminRooms() {
               <div><label className="label">הערות</label><input className="input" value={form.notes||''} onChange={e => setForm(p=>({...p,notes:e.target.value}))} /></div>
               <div className="flex items-center gap-2 pt-5">
                 <input type="checkbox" id="hc" checked={!!form.has_camera} onChange={e => setForm(p=>({...p,has_camera:e.target.checked}))} />
-                <label htmlFor="hc" className="text-sm">📷 יש מצלמה בחדר</label>
+                <label htmlFor="hc" className="text-sm">🎥 יש מצלמה בחדר</label>
               </div>
               {editing && (
                 <div className="flex items-center gap-2 pt-5">
@@ -100,7 +100,7 @@ export default function AdminRooms() {
                   <td className="font-medium">{r.name}</td>
                   <td><span className={`badge ${TYPE_COLORS[r.room_type]||'badge-gray'}`}>{ROOM_TYPES[r.room_type]}</span></td>
                   <td>{r.capacity}</td>
-                  <td className="text-center">{r.has_camera ? <span title="יש מצלמה">📷</span> : <span className="text-gray-300 text-xs">—</span>}</td>
+                  <td className="text-center">{r.has_camera ? <span title="יש מצלמה">🎥</span> : <span className="text-gray-300 text-xs">—</span>}</td>
                   <td className="text-gray-500 text-xs">{r.notes||'—'}</td>
                   <td>
                     <div className="flex gap-1">

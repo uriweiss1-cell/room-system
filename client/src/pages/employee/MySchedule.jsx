@@ -198,7 +198,7 @@ export default function MySchedule() {
                     <label className="label">חדר מועדף (אופציונלי)</label>
                     <select className="select w-32" value={s.preferred_room_id} onChange={e => updateSlot(i, 'preferred_room_id', e.target.value)}>
                       <option value="">ללא העדפה</option>
-                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 📷' : ''}</option>)}
+                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 🎥' : ''}</option>)}
                     </select>
                   </div>
                   <button className="btn btn-danger px-2 py-2" onClick={() => removeSlot(i)}>✕</button>

@@ -204,7 +204,7 @@ export default function OneTimeRequest() {
                   <button key={r.id} className="border-2 border-blue-200 rounded-xl p-4 text-center hover:border-blue-500 hover:bg-blue-50 transition-colors"
                     onClick={() => confirmRoom(r.id)} disabled={loading}>
                     <div className="text-lg font-bold text-blue-700">{r.name}</div>
-                    {r.has_camera && <div className="text-sm mt-1" title="יש מצלמה בחדר">📷 מצלמה</div>}
+                    {r.has_camera && <div className="text-sm mt-1" title="יש מצלמה בחדר">🎥 מצלמה</div>}
                     {r.notes && <div className="text-xs text-gray-500 mt-1">{r.notes}</div>}
                   </button>
                 ))}
