@@ -633,16 +633,42 @@ export default function AdminAssignments() {
                         </div>
                       )}
 
+                      {/* Partial split options */}
+                      {pc.partialOptions?.length > 0 && (
+                        <div className="border-t border-orange-200 pt-2 space-y-1">
+                          <p className="text-xs text-gray-500 font-medium">שיבוץ חלקי בחדר המועדף:</p>
+                          {pc.partialOptions.map((opt, oi) => (
+                            <button key={oi}
+                              className="btn text-xs bg-green-50 border border-green-300 text-green-800 hover:bg-green-100 w-full text-right"
+                              onClick={async () => {
+                                try {
+                                  await api.post('/assignments/apply-suggestion', {
+                                    action: { type: 'pref_partial', conflictUserId: pc.userId, conflictUserName: pc.userName, assignedRoomId: pc.assignedRoomId, day: opt.day, parts: opt.parts },
+                                  });
+                                  setGenResult(prev => {
+                                    if (!prev) return prev;
+                                    const updated = { ...prev, preferenceConflicts: (prev.preferenceConflicts || []).filter(c => c.userId !== pc.userId), applyMsg: 'שיבוץ חלקי הוחל בהצלחה' };
+                                    localStorage.setItem('lastGenResult', JSON.stringify(updated));
+                                    return updated;
+                                  });
+                                  load();
+                                } catch (e) { setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) })); }
+                              }}>
+                              ✅ {DAYS[opt.day]}: {opt.parts.map(p => `${p.roomName} ${p.start}–${p.end}`).join(' | ')}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {/* Notify employee of rejection */}
                       <div className="border-t border-orange-200 pt-2 space-y-1">
-                        <p className="text-xs text-gray-500 font-medium">שלח הודעת דחייה ל{pc.userName}:</p>
+                        <p className="text-xs text-gray-500 font-medium">שלח הודעה ל{pc.userName}:</p>
                         <div className="flex gap-2 flex-wrap items-start">
                           <textarea
                             rows={2}
                             className="input flex-1 text-xs min-w-[180px]"
-                            placeholder={`שיבוצך לחדר ${pc.wantedRoomName} לא אושר — שובצת בחדר ${pc.assignedRoomName || 'אחר'}`}
-                            value={notifyMsgs[i] || ''}
-                            onChange={e => setNotifyMsgs(prev => ({ ...prev, [i]: e.target.value }))}
+                            value={notifyMsgs[pc.userId] ?? `שיבוצך לחדר ${pc.wantedRoomName} לא אושר — שובצת בחדר ${pc.assignedRoomName || 'אחר'}`}
+                            onChange={e => setNotifyMsgs(prev => ({ ...prev, [pc.userId]: e.target.value }))}
                           />
                           <button
                             className="btn text-xs bg-orange-100 border border-orange-300 text-orange-800 hover:bg-orange-200 shrink-0"
@@ -651,7 +677,7 @@ export default function AdminAssignments() {
                               await resolvePreference('notify', {
                                 userId: pc.userId,
                                 roomId: room?.id,
-                                message: notifyMsgs[i] || '',
+                                message: notifyMsgs[pc.userId] ?? `שיבוצך לחדר ${pc.wantedRoomName} לא אושר — שובצת בחדר ${pc.assignedRoomName || 'אחר'}`,
                               }, notifyKey, pc.userId);
                             }}>
                             {resolving === notifyKey ? '...' : '📨 שלח הודעה'}

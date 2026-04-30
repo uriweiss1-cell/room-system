@@ -453,6 +453,19 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
 
   try {
 
+  if (action.type === 'pref_partial') {
+    // Partial split for a preference conflict: remove the full assigned-room assignment
+    // and replace with split parts (preferred room where free, assigned room for the rest)
+    db.get('room_assignments').remove(a =>
+      a.user_id === +action.conflictUserId && a.day_of_week === +action.day &&
+      a.assignment_type === 'permanent' && a.room_id === +action.assignedRoomId
+    ).write();
+    action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
+    const longest = action.parts.reduce((a, b) => (toMin(b.end) - toMin(b.start) > toMin(a.end) - toMin(a.start) ? b : a));
+    syncSchedule(action.conflictUserId, action.day, longest.roomId, action.parts[0].start, action.parts[action.parts.length - 1].end);
+    return res.json({ message: 'שיבוץ חלקי הוחל בהצלחה' });
+  }
+
   if (action.type === 'split' || action.type === 'partial') {
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
     // For split: sync preferred to the room with the most hours; trim schedule to what was assigned
@@ -666,13 +679,37 @@ function generateAssignments() {
         });
         const allBlockers = [...blockersMap.values()];
         if (allBlockers.length) {
+          // Compute partial split options: preferred room where free + assigned room for blocked parts
+          const partialOptions = [];
+          if (chosenRoom && chosenRoom.id !== preferredId) {
+            for (const s of slots) {
+              const startM = toMin(s.start_time), endM = toMin(s.end_time);
+              const occ = (grid[preferredId] || [])
+                .filter(a => a.day === s.day_of_week)
+                .map(a => ({ start: a.start, end: a.end }));
+              const freeInPref = freeBlocksInRange(startM, endM, occ).filter(b => b.dur > 0);
+              if (freeInPref.length > 0) {
+                const blockedParts = occ
+                  .map(o => ({ s: toMin(o.start), e: toMin(o.end) }))
+                  .filter(o => o.s < endM && o.e > startM)
+                  .map(o => ({ s: Math.max(o.s, startM), e: Math.min(o.e, endM) }))
+                  .sort((a, b) => a.s - b.s)
+                  .map(o => ({ roomId: chosenRoom.id, roomName: chosenRoom.name, start: minToTime(o.s), end: minToTime(o.e) }));
+                const freeParts = freeInPref.map(b => ({ roomId: preferredId, roomName: pr.name, start: b.start, end: b.end }));
+                const parts = [...freeParts, ...blockedParts].sort((a, b) => toMin(a.start) - toMin(b.start));
+                if (parts.length > 1) partialOptions.push({ day: s.day_of_week, parts });
+              }
+            }
+          }
           preferenceConflicts.push({
             userId: user.id, userName: user.name, role: user.role,
             wantedRoomId: preferredId, wantedRoomName: pr?.name,
-            takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
+            assignedRoomId: chosenRoom?.id || null,
             assignedRoomName: chosenRoom?.name || null,
+            takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
             blockers: allBlockers,
             slots: slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+            partialOptions,
           });
         }
       }
