@@ -150,11 +150,20 @@ export default function AdminAssignments() {
     }
   };
 
-  const resolvePreference = async (action, payload, key) => {
+  const resolvePreference = async (action, payload, key, dismissUserId) => {
     setResolving(key);
     try {
       const r = await api.post('/assignments/resolve-preference', { action, ...payload });
-      setGenResult(prev => ({ ...prev, applyMsg: r.data.message, applyError: null }));
+      setGenResult(prev => {
+        if (!prev) return prev;
+        // Remove the preference conflict card for this user after notify or displace
+        const updatedPCs = dismissUserId
+          ? (prev.preferenceConflicts || []).filter(pc => pc.userId !== dismissUserId)
+          : prev.preferenceConflicts;
+        const updated = { ...prev, preferenceConflicts: updatedPCs, applyMsg: r.data.message, applyError: null };
+        localStorage.setItem('lastGenResult', JSON.stringify(updated));
+        return updated;
+      });
       if (action === 'displace') load();
     } catch (e) {
       setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message), applyMsg: null }));
@@ -614,7 +623,7 @@ export default function AdminAssignments() {
                                       day: bl.day,
                                       start: bl.start,
                                       end: bl.end,
-                                    }, displaceKey);
+                                    }, displaceKey, pc.userId);
                                   }}>
                                   {resolving === displaceKey ? '...' : `הסר ${bl.userName} ושבץ ${pc.userName}`}
                                 </button>
@@ -643,7 +652,7 @@ export default function AdminAssignments() {
                                 userId: pc.userId,
                                 roomId: room?.id,
                                 message: notifyMsgs[i] || '',
-                              }, notifyKey);
+                              }, notifyKey, pc.userId);
                             }}>
                             {resolving === notifyKey ? '...' : '📨 שלח הודעה'}
                           </button>
