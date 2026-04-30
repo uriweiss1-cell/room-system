@@ -424,6 +424,7 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
   // Sets preferred_room_id = assigned room, and trims schedule hours to match.
   const syncSchedule = (userId, day, roomId, start, end) => {
     const uid = +userId; const rid = +roomId; const d = +day;
+    // Update hours + preferred_room_id for the resolved day
     db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week === d).value()
       .forEach(s => {
         db.get('regular_schedules').find({ id: s.id }).assign({
@@ -431,6 +432,13 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
           start_time: start,
           end_time: end,
         }).write();
+      });
+    // Also update preferred_room_id on ALL other days for this user so that
+    // getPreferredId() returns the resolved room consistently.
+    // Without this, a stale preferred_room on another day causes wantToMove to fire again.
+    db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week !== d).value()
+      .forEach(s => {
+        db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
       });
     // If no schedule entry exists yet for this day, create one
     const hasSched = db.get('regular_schedules').find({ user_id: uid, day_of_week: d }).value();
