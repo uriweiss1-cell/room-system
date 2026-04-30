@@ -11,11 +11,11 @@ function Notifications() {
 
   const markRead = async id => {
     await api.put(`/notifications/${id}/read`);
-    setNotifs(p => p.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifs(p => p.filter(n => n.id !== id));
   };
   const markAll = async () => {
     await api.put('/notifications/read-all');
-    setNotifs(p => p.map(n => ({ ...n, read: true })));
+    setNotifs([]);
   };
 
   const unread = notifs.filter(n => !n.read);
