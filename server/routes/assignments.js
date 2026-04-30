@@ -266,16 +266,23 @@ router.put('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'שיבוץ עודכן' });
 });
 
-// Admin dismisses an unresolvable conflict — remove that schedule slot so the algorithm won't regenerate it
+// Admin dismisses an unresolvable conflict — store in dismissed_conflicts so algorithm won't show it again.
+// Uses effective slot times (post-effectiveSlots), so exact schedule times don't need to match.
 router.delete('/dismiss-slot', requireAdmin, (req, res) => {
   const { user_id, day_of_week, start_time, end_time } = req.body;
   if (!user_id || day_of_week == null || !start_time || !end_time)
     return res.status(400).json({ error: 'חסרים פרמטרים' });
-  db.get('regular_schedules')
-    .remove(s => s.user_id === +user_id && s.day_of_week === +day_of_week &&
-      s.start_time === start_time && s.end_time === end_time)
-    .write();
-  res.json({ message: 'slot הוסר מלוח הזמנים' });
+  if (!db.has('dismissed_conflicts').value()) db.set('dismissed_conflicts', []).write();
+  // Avoid duplicates
+  const already = db.get('dismissed_conflicts').find({ user_id: +user_id, day_of_week: +day_of_week, start_time, end_time }).value();
+  if (!already) {
+    db.get('dismissed_conflicts').push({
+      id: (db.get('dismissed_conflicts').value().length + 1),
+      user_id: +user_id, day_of_week: +day_of_week, start_time, end_time,
+      created_at: new Date().toISOString(),
+    }).write();
+  }
+  res.json({ message: 'הקונפליקט הוסתר' });
 });
 
 router.delete('/clear/permanent', requireAdmin, (req, res) => {
@@ -302,11 +309,25 @@ router.post('/resolve-preference', requireAdmin, (req, res) => {
       db.get('notifications').push({ id: notifId, user_id: +toUserId, read: false, message: msg, created_at: new Date().toISOString() }).write();
     };
 
+    // Helper: set preferred_room_id on all schedule entries for a user to their current most-used room.
+    // Prevents wantToMove from re-triggering when the algorithm runs again.
+    const resetPreferred = (uid) => {
+      const currentAssignments = db.get('room_assignments').filter({ user_id: +uid, assignment_type: 'permanent' }).value();
+      const counts = {};
+      currentAssignments.forEach(a => { counts[a.room_id] = (counts[a.room_id] || 0) + 1; });
+      const topRoom = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      const newPref = topRoom ? +topRoom[0] : null;
+      db.get('regular_schedules').filter({ user_id: +uid }).value()
+        .forEach(s => db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: newPref }).write());
+    };
+
     if (action === 'notify') {
       const room = db.get('rooms').find({ id: +roomId }).value();
       const dayName = DAYS_HE[+day];
       const defaultMsg = `שיבוצך לחדר ${room?.name} ביום ${dayName} (${start}–${end}) לא אושר. לפרטים פנה/י למנהל.`;
       sendNotif(userId, message || defaultMsg);
+      // Reset preferred_room_id so algorithm won't re-flag as wantToMove on next run
+      resetPreferred(userId);
       return res.json({ message: 'הודעה נשלחה לעובד' });
     }
 
@@ -338,6 +359,12 @@ router.post('/resolve-preference', requireAdmin, (req, res) => {
 
       // Notify displaced user
       sendNotif(blockerUserId, `השיבוץ שלך לחדר ${room?.name} ביום ${DAYS_HE[+day]} (${start}–${end}) בוטל על ידי המנהל.`);
+
+      // Reset displaced user's preferred_room_id so they don't try to reclaim the same room
+      resetPreferred(blockerUserId);
+      // Update target user's preferred_room_id to the room they just got
+      db.get('regular_schedules').filter({ user_id: +userId }).value()
+        .forEach(s => db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: +roomId }).write());
 
       return res.json({ message: `${targetUser?.name} שובץ לחדר ${room?.name}, ${blocker?.name} הוסר` });
     }
@@ -822,11 +849,20 @@ function generateAssignments() {
     userStats[user.id] = { name: user.name, totalSlots: rawSlots.length, assignedSlots: allAssigned.length, assignedRooms, unassignedDays };
   }
 
-  const suggestions = conflicts.length ? suggestResolutions(conflicts, grid, regularRooms) : [];
+  // Filter out conflicts that the admin dismissed (stored by effective slot times)
+  const dismissedList = db.has('dismissed_conflicts').value()
+    ? db.get('dismissed_conflicts').value() : [];
+  const isSlotDismissed = (userId, day, start, end) =>
+    dismissedList.some(d => d.user_id === +userId && d.day_of_week === +day && d.start_time === start && d.end_time === end);
+  const filteredConflicts = conflicts
+    .map(c => ({ ...c, slots: c.slots.filter(s => !isSlotDismissed(c.userId, s.day_of_week, s.start_time, s.end_time)) }))
+    .filter(c => c.slots.length > 0);
+
+  const suggestions = filteredConflicts.length ? suggestResolutions(filteredConflicts, grid, regularRooms) : [];
 
   return {
     assigned: newAssignments.length,
-    conflicts,
+    conflicts: filteredConflicts,
     preferenceConflicts,
     assignmentTrace,
     suggestions,
