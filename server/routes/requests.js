@@ -8,6 +8,11 @@ router.use(authenticate);
 const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const overlap = (s1, e1, s2, e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s2);
 
+const sendNotif = (userId, message) => {
+  if (!db.has('notifications').value()) db.set('notifications', []).write();
+  db.get('notifications').push({ id: nextId('notifications'), user_id: +userId, message, read: false, created_at: new Date().toISOString() }).write();
+};
+
 const numSort = (a, b) => {
   const n = x => parseInt((x.name || '').match(/\d+/)?.[0] ?? '999');
   return n(a) - n(b) || (a.name || '').localeCompare(b.name || '', 'he');
@@ -556,6 +561,30 @@ router.put('/:id', requireAdmin, (req, res) => {
       start_time: request.start_time,
       end_time: request.end_time,
     }).write();
+  }
+
+  // Send notification to employee about the decision
+  if (request?.user_id) {
+    const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    let notifMsg = '';
+    if (status === 'approved') {
+      const typeLabel = request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
+        : request.request_type === 'permanent_request' ? 'בקשת החדר הקבועה'
+        : request.request_type === 'permanent_reduce' ? 'בקשת השינוי בשעות'
+        : 'הבקשה';
+      notifMsg = `✅ ${typeLabel} שלך אושרה`;
+      if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
+      if (admin_response) notifMsg += `: ${admin_response}`;
+    } else if (status === 'rejected') {
+      const typeLabel = request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
+        : request.request_type === 'permanent_request' ? 'בקשת החדר הקבועה'
+        : request.request_type === 'permanent_reduce' ? 'בקשת השינוי בשעות'
+        : 'הבקשה';
+      notifMsg = `❌ ${typeLabel} שלך נדחתה`;
+      if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
+      if (admin_response) notifMsg += `: ${admin_response}`;
+    }
+    if (notifMsg) sendNotif(request.user_id, notifMsg);
   }
 
   res.json({ message: 'הבקשה עודכנה' });
