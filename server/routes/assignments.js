@@ -266,6 +266,18 @@ router.put('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'שיבוץ עודכן' });
 });
 
+// Admin dismisses an unresolvable conflict — remove that schedule slot so the algorithm won't regenerate it
+router.delete('/dismiss-slot', requireAdmin, (req, res) => {
+  const { user_id, day_of_week, start_time, end_time } = req.body;
+  if (!user_id || day_of_week == null || !start_time || !end_time)
+    return res.status(400).json({ error: 'חסרים פרמטרים' });
+  db.get('regular_schedules')
+    .remove(s => s.user_id === +user_id && s.day_of_week === +day_of_week &&
+      s.start_time === start_time && s.end_time === end_time)
+    .write();
+  res.json({ message: 'slot הוסר מלוח הזמנים' });
+});
+
 router.delete('/clear/permanent', requireAdmin, (req, res) => {
   db.get('room_assignments').remove({ assignment_type: 'permanent' }).write();
   res.json({ message: 'כל השיבוצים הקבועים נמחקו' });
@@ -913,10 +925,10 @@ function suggestResolutions(conflicts, grid, regularRooms) {
         if (tips.filter(t => t.type === 'displace').length >= 2) break;
       }
 
-      return { day: DAYS_HE[day], time: `${start}–${end}`, tips };
+      return { day: DAYS_HE[day], time: `${start}–${end}`, start_time: start, end_time: end, day_of_week: day, tips };
     });
 
-    return { userName: conflict.userName, slots: slotSuggestions };
+    return { userId: conflict.userId, userName: conflict.userName, slots: slotSuggestions };
   });
 }
 

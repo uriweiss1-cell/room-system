@@ -175,16 +175,25 @@ export default function AdminAssignments() {
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
-  const dismissConflictSlot = (conflictUserName, slotDay, slotTime) => {
+  const dismissConflictSlot = async (suggestion, slot) => {
+    // Remove this schedule slot from the backend so the algorithm won't regenerate the conflict
+    try {
+      await api.delete('/assignments/dismiss-slot', {
+        data: { user_id: suggestion.userId, day_of_week: slot.day_of_week, start_time: slot.start_time, end_time: slot.end_time },
+      });
+    } catch (e) { /* best-effort — still dismiss from UI */ }
+
     setGenResult(prev => {
       if (!prev) return prev;
       const newSuggestions = (prev.suggestions ?? []).map(sg => ({
         ...sg,
-        slots: sg.slots.filter(slot =>
-          !(sg.userName === conflictUserName && slot.day === slotDay && slot.time === slotTime)
+        slots: sg.slots.filter(s =>
+          !(sg.userName === suggestion.userName && s.day === slot.day && s.time === slot.time)
         ),
       })).filter(sg => sg.slots.length > 0);
-      return { ...prev, suggestions: newSuggestions };
+      const updated = { ...prev, suggestions: newSuggestions };
+      localStorage.setItem('lastGenResult', JSON.stringify(updated));
+      return updated;
     });
   };
 
@@ -437,7 +446,7 @@ export default function AdminAssignments() {
                           <div className="flex items-center gap-2">
                             <p className="text-xs text-red-500">לא נמצאו חדרים פנויים — יש לשנות את לוח הזמנים</p>
                             <button className="text-xs text-gray-400 hover:text-gray-600 underline shrink-0"
-                              onClick={() => dismissConflictSlot(s.userName, slot.day, slot.time)}>סגור</button>
+                              onClick={() => dismissConflictSlot(s, slot)}>סגור</button>
                           </div>
                         ) : (
                           <div className="space-y-1.5">
@@ -472,10 +481,10 @@ export default function AdminAssignments() {
                                 </div>
                               </div>
                             ))}
-                            {/* If all tips are info-only (alt_day) with no action, show dismiss */}
+                            {/* If all tips are info-only with no action, show dismiss */}
                             {slot.tips.every(t => !t.action) && (
                               <button className="text-xs text-gray-400 hover:text-gray-600 underline mt-1"
-                                onClick={() => dismissConflictSlot(s.userName, slot.day, slot.time)}>
+                                onClick={() => dismissConflictSlot(s, slot)}>
                                 הבנתי — סגור
                               </button>
                             )}
