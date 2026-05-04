@@ -137,10 +137,16 @@ router.post('/', (req, res) => {
   const absentUsers = db.get('one_time_requests')
     .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
     .map('user_id').value();
+  // Users who already swapped their room for this date — their original room is freed
+  const swappedOut = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
+    .value();
   const permBusy = db.get('room_assignments')
     .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
     .value()
-    .filter(a => !absentUsers.includes(a.user_id));
+    .filter(a => !absentUsers.includes(a.user_id))
+    .filter(a => !swappedOut.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
+      && s.start_time && overlap(start_time, end_time, s.start_time, s.end_time)));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id).value();
 
   // Check if the requesting user already has a room at these times
@@ -149,12 +155,30 @@ router.post('/', (req, res) => {
     ...otBusy.filter(b => b.user_id === userId && b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
   ];
   if (userAlreadyHasRoom.length > 0) {
-    const details = userAlreadyHasRoom.map(b => {
-      const roomId = b.room_id || b.assigned_room_id;
-      const room = db.get('rooms').find({ id: roomId }).value();
-      return `${room?.name} (${b.start_time}–${b.end_time})`;
-    }).join(', ');
-    return res.status(409).json({ error: `כבר יש לך חדר מוקצה בשעות אלו: ${details}` });
+    // Instead of blocking, offer a swap: find available rooms (excluding their current one)
+    const existing = userAlreadyHasRoom[0];
+    const originalRoomId = existing.room_id || existing.assigned_room_id;
+    const originalRoom = db.get('rooms').find({ id: originalRoomId }).value();
+
+    const swapAvailable = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().filter(room => {
+      if (room.id === originalRoomId) return false; // exclude the room they already have
+      const busy = [
+        ...permBusy.filter(b => b.room_id === room.id),
+        ...otBusy.filter(b => b.assigned_room_id === room.id),
+      ];
+      return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
+    });
+
+    return res.json({
+      availableRooms: swapAvailable,
+      isSwap: true,
+      originalRoom: {
+        room_id: originalRoomId,
+        room_name: originalRoom?.name,
+        start_time: existing.start_time,
+        end_time: existing.end_time,
+      },
+    });
   }
 
   const available = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().filter(room => {
@@ -192,21 +216,31 @@ router.post('/', (req, res) => {
 // Called when the user picks a room from the available-rooms list.
 // Creates the record AND assigns the room in one atomic step.
 router.post('/book-room', (req, res) => {
-  const { specific_date, start_time, end_time, notes, room_id, impersonate_user_id } = req.body;
+  const { specific_date, start_time, end_time, notes, room_id, impersonate_user_id,
+          is_swap, swap_reason, original_room_id } = req.body;
   if (!specific_date || !start_time || !end_time || !room_id) {
     return res.status(400).json({ error: 'חסרים פרמטרים' });
   }
+  if (is_swap && !swap_reason?.trim()) {
+    return res.status(400).json({ error: 'יש להזין סיבה לבקשת חדר חלופי' });
+  }
   const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
 
-  // Verify the room is still free (race-condition guard)
+  // Verify the new room is still free (race-condition guard)
   const dayOfWeek = new Date(specific_date).getDay();
   const absentUsers = db.get('one_time_requests')
     .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
     .map('user_id').value();
+  // For swaps: the swapping user's original permanent room is freed — don't count it
+  const swappedOut = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
+    .value();
   const permBusy = db.get('room_assignments')
     .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek, room_id: +room_id })
     .value()
-    .filter(a => !absentUsers.includes(a.user_id));
+    .filter(a => !absentUsers.includes(a.user_id))
+    .filter(a => !swappedOut.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
+      && s.start_time && overlap(start_time, end_time, s.start_time, s.end_time)));
   const otBusy = db.get('one_time_requests')
     .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === +room_id)
     .value();
@@ -218,16 +252,19 @@ router.post('/book-room', (req, res) => {
     return res.status(409).json({ error: 'החדר שנבחר כבר תפוס בינתיים — חפש שוב' });
   }
 
+  const request_type = is_swap ? 'room_swap' : 'room_request';
   const rec = {
     id: nextId('one_time_requests'),
     user_id: userId,
-    request_type: 'room_request',
+    request_type,
     specific_date,
     day_of_week: null,
     start_time: start_time || null,
     end_time: end_time || null,
     status: 'assigned',
     assigned_room_id: +room_id,
+    original_room_id: is_swap ? +original_room_id : null,
+    swap_reason: is_swap ? swap_reason.trim() : null,
     notes: notes || null,
     admin_response: null,
     reduce_assignment_id: null,
@@ -237,7 +274,68 @@ router.post('/book-room', (req, res) => {
   db.get('one_time_requests').push(rec).write();
 
   const room = db.get('rooms').find({ id: +room_id }).value();
-  res.json({ message: `הוקצה לך ${room?.name ?? 'חדר'}` });
+
+  if (is_swap) {
+    // Notify all admins
+    const swapper = db.get('users').find({ id: userId }).value();
+    const origRoom = db.get('rooms').find({ id: +original_room_id }).value();
+    const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const dow = new Date(specific_date).getDay();
+    const msg = `🔄 ${swapper?.name} עבר/ה לחדר חלופי — יום ${DAYS_HE[dow]} ${specific_date} (${start_time}–${end_time}): ${origRoom?.name} ← סיבה → ${room?.name}. סיבה: ${swap_reason.trim()}`;
+    if (!db.has('notifications').value()) db.set('notifications', []).write();
+    db.get('users').filter({ role: 'admin', is_active: true }).value().forEach(a => {
+      db.get('notifications').push({ id: nextId('notifications'), user_id: a.id, message: msg, read: false, created_at: new Date().toISOString() }).write();
+    });
+  }
+
+  res.json({ message: `הוקצה לך ${room?.name ?? 'חדר'}${is_swap ? ' (חדר חלופי)' : ''}` });
+});
+
+// Admin: weekly room-swap summary
+router.get('/swaps-weekly', requireAdmin, (req, res) => {
+  // Current week: Sun–Thu (or the trailing 7 days if no specific week)
+  const today = new Date();
+  const dow = today.getDay();
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - dow);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+  const from = weekStart.toISOString().slice(0, 10);
+  const to = weekEnd.toISOString().slice(0, 10);
+
+  const swaps = db.get('one_time_requests')
+    .filter(r => r.request_type === 'room_swap' && r.status === 'assigned'
+      && r.specific_date >= from && r.specific_date <= to)
+    .value()
+    .map(r => {
+      const user = db.get('users').find({ id: r.user_id }).value();
+      const origRoom = db.get('rooms').find({ id: r.original_room_id }).value();
+      const newRoom = db.get('rooms').find({ id: r.assigned_room_id }).value();
+      return {
+        id: r.id,
+        user_id: r.user_id,
+        user_name: user?.name,
+        specific_date: r.specific_date,
+        start_time: r.start_time,
+        end_time: r.end_time,
+        original_room_name: origRoom?.name,
+        new_room_name: newRoom?.name,
+        swap_reason: r.swap_reason,
+      };
+    });
+
+  // Group by user_id, flag those with >1 swap
+  const byUser = {};
+  swaps.forEach(s => {
+    if (!byUser[s.user_id]) byUser[s.user_id] = { user_name: s.user_name, swaps: [] };
+    byUser[s.user_id].swaps.push(s);
+  });
+  const summary = Object.values(byUser).map(u => ({
+    user_name: u.user_name,
+    count: u.swaps.length,
+    repeated: u.swaps.length > 1,
+    swaps: u.swaps,
+  })).sort((a, b) => b.count - a.count);
+
+  res.json({ from, to, summary });
 });
 
 router.post('/:id/confirm', (req, res) => {

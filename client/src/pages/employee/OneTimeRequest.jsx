@@ -24,6 +24,9 @@ export default function OneTimeRequest() {
   const [allUsers, setAllUsers] = useState([]);
   const [impersonateId, setImpersonateId] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [isSwap, setIsSwap] = useState(false);
+  const [swapOriginalRoom, setSwapOriginalRoom] = useState(null);
+  const [swapReason, setSwapReason] = useState('');
 
   useEffect(() => {
     loadRequests();
@@ -43,6 +46,13 @@ export default function OneTimeRequest() {
       const r = await api.post('/requests', body);
       if (type === 'room_request' && r.data.availableRooms) {
         setAvailableRooms(r.data.availableRooms);
+        if (r.data.isSwap) {
+          setIsSwap(true);
+          setSwapOriginalRoom(r.data.originalRoom);
+        } else {
+          setIsSwap(false);
+          setSwapOriginalRoom(null);
+        }
         setStep('pick-room');
       } else {
         setMsg(r.data.message);
@@ -54,6 +64,10 @@ export default function OneTimeRequest() {
   };
 
   const confirmRoom = async (roomId) => {
+    if (isSwap && !swapReason.trim()) {
+      setMsg('יש להזין סיבה לבקשת החדר החלופי');
+      return;
+    }
     setLoading(true);
     try {
       const r = await api.post('/requests/book-room', {
@@ -63,6 +77,7 @@ export default function OneTimeRequest() {
         notes,
         room_id: roomId,
         ...(isAdmin && impersonateId ? { impersonate_user_id: impersonateId } : {}),
+        ...(isSwap ? { is_swap: true, swap_reason: swapReason.trim(), original_room_id: swapOriginalRoom.room_id } : {}),
       });
       setMsg(r.data.message);
       setStep('done');
@@ -71,7 +86,7 @@ export default function OneTimeRequest() {
     finally { setLoading(false); }
   };
 
-  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); };
+  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); setIsSwap(false); setSwapOriginalRoom(null); setSwapReason(''); };
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -195,7 +210,26 @@ export default function OneTimeRequest() {
 
         {step === 'pick-room' && (
           <div>
-            <h3 className="font-semibold mb-3">בחר חדר זמין ל-{date} בין {startTime}–{endTime}</h3>
+            {isSwap && (
+              <div className="bg-orange-50 border border-orange-300 rounded-xl px-4 py-3 mb-4">
+                <div className="font-semibold text-orange-800 mb-1">⚠️ כבר יש לך חדר בשעות אלו</div>
+                <div className="text-sm text-orange-700 mb-1">
+                  {swapOriginalRoom?.room_name} ({swapOriginalRoom?.start_time}–{swapOriginalRoom?.end_time})
+                </div>
+                <div className="text-sm text-orange-600 mb-3">
+                  בחירת חדר חלופי תשחרר את החדר הנוכחי לתאריך זה בלבד. השיבוץ הקבוע שלך לא ישתנה.
+                </div>
+                <label className="label">סיבה <span className="text-red-500">*</span></label>
+                <textarea
+                  className="input w-full h-16 resize-none"
+                  value={swapReason}
+                  onChange={e => setSwapReason(e.target.value)}
+                  placeholder="למשל: מחשב לא עובד, פגישה פרטית, שיתוף עם עובד אחר..."
+                />
+              </div>
+            )}
+            <h3 className="font-semibold mb-3">בחר חדר {isSwap ? 'חלופי' : 'זמין'} ל-{date} בין {startTime}–{endTime}</h3>
+            {msg && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm mb-3">{msg}</div>}
             {availableRooms.length === 0 ? (
               <div className="text-red-600 text-sm">אין חדרים פנויים בשעות הללו. הבקשה הועברה למנהל.</div>
             ) : (

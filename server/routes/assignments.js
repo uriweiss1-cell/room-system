@@ -143,15 +143,22 @@ router.get('/query', (req, res) => {
     .filter(r => r.specific_date === date && r.request_type === 'absence' && r.status === 'assigned')
     .map('user_id').value();
 
+  // Users who swapped their room for this date/time — show them in new room, not original
+  const swaps = db.get('one_time_requests')
+    .filter(r => r.specific_date === date && r.request_type === 'room_swap' && r.status === 'assigned'
+      && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
+    .value();
+
   let regular = db.get('room_assignments')
     .filter(a => a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time)
-      && !absences.includes(a.user_id))
+      && !absences.includes(a.user_id)
+      && !swaps.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id))
     .value().map(enrichAssignment);
 
   let oneTime = db.get('one_time_requests')
     .filter(r => r.specific_date === date && r.status === 'assigned'
-      && ['room_request', 'library_request', 'meeting_request', 'mamod_request'].includes(r.request_type)
+      && ['room_request', 'library_request', 'meeting_request', 'mamod_request', 'room_swap'].includes(r.request_type)
       && r.assigned_room_id && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
     .value().map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();

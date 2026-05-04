@@ -230,6 +230,42 @@ function RoomPicker({ req, onAssigned }) {
   );
 }
 
+function WeeklySwapSummary() {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { api.get('/requests/swaps-weekly').then(r => setData(r.data)).catch(() => {}); }, []);
+  if (!data || data.summary.length === 0) return null;
+  const repeated = data.summary.filter(u => u.repeated);
+  return (
+    <div className={`card border ${repeated.length > 0 ? 'border-orange-300 bg-orange-50' : 'border-blue-200 bg-blue-50'}`}>
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => setOpen(o => !o)}>
+        <div className="font-semibold text-sm flex items-center gap-2">
+          🔄 חדרות חלופיים השבוע ({data.from} – {data.to})
+          {repeated.length > 0 && <span className="badge badge-yellow">{repeated.length} עובד/ת חזרו/ה על הבקשה</span>}
+        </div>
+        <span className="text-gray-400 text-xs">{open ? '▲ סגור' : '▼ הצג'}</span>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {data.summary.map((u, i) => (
+            <div key={i} className={`rounded-lg border px-3 py-2 ${u.repeated ? 'border-orange-300 bg-white' : 'border-gray-200 bg-white'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-medium">{u.user_name}</span>
+                {u.repeated && <span className="badge badge-yellow">⚠️ {u.count} פעמים השבוע</span>}
+              </div>
+              {u.swaps.map((s, j) => (
+                <div key={j} className="text-xs text-gray-600 mb-0.5">
+                  {s.specific_date} {s.start_time}–{s.end_time} | {s.original_room_name} → {s.new_room_name} | סיבה: {s.swap_reason}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminRequests() {
   const [requests, setRequests] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -263,6 +299,7 @@ export default function AdminRequests() {
 
   return (
     <div className="space-y-5">
+      <WeeklySwapSummary />
       <div className="card">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h2 className="text-xl font-bold">בקשות עובדים {pendingCount > 0 && <span className="badge badge-yellow mr-2">{pendingCount} ממתינות</span>}</h2>
@@ -295,6 +332,7 @@ export default function AdminRequests() {
                       {req.start_time && <span>{req.start_time}–{req.end_time}</span>}
                       {req.room_name && <span> | חדר: {req.room_name}</span>}
                     </div>
+                    {req.swap_reason && <div className="text-sm text-orange-700 mt-1">🔄 סיבה לחדר חלופי: {req.swap_reason}</div>}
                     {req.notes && <div className="text-sm text-gray-500 mt-1">הערת עובד: {req.notes}</div>}
                     {req.admin_response && <div className="text-sm text-blue-700 mt-1">תגובת מנהל: {req.admin_response}</div>}
                     {req.existing_assignments?.length > 0 && (

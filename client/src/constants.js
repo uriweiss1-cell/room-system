@@ -36,6 +36,7 @@ export const STATUS_COLORS = {
 export const REQUEST_TYPE_LABELS = {
   absence: 'היעדרות',
   room_request: 'בקשת חדר חד-פעמית',
+  room_swap: 'חדר חלופי',
   permanent_request: 'בקשת שינוי קבוע',
   library_request: 'בקשת ספריה',
   meeting_request: 'בקשת חדר ישיבות',
