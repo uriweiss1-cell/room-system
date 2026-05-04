@@ -240,7 +240,7 @@ function WeeklySwapSummary() {
     <div className={`card border ${repeated.length > 0 ? 'border-orange-300 bg-orange-50' : 'border-blue-200 bg-blue-50'}`}>
       <div className="flex items-center justify-between cursor-pointer" onClick={() => setOpen(o => !o)}>
         <div className="font-semibold text-sm flex items-center gap-2">
-          🔄 חדרות חלופיים השבוע ({data.from} – {data.to})
+          🔄 חדרים חלופיים השבוע ({data.from} – {data.to})
           {repeated.length > 0 && <span className="badge badge-yellow">{repeated.length} עובד/ת חזרו/ה על הבקשה</span>}
         </div>
         <span className="text-gray-400 text-xs">{open ? '▲ סגור' : '▼ הצג'}</span>
