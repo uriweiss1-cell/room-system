@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, nextId } = require('../database');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { sendAdminEmail, REQUEST_TYPE_LABELS, DAYS_HE } = require('../email');
 
 const router = express.Router();
 router.use(authenticate);
@@ -104,6 +105,27 @@ router.post('/', (req, res) => {
   }
 
   if (request_type === 'permanent_request') {
+    const requester = db.get('users').find({ id: userId }).value();
+    sendAdminEmail('בקשת שינוי קבוע — ממתין לאישור', [
+      ['עובד/ת', requester?.name || userId],
+      ['יום', DAYS_HE[day_of_week] || '—'],
+      ['שעות מבוקשות', `${start_time}–${end_time}`],
+      ['הערה', notes || '—'],
+    ]);
+    return res.json({ requestId: r.id, message: 'הבקשה הועברה למנהל לאישור' });
+  }
+
+  if (request_type === 'permanent_reduce') {
+    const requester = db.get('users').find({ id: userId }).value();
+    const existingAssign = reduce_assignment_id
+      ? db.get('room_assignments').find({ id: +reduce_assignment_id }).value() : null;
+    const existingRoom = existingAssign ? db.get('rooms').find({ id: existingAssign.room_id }).value() : null;
+    sendAdminEmail('בקשת הפחתת שעות — ממתין לאישור', [
+      ['עובד/ת', requester?.name || userId],
+      ['חדר', existingRoom?.name || '—'],
+      ['שעות חדשות מבוקשות', `${start_time}–${end_time}`],
+      ['הערה', notes || '—'],
+    ]);
     return res.json({ requestId: r.id, message: 'הבקשה הועברה למנהל לאישור' });
   }
 
@@ -208,6 +230,14 @@ router.post('/', (req, res) => {
       created_at: new Date().toISOString(),
     };
     db.get('one_time_requests').push(pending).write();
+    const requester = db.get('users').find({ id: userId }).value();
+    sendAdminEmail('בקשת חדר ממתינה — אין חדרים פנויים', [
+      ['עובד/ת', requester?.name || userId],
+      ['תאריך', specific_date],
+      ['שעות', `${start_time}–${end_time}`],
+      ['הערה', notes || '—'],
+      ['סטטוס', 'ממתין לטיפול מנהל'],
+    ]);
   }
 
   res.json({ availableRooms: available });
@@ -276,16 +306,24 @@ router.post('/book-room', (req, res) => {
   const room = db.get('rooms').find({ id: +room_id }).value();
 
   if (is_swap) {
-    // Notify all admins
+    // Notify all admins (in-app)
     const swapper = db.get('users').find({ id: userId }).value();
     const origRoom = db.get('rooms').find({ id: +original_room_id }).value();
-    const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
     const dow = new Date(specific_date).getDay();
-    const msg = `🔄 ${swapper?.name} עבר/ה לחדר חלופי — יום ${DAYS_HE[dow]} ${specific_date} (${start_time}–${end_time}): ${origRoom?.name} ← סיבה → ${room?.name}. סיבה: ${swap_reason.trim()}`;
+    const msg = `🔄 ${swapper?.name} עבר/ה לחדר חלופי — יום ${DAYS_HE[dow]} ${specific_date} (${start_time}–${end_time}): ${origRoom?.name} → ${room?.name}. סיבה: ${swap_reason.trim()}`;
     if (!db.has('notifications').value()) db.set('notifications', []).write();
     db.get('users').filter({ role: 'admin', is_active: true }).value().forEach(a => {
       db.get('notifications').push({ id: nextId('notifications'), user_id: a.id, message: msg, read: false, created_at: new Date().toISOString() }).write();
     });
+    // Also email
+    sendAdminEmail('עובד/ת עבר/ה לחדר חלופי', [
+      ['עובד/ת', swapper?.name || userId],
+      ['תאריך', `${specific_date} (יום ${DAYS_HE[dow]})`],
+      ['שעות', `${start_time}–${end_time}`],
+      ['חדר מקורי', origRoom?.name || '—'],
+      ['חדר חלופי', room?.name || '—'],
+      ['סיבה', swap_reason.trim()],
+    ]);
   }
 
   res.json({ message: `הוקצה לך ${room?.name ?? 'חדר'}${is_swap ? ' (חדר חלופי)' : ''}` });
