@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
@@ -13,19 +13,11 @@ const REQUEST_TYPE_LABELS = {
   permanent_reduce: 'הפחתת שעות קבועות',
 };
 
-function getTransporter() {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null;
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-  });
-}
-
 async function sendAdminEmail(subject, rows) {
   const to = process.env.ADMIN_EMAIL;
-  if (!to) return;
-  const transporter = getTransporter();
-  if (!transporter) return;
+  if (!to || !process.env.RESEND_API_KEY) return;
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   const rowsHtml = rows.map(([label, value]) =>
     `<tr>
@@ -51,8 +43,8 @@ async function sendAdminEmail(subject, rows) {
 </div>`;
 
   try {
-    await transporter.sendMail({
-      from: `"מערכת שיבוץ חדרים" <${process.env.GMAIL_USER}>`,
+    await resend.emails.send({
+      from: 'מערכת שיבוץ חדרים <onboarding@resend.dev>',
       to,
       subject: `[שיבוץ חדרים] ${subject}`,
       html,
