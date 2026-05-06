@@ -30,6 +30,33 @@ router.get('/all', requireAdmin, (req, res) => {
   res.json(list);
 });
 
+// Weekly one-time assignments + absences for the grid
+router.get('/weekly-one-time', requireAdmin, (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'נדרשים from ו-to' });
+  const requests = db.get('one_time_requests')
+    .filter(r => r.specific_date >= from && r.specific_date <= to && r.status === 'assigned')
+    .value();
+  const oneTime = requests
+    .filter(r => ['room_request','room_swap','library_request','meeting_request','mamod_request'].includes(r.request_type) && r.assigned_room_id)
+    .map(r => {
+      const user = db.get('users').find({ id: r.user_id }).value();
+      const room = db.get('rooms').find({ id: r.assigned_room_id }).value();
+      return { id: r.id, user_id: r.user_id, user_name: user?.name, room_id: r.assigned_room_id, room_name: room?.name,
+        specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
+        start_time: r.start_time, end_time: r.end_time, request_type: r.request_type, swap_reason: r.swap_reason };
+    });
+  const absences = requests
+    .filter(r => r.request_type === 'absence')
+    .map(r => {
+      const user = db.get('users').find({ id: r.user_id }).value();
+      return { id: r.id, user_id: r.user_id, user_name: user?.name,
+        specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay() };
+    });
+  res.json({ oneTime, absences });
+});
+});
+
 // Create a one-time guest assignment (admin only)
 router.post('/guest', requireAdmin, (req, res) => {
   const { guest_name, room_id, specific_date, start_time, end_time } = req.body;

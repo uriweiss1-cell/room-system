@@ -33,8 +33,27 @@ export default function AdminAssignments() {
   const [debugLoading, setDebugLoading] = useState(false);
   const [editingSlot, setEditingSlot] = useState(null); // { id, user_name, room_name, day }
   const [editForm, setEditForm] = useState({ start_time: '', end_time: '' });
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [weeklyOneTime, setWeeklyOneTime] = useState({ oneTime: [], absences: [] });
+
+  // Compute Sun–Thu dates for the selected week
+  const weekDates = (() => {
+    const today = new Date();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - today.getDay() + weekOffset * 7);
+    return [0,1,2,3,4].map(d => {
+      const dt = new Date(sunday); dt.setDate(sunday.getDate() + d);
+      return dt.toISOString().slice(0,10);
+    });
+  })();
+
+  const loadWeeklyOneTime = () => {
+    api.get('/assignments/weekly-one-time', { params: { from: weekDates[0], to: weekDates[4] } })
+      .then(r => setWeeklyOneTime(r.data)).catch(() => {});
+  };
 
   useEffect(() => { load(); loadGuests(); }, []);
+  useEffect(() => { loadWeeklyOneTime(); }, [weekOffset]);
   const loadGuests = () => api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
   const load = async () => {
     const [a, u, r] = await Promise.all([
@@ -208,6 +227,12 @@ export default function AdminAssignments() {
 
   const deleteAssignment = async id => {
     await api.delete(`/assignments/${id}`); load();
+  };
+
+  const deleteOneTime = async (id, label) => {
+    if (!confirm(`למחוק את השיבוץ החד-פעמי: ${label}?`)) return;
+    await api.delete(`/requests/${id}`);
+    loadWeeklyOneTime();
   };
 
   const saveEdit = async () => {
@@ -761,12 +786,31 @@ export default function AdminAssignments() {
       {/* Grid view — rooms × days */}
       {viewMode === 'grid' && (
         <div className="card overflow-x-auto">
+          {/* Week navigation */}
+          <div className="flex items-center gap-3 mb-3">
+            <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w - 1)}>◀ שבוע קודם</button>
+            <span className="text-sm font-medium text-gray-700">
+              {weekDates[0].slice(5).split('-').reverse().join('/')} – {weekDates[4].slice(5).split('-').reverse().join('/')}
+              {weekOffset === 0 && <span className="mr-2 text-xs text-blue-600">(השבוע)</span>}
+            </span>
+            <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w + 1)}>שבוע הבא ▶</button>
+            {weekOffset !== 0 && <button className="btn btn-ghost px-2 py-1 text-xs text-blue-600" onClick={() => setWeekOffset(0)}>חזור להיום</button>}
+          </div>
+          {/* Legend */}
+          <div className="flex gap-3 mb-2 text-xs flex-wrap">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-300 inline-block"></span>שיבוץ קבוע</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100 border border-orange-400 inline-block"></span>שיבוץ חד-פעמי</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100 border border-gray-300 inline-block"></span>היעדרות</span>
+          </div>
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr className="bg-gray-100">
                 <th className="border border-gray-300 px-2 py-2 text-right font-semibold min-w-[70px]">חדר</th>
                 {DAYS.map((d, i) => (
-                  <th key={i} className="border border-gray-300 px-2 py-2 text-center font-semibold min-w-[110px]">{d}</th>
+                  <th key={i} className="border border-gray-300 px-2 py-2 text-center font-semibold min-w-[110px]">
+                    <div>{d}</div>
+                    <div className="font-normal text-gray-500">{weekDates[i].slice(5).split('-').reverse().join('/')}</div>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -775,18 +819,35 @@ export default function AdminAssignments() {
                   const n = x => parseInt((x.name || '').match(/\d+/)?.[0] ?? '999');
                   return n(a) - n(b);
                 })
-                .filter(room => !search || assignments.some(a => a.room_id === room.id && a.user_name?.includes(search)))
+                .filter(room => !search || assignments.some(a => a.room_id === room.id && a.user_name?.includes(search))
+                  || weeklyOneTime.oneTime.some(a => a.room_id === room.id && a.user_name?.includes(search)))
                 .map(room => (
                 <tr key={room.id} className="hover:bg-gray-50">
                   <td className="border border-gray-300 px-2 py-1 font-semibold text-gray-700 whitespace-nowrap">{room.name}</td>
                   {DAYS.map((_, dayIdx) => {
-                    const slots = assignments
+                    const date = weekDates[dayIdx];
+                    const permSlots = assignments
                       .filter(a => a.room_id === room.id && a.day_of_week === dayIdx)
                       .sort((a, b) => a.start_time.localeCompare(b.start_time));
+                    const otSlots = weeklyOneTime.oneTime
+                      .filter(a => a.room_id === room.id && a.day_of_week === dayIdx)
+                      .sort((a, b) => (a.start_time||'').localeCompare(b.start_time||''));
+                    const absentUserIds = new Set(weeklyOneTime.absences
+                      .filter(a => a.day_of_week === dayIdx).map(a => a.user_id));
                     return (
                       <td key={dayIdx} className="border border-gray-300 px-1 py-1 align-top">
-                        {slots.map(a => {
+                        {/* Permanent assignments */}
+                        {permSlots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
+                          const isAbsent = absentUserIds.has(a.user_id);
+                          if (isAbsent) return (
+                            <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
+                              <div className="flex items-start justify-between gap-0.5">
+                                <div className="font-medium leading-tight flex-1 text-gray-400 italic line-through">{a.user_name}</div>
+                              </div>
+                              <div className="text-gray-400 leading-tight italic">🚫 נעדר/ת</div>
+                            </div>
+                          );
                           return (
                             <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : a.is_guest ? 'bg-teal-50 border-teal-300' : 'bg-blue-50 border-blue-200'}`}>
                               <div className="flex items-start justify-between gap-0.5">
@@ -797,6 +858,21 @@ export default function AdminAssignments() {
                                 </div>
                               </div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
+                            </div>
+                          );
+                        })}
+                        {/* One-time assignments */}
+                        {otSlots.map(a => {
+                          const highlighted = search && a.user_name?.includes(search);
+                          const typeLabel = a.request_type === 'room_swap' ? '🔄' : a.request_type === 'library_request' ? '📚' : a.request_type === 'meeting_request' ? '👥' : '📅';
+                          return (
+                            <div key={`ot-${a.id}`} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-orange-50 border-orange-400'}`}>
+                              <div className="flex items-start justify-between gap-0.5">
+                                <div className={`font-medium leading-tight flex-1 ${highlighted ? 'text-yellow-900' : 'text-orange-900'}`}>{typeLabel} {a.user_name}</div>
+                                <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
+                              </div>
+                              <div className="text-orange-700 leading-tight">{a.start_time}–{a.end_time}</div>
+                              {a.swap_reason && <div className="text-orange-600 leading-tight truncate" title={a.swap_reason}>💬 {a.swap_reason}</div>}
                             </div>
                           );
                         })}
