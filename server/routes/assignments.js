@@ -55,7 +55,6 @@ router.get('/weekly-one-time', requireAdmin, (req, res) => {
     });
   res.json({ oneTime, absences });
 });
-});
 
 // Create a one-time guest assignment (admin only)
 router.post('/guest', requireAdmin, (req, res) => {
