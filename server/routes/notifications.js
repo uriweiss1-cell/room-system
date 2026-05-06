@@ -6,7 +6,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', (req, res) => {
-  const list = db.get('notifications').filter({ user_id: req.user.id }).value().reverse();
+  const list = db.get('notifications').filter({ user_id: req.user.id, read: false }).value().reverse();
   res.json(list);
 });
 
