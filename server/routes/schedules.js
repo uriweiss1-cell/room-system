@@ -39,16 +39,48 @@ function saveSchedule(userId, schedules) {
     }
   });
 
-  // Update hours only for days with a single assignment (split days are left for admin)
+  // Update hours for days still in schedule — smart trim for split days
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const toTime = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
   schedules.forEach(slot => {
-    const dayAssignments = assignments.filter(a => a.day_of_week === slot.day_of_week);
+    const newStart = toMin(slot.start_time);
+    const newEnd = toMin(slot.end_time);
+
+    const dayAssignments = assignments
+      .filter(a => a.day_of_week === slot.day_of_week)
+      .sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+
+    if (dayAssignments.length === 0) return;
+
     if (dayAssignments.length === 1) {
+      // Simple case: just update the hours
       db.get('room_assignments').find({ id: dayAssignments[0].id }).assign({
         start_time: slot.start_time,
         end_time: slot.end_time,
       }).write();
+      return;
     }
-    // If multiple assignments exist for this day (split by algorithm), leave them untouched
+
+    // Split day: trim first and last, remove those fully outside range
+    dayAssignments.forEach((a, idx) => {
+      const aStart = toMin(a.start_time);
+      const aEnd = toMin(a.end_time);
+
+      // Remove if fully outside new range
+      if (aEnd <= newStart || aStart >= newEnd) {
+        db.get('room_assignments').remove({ id: a.id }).write();
+        return;
+      }
+
+      const updatedStart = idx === 0 ? toTime(Math.max(aStart, newStart)) : a.start_time;
+      const updatedEnd = idx === dayAssignments.length - 1 ? toTime(Math.min(aEnd, newEnd)) : a.end_time;
+
+      db.get('room_assignments').find({ id: a.id }).assign({
+        start_time: updatedStart,
+        end_time: updatedEnd,
+      }).write();
+    });
   });
 }
 
