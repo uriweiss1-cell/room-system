@@ -536,8 +536,11 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
   }
 
   if (action.type === 'split' || action.type === 'partial') {
+    // Remove all existing permanent assignments for this user/day before splitting
+    db.get('room_assignments').remove(a =>
+      a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
+    ).write();
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
-    // For split: sync preferred to the room with the most hours; trim schedule to what was assigned
     const longest = action.parts.reduce((a, b) => (toMin(b.end) - toMin(b.start) > toMin(a.end) - toMin(a.start) ? b : a));
     const splitStart = action.parts[0].start;
     const splitEnd = action.parts[action.parts.length - 1].end;
@@ -546,6 +549,11 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
   }
 
   if (action.type === 'shift') {
+    // Remove existing overlapping assignments for this user/day before shifting
+    db.get('room_assignments').remove(a =>
+      a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
+      && overlap(a.start_time, a.end_time, action.start, action.end)
+    ).write();
     push({ user_id: action.conflictUserId, room_id: action.roomId, day_of_week: action.day, start_time: action.start, end_time: action.end });
     syncSchedule(action.conflictUserId, action.day, action.roomId, action.start, action.end);
     return res.json({ message: 'שיבוץ עם שעות מותאמות הוחל' });
@@ -561,10 +569,18 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     ).value();
     const existing = allForUser.find(a => ovlp(a.start_time, a.end_time, action.displaceStart, action.displaceEnd));
     if (existing) db.get('room_assignments').remove({ id: existing.id }).write();
-    // Move blocker to alt room
+    // Move blocker to alt room (remove any existing assignment in that alt room first)
+    db.get('room_assignments').remove(a =>
+      a.user_id === +action.displaceUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
+      && a.room_id === +action.toRoomId && overlap(a.start_time, a.end_time, action.displaceStart, action.displaceEnd)
+    ).write();
     push({ user_id: +action.displaceUserId, room_id: +action.toRoomId, day_of_week: +action.day, start_time: action.displaceStart, end_time: action.displaceEnd });
     syncSchedule(action.displaceUserId, action.day, action.toRoomId, action.displaceStart, action.displaceEnd);
-    // Assign conflict user to freed room
+    // Remove conflict user's existing assignment before assigning to freed room
+    db.get('room_assignments').remove(a =>
+      a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
+      && overlap(a.start_time, a.end_time, action.conflictStart, action.conflictEnd)
+    ).write();
     push({ user_id: +action.conflictUserId, room_id: +action.fromRoomId, day_of_week: +action.day, start_time: action.conflictStart, end_time: action.conflictEnd });
     syncSchedule(action.conflictUserId, action.day, action.fromRoomId, action.conflictStart, action.conflictEnd);
     // Notify the displaced user (safely, in case notifications collection isn't initialized)
