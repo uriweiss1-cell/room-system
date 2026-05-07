@@ -533,14 +533,17 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
   const { date, start_time, end_time } = req.query;
   if (!date || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dayOfWeek = new Date(date).getDay();
-  // Absent users' permanent rooms are free
-  const absentUsersForDate = db.get('one_time_requests')
+  // Absent users' permanent rooms are free (full-day or partial)
+  const absencesForDate = db.get('one_time_requests')
     .filter(x => x.specific_date === date && x.request_type === 'absence' && x.status === 'assigned')
-    .map('user_id').value();
+    .value();
+  const isAbsentAt = (userId, s, e) => absencesForDate.filter(a => a.user_id === userId).some(a =>
+    !a.start_time ? true : overlap(s, e, a.start_time, a.end_time)
+  );
   const permBusy = db.get('room_assignments')
     .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
     .value()
-    .filter(a => !absentUsersForDate.includes(a.user_id));
+    .filter(a => !isAbsentAt(a.user_id, start_time, end_time));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === date && x.status === 'assigned' && x.assigned_room_id).value();
   // Guest one-time assignments stored directly in room_assignments
   const guestBusy = db.get('room_assignments')

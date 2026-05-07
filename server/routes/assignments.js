@@ -46,14 +46,27 @@ router.get('/weekly-one-time', requireAdmin, (req, res) => {
         specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
         start_time: r.start_time, end_time: r.end_time, request_type: r.request_type, swap_reason: r.swap_reason };
     });
+
+  // Also include guest one-time assignments from room_assignments
+  const guests = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && a.specific_date >= from && a.specific_date <= to && a.guest_name)
+    .value()
+    .map(a => {
+      const room = db.get('rooms').find({ id: a.room_id }).value();
+      return { id: a.id, user_id: null, user_name: a.guest_name, room_id: a.room_id, room_name: room?.name,
+        specific_date: a.specific_date, day_of_week: new Date(a.specific_date).getDay(),
+        start_time: a.start_time, end_time: a.end_time, request_type: 'guest', is_guest: true };
+    });
+
   const absences = requests
     .filter(r => r.request_type === 'absence')
     .map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
       return { id: r.id, user_id: r.user_id, user_name: user?.name,
-        specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay() };
+        specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
+        start_time: r.start_time, end_time: r.end_time };
     });
-  res.json({ oneTime, absences });
+  res.json({ oneTime: [...oneTime, ...guests], absences });
 });
 
 // Create a one-time guest assignment (admin only)
