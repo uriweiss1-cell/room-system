@@ -610,6 +610,14 @@ export default function AdminAssignments() {
                         {pc.assignedRoomName
                           ? <span className="inline-flex items-center gap-1 bg-green-100 border border-green-300 text-green-800 font-semibold px-2 py-0.5 rounded text-xs">✓ שובץ בפועל: {pc.assignedRoomName}</span>
                           : <span className="inline-flex items-center bg-red-100 border border-red-300 text-red-700 font-semibold px-2 py-0.5 rounded text-xs">✗ לא שובץ כלל</span>}
+                        <button
+                          className="mr-auto text-xs text-gray-400 hover:text-gray-600 border border-gray-300 rounded px-2 py-0.5 bg-white"
+                          title="סמן כטופל והסר"
+                          onClick={() => setGenResult(prev => {
+                            const updated = { ...prev, preferenceConflicts: (prev.preferenceConflicts || []).filter(c => c.userId !== pc.userId) };
+                            localStorage.setItem('lastGenResult', JSON.stringify(updated));
+                            return updated;
+                          })}>✓ טופל</button>
                       </div>
 
                       {/* Stats for requested user */}
