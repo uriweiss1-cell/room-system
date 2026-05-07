@@ -178,9 +178,13 @@ router.get('/query', (req, res) => {
   if (!date || !time) return res.status(400).json({ error: 'נדרשים date ו-time' });
   const dayOfWeek = new Date(date).getDay();
 
-  const absences = db.get('one_time_requests')
+  const absencesForQuery = db.get('one_time_requests')
     .filter(r => r.specific_date === date && r.request_type === 'absence' && r.status === 'assigned')
-    .map('user_id').value();
+    .value();
+  // Respect partial absences: only exclude a user if their absence covers the queried time
+  const isAbsentAtQuery = (userId) => absencesForQuery.filter(a => a.user_id === userId).some(a =>
+    !a.start_time ? true : (toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time))
+  );
 
   // Users who swapped their room for this date/time — show them in new room, not original
   const swaps = db.get('one_time_requests')
@@ -191,7 +195,7 @@ router.get('/query', (req, res) => {
   let regular = db.get('room_assignments')
     .filter(a => a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time)
-      && !absences.includes(a.user_id)
+      && !isAbsentAtQuery(a.user_id)
       && !swaps.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id))
     .value().map(enrichAssignment);
 
@@ -506,14 +510,12 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
   // Sets preferred_room_id = assigned room, and trims schedule hours to match.
   const syncSchedule = (userId, day, roomId, start, end) => {
     const uid = +userId; const rid = +roomId; const d = +day;
-    // Update hours + preferred_room_id for the resolved day
+    // Update preferred_room_id for all schedule entries on the resolved day.
+    // Do NOT overwrite start_time/end_time — a split-day worker may have multiple entries
+    // with different hours and we must not collapse them all to the same range.
     db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week === d).value()
       .forEach(s => {
-        db.get('regular_schedules').find({ id: s.id }).assign({
-          preferred_room_id: rid,
-          start_time: start,
-          end_time: end,
-        }).write();
+        db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
       });
     // Also update preferred_room_id on ALL other days for this user so that
     // getPreferredId() returns the resolved room consistently.
@@ -549,9 +551,13 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
   }
 
   if (action.type === 'split' || action.type === 'partial') {
-    // Remove all existing permanent assignments for this user/day before splitting
+    // Remove only overlapping permanent assignments for this user/day before splitting
+    // (non-overlapping time slots on the same day are preserved)
+    const splitStart = action.parts[0].start;
+    const splitEnd = action.parts[action.parts.length - 1].end;
     db.get('room_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
+      && overlap(a.start_time, a.end_time, splitStart, splitEnd)
     ).write();
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
     const longest = action.parts.reduce((a, b) => (toMin(b.end) - toMin(b.start) > toMin(a.end) - toMin(a.start) ? b : a));

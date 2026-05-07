@@ -108,7 +108,7 @@ export default function Layout() {
           </div>
         </div>
       </nav>
-      {!isAdmin && <GlobalNotifications />}
+      {(!isAdmin || user?.can_admin) && <GlobalNotifications />}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-5">
         <Outlet />
       </main>
