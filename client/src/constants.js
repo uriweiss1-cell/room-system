@@ -1,5 +1,5 @@
-export const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
-export const DAY_NUMS = [0, 1, 2, 3, 4]; // Sun–Thu
+export const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+export const DAY_NUMS = [0, 1, 2, 3, 4, 5]; // Sun–Fri
 
 export const ROLES = {
   admin: 'מנהל מערכת',

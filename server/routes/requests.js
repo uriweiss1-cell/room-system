@@ -62,7 +62,7 @@ router.post('/', (req, res) => {
     while (cur <= end) {
       const d = cur.toISOString().slice(0, 10);
       const dow = cur.getDay();
-      if (dow >= 0 && dow <= 4) dates.push(d); // Sun–Thu only
+      if (dow >= 0 && dow <= 5) dates.push(d); // Sun–Fri only
       cur.setDate(cur.getDate() + 1);
     }
     dates.forEach(d => {
