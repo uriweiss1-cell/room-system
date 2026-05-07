@@ -36,19 +36,19 @@ export default function AdminAssignments() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [weeklyOneTime, setWeeklyOneTime] = useState({ oneTime: [], absences: [] });
 
-  // Compute Sun–Thu dates for the selected week
+  // Compute Sun–Fri dates for the selected week
   const weekDates = (() => {
     const today = new Date();
     const sunday = new Date(today);
     sunday.setDate(today.getDate() - today.getDay() + weekOffset * 7);
-    return [0,1,2,3,4].map(d => {
+    return [0,1,2,3,4,5].map(d => {
       const dt = new Date(sunday); dt.setDate(sunday.getDate() + d);
       return dt.toISOString().slice(0,10);
     });
   })();
 
   const loadWeeklyOneTime = () => {
-    api.get('/assignments/weekly-one-time', { params: { from: weekDates[0], to: weekDates[4] } })
+    api.get('/assignments/weekly-one-time', { params: { from: weekDates[0], to: weekDates[5] } })
       .then(r => setWeeklyOneTime(r.data)).catch(() => {});
   };
 
@@ -790,7 +790,7 @@ export default function AdminAssignments() {
           <div className="flex items-center gap-3 mb-3">
             <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w - 1)}>◀ שבוע קודם</button>
             <span className="text-sm font-medium text-gray-700">
-              {weekDates[0].slice(5).split('-').reverse().join('/')} – {weekDates[4].slice(5).split('-').reverse().join('/')}
+              {weekDates[0].slice(5).split('-').reverse().join('/')} – {weekDates[5].slice(5).split('-').reverse().join('/')}
               {weekOffset === 0 && <span className="mr-2 text-xs text-blue-600">(השבוע)</span>}
             </span>
             <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w + 1)}>שבוע הבא ▶</button>
