@@ -50,7 +50,6 @@ export default function Layout() {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [pendingCount, setPendingCount] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -77,14 +76,9 @@ export default function Layout() {
     { to: '/admin/requests',    label: 'בקשות', badge: pendingCount },
   ];
 
-  const desktopLinkClass = ({ isActive }) =>
+  const linkClass = ({ isActive }) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
       isActive ? 'bg-white text-blue-700' : 'text-white hover:bg-blue-600'
-    }`;
-
-  const mobileLinkClass = ({ isActive }) =>
-    `block px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-      isActive ? 'bg-blue-600 text-white' : 'text-gray-800 hover:bg-gray-100'
     }`;
 
   return (
@@ -92,16 +86,14 @@ export default function Layout() {
       <nav className="bg-blue-700 shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-3 py-2">
           <div className="flex items-center justify-between gap-2">
-
-            {/* Desktop nav links — hidden on mobile */}
-            <div className="hidden md:flex items-center gap-1 overflow-x-auto">
+            <div className="flex items-center gap-1 overflow-x-auto">
               <span className="text-white font-bold text-sm ml-2 shrink-0">🏠 שיבוץ חדרים</span>
-              {employeeLinks.map(l => <NavLink key={l.to} to={l.to} className={desktopLinkClass}>{l.label}</NavLink>)}
+              {employeeLinks.map(l => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
               {isAdmin && (
                 <>
                   <span className="text-blue-300 mx-1">|</span>
                   {adminLinks.map(l => (
-                    <NavLink key={l.to} to={l.to} className={desktopLinkClass}>
+                    <NavLink key={l.to} to={l.to} className={linkClass}>
                       <span className="flex items-center gap-1">
                         {l.label}
                         {l.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{l.badge}</span>}
@@ -111,22 +103,8 @@ export default function Layout() {
                 </>
               )}
             </div>
-
-            {/* Mobile: site title */}
-            <span className="md:hidden text-white font-bold text-sm">🏠 שיבוץ חדרים</span>
-
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-blue-200 text-xs hidden md:block">{user?.name}</span>
-
-              {/* Hamburger button — mobile only */}
-              <button
-                className="md:hidden text-white p-1.5 rounded-lg hover:bg-blue-600 transition-colors"
-                onClick={() => setMenuOpen(p => !p)}
-                aria-label="תפריט"
-              >
-                {menuOpen ? '✕' : '☰'}
-              </button>
-
               <button
                 onClick={() => { logout(); navigate('/login'); }}
                 className="text-white bg-blue-900 hover:bg-blue-800 px-3 py-1.5 rounded-lg text-sm"
@@ -136,32 +114,6 @@ export default function Layout() {
             </div>
           </div>
         </div>
-
-        {/* Mobile dropdown */}
-        {menuOpen && (
-          <div className="md:hidden border-t border-blue-600 bg-white shadow-lg px-3 py-2 space-y-0.5">
-            <p className="text-xs font-semibold text-gray-400 px-3 pt-2 pb-1">עובד</p>
-            {employeeLinks.map(l => (
-              <NavLink key={l.to} to={l.to} className={mobileLinkClass} onClick={() => setMenuOpen(false)}>
-                {l.label}
-              </NavLink>
-            ))}
-            {isAdmin && (
-              <>
-                <p className="text-xs font-semibold text-gray-400 px-3 pt-3 pb-1">ניהול</p>
-                {adminLinks.map(l => (
-                  <NavLink key={l.to} to={l.to} className={mobileLinkClass} onClick={() => setMenuOpen(false)}>
-                    <span className="flex items-center gap-1">
-                      {l.label}
-                      {l.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{l.badge}</span>}
-                    </span>
-                  </NavLink>
-                ))}
-              </>
-            )}
-            <div className="text-xs text-gray-400 px-3 py-2 border-t border-gray-100 mt-1">{user?.name}</div>
-          </div>
-        )}
       </nav>
 
       {(!isAdmin || user?.can_admin) && <GlobalNotifications />}

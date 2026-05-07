@@ -11,7 +11,7 @@ export default function AdminAssignments() {
   const [genResult, setGenResult] = useState(() => {
     try { return JSON.parse(localStorage.getItem('lastGenResult')) || null; } catch { return null; }
   });
-  const [viewMode, setViewMode] = useState(() => window.innerWidth < 768 ? 'day' : 'grid'); // grid | day | employee
+  const [viewMode, setViewMode] = useState('grid'); // grid | day | employee
   const [selectedDay, setSelectedDay] = useState(0);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
