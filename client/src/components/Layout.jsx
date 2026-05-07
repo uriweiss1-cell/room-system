@@ -73,7 +73,7 @@ export default function Layout() {
     { to: '/admin/users',       label: 'עובדים' },
     { to: '/admin/rooms',       label: 'חדרים' },
     { to: '/admin/assignments', label: 'שיבוץ' },
-    { to: '/admin/requests',    label: 'בקשות', badge: pendingCount },
+    { to: '/admin/requests',    label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
   ];
 
   const linkClass = ({ isActive }) =>
@@ -85,21 +85,14 @@ export default function Layout() {
     <div className="min-h-screen flex flex-col">
       <nav className="bg-blue-700 shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 overflow-x-auto">
-              <span className="text-white font-bold text-sm ml-2 shrink-0">🏠 שיבוץ חדרים</span>
+          <div className="flex items-center gap-2 justify-between">
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 flex-wrap">
+              <span className="text-white font-bold text-sm ml-2 hidden sm:block">🏠 שיבוץ חדרים</span>
               {employeeLinks.map(l => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
               {isAdmin && (
                 <>
-                  <span className="text-blue-300 mx-1">|</span>
-                  {adminLinks.map(l => (
-                    <NavLink key={l.to} to={l.to} className={linkClass}>
-                      <span className="flex items-center gap-1">
-                        {l.label}
-                        {l.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{l.badge}</span>}
-                      </span>
-                    </NavLink>
-                  ))}
+                  <span className="text-blue-300 mx-1 hidden sm:block">|</span>
+                  {adminLinks.map(l => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
                 </>
               )}
             </div>
@@ -115,7 +108,6 @@ export default function Layout() {
           </div>
         </div>
       </nav>
-
       {(!isAdmin || user?.can_admin) && <GlobalNotifications />}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-5">
         <Outlet />
