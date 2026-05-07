@@ -3,6 +3,80 @@ import api from '../../api';
 import { DAYS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+function PushToggle() {
+  const [status, setStatus] = useState('loading'); // loading | unsupported | denied | off | on
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setStatus('unsupported'); return;
+    }
+    if (Notification.permission === 'denied') { setStatus('denied'); return; }
+    navigator.serviceWorker.ready.then(reg =>
+      reg.pushManager.getSubscription().then(sub => setStatus(sub ? 'on' : 'off'))
+    ).catch(() => setStatus('off'));
+  }, []);
+
+  const enable = async () => {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setStatus('denied'); return; }
+      const { data } = await api.get('/push/vapid-public-key');
+      if (!data.publicKey) return;
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.publicKey),
+      });
+      await api.post('/push/subscribe', { subscription: sub.toJSON() });
+      setStatus('on');
+    } catch (e) {
+      console.error('[push] שגיאה:', e);
+    }
+  };
+
+  const disable = async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await api.post('/push/unsubscribe', { endpoint: sub.endpoint });
+        await sub.unsubscribe();
+      }
+      setStatus('off');
+    } catch (e) {
+      console.error('[push] שגיאה:', e);
+    }
+  };
+
+  if (status === 'loading' || status === 'unsupported') return null;
+
+  if (status === 'denied') return (
+    <div className="text-xs text-gray-400 flex items-center gap-1">
+      🔕 התרעות נייד חסומות בדפדפן — אפשר בהגדרות הדפדפן
+    </div>
+  );
+
+  if (status === 'on') return (
+    <button onClick={disable} className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 hover:bg-green-100 flex items-center gap-1.5">
+      🔔 התרעות נייד פעילות — לחץ לביטול
+    </button>
+  );
+
+  return (
+    <button onClick={enable} className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100 flex items-center gap-1.5">
+      🔔 הפעל התרעות לנייד
+    </button>
+  );
+}
+
 function Notifications() {
   const [notifs, setNotifs] = useState([]);
   useEffect(() => {
@@ -148,6 +222,7 @@ export default function MySchedule() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold">{user?.name}</h2>
+            <div className="mt-1"><PushToggle /></div>
           </div>
           {!editing && <button className="btn btn-primary" onClick={startEdit}>עריכת לוח הזמנים</button>}
         </div>

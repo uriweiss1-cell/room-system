@@ -69,7 +69,8 @@ async function initDB() {
     one_time_requests: [],
     uploaded_files: [],
     notifications: [],
-    _ids: { users: 1, rooms: 1, regular_schedules: 1, room_assignments: 1, one_time_requests: 1, uploaded_files: 1, notifications: 1 },
+    push_subscriptions: [],
+    _ids: { users: 1, rooms: 1, regular_schedules: 1, room_assignments: 1, one_time_requests: 1, uploaded_files: 1, notifications: 1, push_subscriptions: 1 },
   }).write();
 
   if (_db.get('users').size().value() === 0) {

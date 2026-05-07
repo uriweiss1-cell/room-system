@@ -2,6 +2,7 @@ const express = require('express');
 const { db, nextId } = require('../database');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { sendAdminEmail, REQUEST_TYPE_LABELS, DAYS_HE } = require('../email');
+const { sendPushToUser } = require('../webpush');
 
 const router = express.Router();
 router.use(authenticate);
@@ -720,7 +721,11 @@ router.put('/:id', requireAdmin, (req, res) => {
       if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
       if (admin_response) notifMsg += `: ${admin_response}`;
     }
-    if (notifMsg) sendNotif(request.user_id, notifMsg);
+    if (notifMsg) {
+      sendNotif(request.user_id, notifMsg);
+      // Also send a Web Push notification so the employee gets a phone alert
+      sendPushToUser(db, request.user_id, 'מערכת שיבוץ חדרים', notifMsg).catch(() => {});
+    }
   }
 
   res.json({ message: 'הבקשה עודכנה' });

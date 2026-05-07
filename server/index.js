@@ -5,9 +5,11 @@ const path = require('path');
 const fs = require('fs');
 
 const { initDB } = require('./database');
+const { initVapid } = require('./webpush');
 
 async function main() {
   await initDB();
+  initVapid();
 
   const app = express();
   app.use(cors({ origin: true, credentials: true }));
@@ -21,6 +23,7 @@ async function main() {
   app.use('/api/requests', require('./routes/requests'));
   app.use('/api/import', require('./routes/import'));
   app.use('/api/notifications', require('./routes/notifications'));
+  app.use('/api/push', require('./routes/push'));
 
   const uploadsDir = path.join(process.env.DATA_DIR || require('path').join(process.env.LOCALAPPDATA || process.env.APPDATA || __dirname, 'room-system-data'), 'uploads');
   app.use('/uploads', express.static(uploadsDir));
