@@ -18,9 +18,16 @@ function PushToggle() {
       setStatus('unsupported'); return;
     }
     if (Notification.permission === 'denied') { setStatus('denied'); return; }
-    navigator.serviceWorker.ready.then(reg =>
-      reg.pushManager.getSubscription().then(sub => setStatus(sub ? 'on' : 'off'))
-    ).catch(() => setStatus('off'));
+    // getRegistrations() doesn't hang if no SW is registered yet
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      const swReg = regs.find(r =>
+        r.active?.scriptURL?.includes('/sw.js') ||
+        r.waiting?.scriptURL?.includes('/sw.js') ||
+        r.installing?.scriptURL?.includes('/sw.js')
+      );
+      if (!swReg) { setStatus('off'); return; }
+      swReg.pushManager.getSubscription().then(sub => setStatus(sub ? 'on' : 'off'));
+    }).catch(() => setStatus('off'));
   }, []);
 
   const enable = async () => {
