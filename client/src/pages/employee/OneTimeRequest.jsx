@@ -91,7 +91,6 @@ export default function OneTimeRequest() {
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       <div className="card">
-        <h2 className="text-xl font-bold mb-4">בקשה חד-פעמית</h2>
 
         {step === 'form' && (
           <div className="space-y-4">
