@@ -11,7 +11,7 @@ export default function AdminAssignments() {
   const [genResult, setGenResult] = useState(() => {
     try { return JSON.parse(localStorage.getItem('lastGenResult')) || null; } catch { return null; }
   });
-  const [viewMode, setViewMode] = useState('grid'); // grid | day | employee
+  const [viewMode, setViewMode] = useState(() => window.innerWidth < 768 ? 'day' : 'grid'); // grid | day | employee
   const [selectedDay, setSelectedDay] = useState(0);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -318,15 +318,19 @@ export default function AdminAssignments() {
           <h2 className="text-xl font-bold">שיבוץ חדרים</h2>
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-success" onClick={importFromDoc} disabled={importing}>
-              {importing ? 'מייבא...' : '📥 ייבוא שיבוץ תשפ"ו'}
+              {importing ? 'מייבא...' : <><span className="hidden sm:inline">📥 ייבוא שיבוץ תשפ"ו</span><span className="sm:hidden">📥 ייבוא</span></>}
             </button>
             <button className="btn btn-primary" onClick={generate} disabled={generating}>
-              {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
+              {generating ? 'מחשב...' : <><span className="hidden sm:inline">⚡ הפעל אלגוריתם שיבוץ</span><span className="sm:hidden">⚡ שיבוץ</span></>}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
-            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
-            <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
-            <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
+            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>
+              <span className="hidden sm:inline">+ הוסף שיבוץ ידני</span><span className="sm:hidden">+ שיבוץ</span>
+            </button>
+            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>
+              <span className="hidden sm:inline">👤 שיבוץ אורח חד-פעמי</span><span className="sm:hidden">👤 אורח</span>
+            </button>
+            <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50 hidden sm:inline-flex" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
+            <button className="btn btn-danger hidden sm:inline-flex" onClick={clearAll}>מחק הכל</button>
           </div>
         </div>
 
@@ -335,28 +339,30 @@ export default function AdminAssignments() {
         {showAdd && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
             <h3 className="font-semibold mb-3">הוספת שיבוץ ידני</h3>
-            <div className="flex flex-wrap gap-3 items-end">
-              <div><label className="label">עובד</label>
-                <select className="select w-44" value={addForm.user_id} onChange={e => setAddForm(p=>({...p,user_id:e.target.value}))}>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 items-end">
+              <div className="col-span-2 sm:col-auto"><label className="label">עובד</label>
+                <select className="select w-full sm:w-44" value={addForm.user_id} onChange={e => setAddForm(p=>({...p,user_id:e.target.value}))}>
                   <option value="">בחר...</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div><label className="label">חדר</label>
-                <select className="select w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
+                <select className="select w-full sm:w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
                   <option value="">בחר...</option>
                   {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 🎥' : ''}</option>)}
                 </select>
               </div>
               <div><label className="label">יום</label>
-                <select className="select w-24" value={addForm.day_of_week} onChange={e => setAddForm(p=>({...p,day_of_week:+e.target.value}))}>
+                <select className="select w-full sm:w-24" value={addForm.day_of_week} onChange={e => setAddForm(p=>({...p,day_of_week:+e.target.value}))}>
                   {DAYS.map((d,i) => <option key={i} value={i}>{d}</option>)}
                 </select>
               </div>
-              <div><label className="label">משעה</label><input type="time" className="input w-28" value={addForm.start_time} onChange={e => setAddForm(p=>({...p,start_time:e.target.value}))} /></div>
-              <div><label className="label">עד שעה</label><input type="time" className="input w-28" value={addForm.end_time} onChange={e => setAddForm(p=>({...p,end_time:e.target.value}))} /></div>
-              <button className="btn btn-primary" onClick={addAssignment}>הוסף</button>
-              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>ביטול</button>
+              <div><label className="label">משעה</label><input type="time" className="input w-full sm:w-28" value={addForm.start_time} onChange={e => setAddForm(p=>({...p,start_time:e.target.value}))} /></div>
+              <div><label className="label">עד שעה</label><input type="time" className="input w-full sm:w-28" value={addForm.end_time} onChange={e => setAddForm(p=>({...p,end_time:e.target.value}))} /></div>
+              <div className="col-span-2 sm:col-auto flex gap-2">
+                <button className="btn btn-primary flex-1 sm:flex-none" onClick={addAssignment}>הוסף</button>
+                <button className="btn btn-ghost flex-1 sm:flex-none" onClick={() => setShowAdd(false)}>ביטול</button>
+              </div>
             </div>
           </div>
         )}
@@ -779,11 +785,16 @@ export default function AdminAssignments() {
         )}
 
         <div className="flex flex-wrap gap-2 mb-3 items-center">
-          <button className={`btn text-sm ${viewMode==='grid' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('grid')}>רשת שבועית</button>
+          <button className={`btn text-sm ${viewMode==='grid' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('grid')}>
+            <span className="hidden sm:inline">רשת שבועית</span><span className="sm:hidden">גריד</span>
+          </button>
           <button className={`btn text-sm ${viewMode==='day' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('day')}>לפי יום</button>
           <button className={`btn text-sm ${viewMode==='employee' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('employee')}>לפי עובד</button>
+          {viewMode === 'grid' && (
+            <span className="text-xs text-gray-400 sm:hidden">← גלול לצדדים לגריד המלא</span>
+          )}
           <input
-            className="input w-44 text-sm mr-auto"
+            className="input text-sm flex-1 min-w-[120px] sm:w-44 sm:flex-none mr-auto"
             placeholder="חיפוש עובד..."
             value={search}
             onChange={e => setSearch(e.target.value)}
