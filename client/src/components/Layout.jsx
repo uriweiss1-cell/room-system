@@ -9,7 +9,7 @@ function GlobalNotifications() {
   useEffect(() => {
     const load = () => api.get('/notifications').then(r => setNotifs(r.data)).catch(() => {});
     load();
-    const interval = setInterval(load, 60000);
+    const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,7 +57,7 @@ export default function Layout() {
       setPendingCount(r.data.filter(x => x.status === 'pending').length);
     }).catch(() => {});
     fetch();
-    const interval = setInterval(fetch, 60000);
+    const interval = setInterval(fetch, 30000);
     return () => clearInterval(interval);
   }, [isAdmin]);
 
