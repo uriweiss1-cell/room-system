@@ -561,8 +561,6 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
     ).write();
     action.parts.forEach(p => push({ user_id: action.conflictUserId, room_id: p.roomId, day_of_week: action.day, start_time: p.start, end_time: p.end }));
     const longest = action.parts.reduce((a, b) => (toMin(b.end) - toMin(b.start) > toMin(a.end) - toMin(a.start) ? b : a));
-    const splitStart = action.parts[0].start;
-    const splitEnd = action.parts[action.parts.length - 1].end;
     syncSchedule(action.conflictUserId, action.day, longest.roomId, splitStart, splitEnd);
     return res.json({ message: 'שיבוץ חלקי הוחל בהצלחה' });
   }
