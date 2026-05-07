@@ -39,15 +39,16 @@ function saveSchedule(userId, schedules) {
     }
   });
 
-  // Update hours for days still in schedule
+  // Update hours only for days with a single assignment (split days are left for admin)
   schedules.forEach(slot => {
     const dayAssignments = assignments.filter(a => a.day_of_week === slot.day_of_week);
-    dayAssignments.forEach(a => {
-      db.get('room_assignments').find({ id: a.id }).assign({
+    if (dayAssignments.length === 1) {
+      db.get('room_assignments').find({ id: dayAssignments[0].id }).assign({
         start_time: slot.start_time,
         end_time: slot.end_time,
       }).write();
-    });
+    }
+    // If multiple assignments exist for this day (split by algorithm), leave them untouched
   });
 }
 
