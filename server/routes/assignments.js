@@ -256,8 +256,17 @@ router.get('/locate', (req, res) => {
 });
 
 router.post('/', requireAdmin, (req, res) => {
-  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date } = req.body;
+  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap } = req.body;
   const aType = assignment_type ?? 'permanent';
+
+  // If replace_overlap is set, remove existing overlapping permanent assignments for this user/day
+  if (replace_overlap && user_id && aType === 'permanent') {
+    db.get('room_assignments')
+      .remove(a => a.user_id === +user_id && a.day_of_week === +day_of_week && a.assignment_type === 'permanent'
+        && overlap(a.start_time, a.end_time, start_time, end_time))
+      .write();
+  }
+
   const a = {
     id: nextId('room_assignments'),
     user_id: +user_id, room_id: +room_id, day_of_week: +day_of_week,

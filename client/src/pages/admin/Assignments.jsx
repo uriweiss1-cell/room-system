@@ -161,7 +161,7 @@ export default function AdminAssignments() {
   const assignTogether = async (userId, roomId, day, start, end, userName, roomName) => {
     if (!confirm(`לשבץ את ${userName} יחד בחדר ${roomName} (יום ${DAYS[day]}, ${start}–${end})?`)) return;
     try {
-      await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end });
+      await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end, replace_overlap: true });
       setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
       load();
     } catch (e) {
