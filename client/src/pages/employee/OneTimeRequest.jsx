@@ -27,6 +27,7 @@ export default function OneTimeRequest() {
   const [isSwap, setIsSwap] = useState(false);
   const [swapOriginalRoom, setSwapOriginalRoom] = useState(null);
   const [swapReason, setSwapReason] = useState('');
+  const [partialAbsence, setPartialAbsence] = useState(false);
 
   useEffect(() => {
     loadRequests();
@@ -39,8 +40,15 @@ export default function OneTimeRequest() {
   const submit = async () => {
     setLoading(true); setMsg('');
     try {
-      const body = { request_type: type, specific_date: type === 'permanent_request' || type === 'permanent_reduce' ? null : date, day_of_week: type === 'permanent_request' ? dayOfWeek : null, start_time: startTime, end_time: endTime, notes };
-      if (type === 'permanent_reduce') body.reduce_assignment_id = reduceAssignmentId;
+      const isPartial = type === 'absence' && partialAbsence;
+      const body = {
+        request_type: type,
+        specific_date: type === 'permanent_request' ? null : date,
+        day_of_week: type === 'permanent_request' ? dayOfWeek : null,
+        start_time: (type !== 'absence' || isPartial) ? startTime : null,
+        end_time: (type !== 'absence' || isPartial) ? endTime : null,
+        notes,
+      };
       if (type === 'absence' && dateTo && dateTo > date) body.date_to = dateTo;
       if (isAdmin && impersonateId) body.impersonate_user_id = impersonateId;
       const r = await api.post('/requests', body);
@@ -86,7 +94,7 @@ export default function OneTimeRequest() {
     finally { setLoading(false); }
   };
 
-  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); setIsSwap(false); setSwapOriginalRoom(null); setSwapReason(''); };
+  const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); setIsSwap(false); setSwapOriginalRoom(null); setSwapReason(''); setPartialAbsence(false); };
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -124,7 +132,6 @@ export default function OneTimeRequest() {
                   { v: 'absence', l: 'היעדרות — לא צריך חדר' },
                   { v: 'room_request', l: 'בקשת חדר חד-פעמית' },
                   { v: 'permanent_request', l: 'בקשת שינוי קבוע (לאישור מנהל)' },
-                  { v: 'permanent_reduce', l: 'הפחתת שעות קבועות' },
                 ].map(o => (
                   <button key={o.v} onClick={() => setType(o.v)}
                     className={`btn text-sm ${type === o.v ? 'btn-primary' : 'btn-ghost'}`}>
@@ -133,7 +140,7 @@ export default function OneTimeRequest() {
                 ))}
               </div>
             </div>
-            {type !== 'permanent_request' && type !== 'permanent_reduce' && (
+            {type !== 'permanent_request' && (
               <div className="flex gap-3 flex-wrap items-end">
                 <div>
                   <label className="label">{type === 'absence' ? 'מתאריך' : 'תאריך'}</label>
@@ -160,28 +167,22 @@ export default function OneTimeRequest() {
                 </div>
               </div>
             )}
-            {type === 'permanent_reduce' && (
-              <div>
-                <label className="label">בחר שיבוץ להפחתה</label>
-                <select className="select w-full" value={reduceAssignmentId} onChange={e => setReduceAssignmentId(e.target.value)}>
-                  <option value="">בחר שיבוץ...</option>
-                  {myAssignments.map(a => (
-                    <option key={a.id} value={a.id}>
-                      חדר {a.room_name} — יום {DAYS[a.day_of_week]} — {a.start_time}–{a.end_time}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {type === 'absence' && (
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                <input type="checkbox" checked={partialAbsence}
+                  onChange={e => setPartialAbsence(e.target.checked)} className="w-4 h-4" />
+                היעדרות חלקית (רק בשעות מסוימות)
+              </label>
             )}
-            {type !== 'absence' && (
+            {(type !== 'absence' || partialAbsence) && (
               <div className="flex gap-3">
                 <div>
-                  <label className="label">{type === 'permanent_reduce' ? 'שעת התחלה חדשה' : 'משעה'}</label>
-                  <input type="time" className="input w-28" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                  <label className="label">משעה</label>
+                  <input type="time" className="input w-36" value={startTime} onChange={e => setStartTime(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label">{type === 'permanent_reduce' ? 'שעת סיום חדשה' : 'עד שעה'}</label>
-                  <input type="time" className="input w-28" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                  <label className="label">עד שעה</label>
+                  <input type="time" className="input w-36" value={endTime} onChange={e => setEndTime(e.target.value)} />
                 </div>
               </div>
             )}

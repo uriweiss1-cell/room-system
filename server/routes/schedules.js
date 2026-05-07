@@ -24,6 +24,31 @@ function saveSchedule(userId, schedules) {
       preferred_room_id: s.preferred_room_id || null,
     }).write();
   });
+
+  // Auto-sync permanent room_assignments to match the new schedule
+  const assignments = db.get('room_assignments')
+    .filter({ user_id: userId, assignment_type: 'permanent' })
+    .value();
+
+  const newDays = new Set(schedules.map(s => s.day_of_week));
+
+  // Remove assignments for days no longer in schedule
+  assignments.forEach(a => {
+    if (!newDays.has(a.day_of_week)) {
+      db.get('room_assignments').remove({ id: a.id }).write();
+    }
+  });
+
+  // Update hours for days still in schedule
+  schedules.forEach(slot => {
+    const dayAssignments = assignments.filter(a => a.day_of_week === slot.day_of_week);
+    dayAssignments.forEach(a => {
+      db.get('room_assignments').find({ id: a.id }).assign({
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+      }).write();
+    });
+  });
 }
 
 router.get('/my', (req, res) => res.json(getSchedule(req.user.id)));
