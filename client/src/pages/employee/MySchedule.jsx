@@ -4,43 +4,6 @@ import { DAYS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
 
-function Notifications() {
-  const [notifs, setNotifs] = useState([]);
-  useEffect(() => {
-    api.get('/notifications').then(r => setNotifs(r.data)).catch(() => {});
-  }, []);
-
-  const markRead = async id => {
-    await api.put(`/notifications/${id}/read`);
-    setNotifs(p => p.filter(n => n.id !== id));
-  };
-  const markAll = async () => {
-    await api.put('/notifications/read-all');
-    setNotifs([]);
-  };
-
-  const unread = notifs.filter(n => !n.read);
-  if (!notifs.length) return null;
-
-  return (
-    <div className="card border-orange-200 bg-orange-50">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-orange-800">
-          התראות {unread.length > 0 && <span className="badge badge-yellow mr-1">{unread.length} חדשות</span>}
-        </h3>
-        {unread.length > 0 && <button className="text-xs text-orange-600 hover:underline" onClick={markAll}>סמן הכל כנקרא</button>}
-      </div>
-      <div className="space-y-2">
-        {notifs.map(n => (
-          <div key={n.id} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm ${n.read ? 'bg-white text-gray-500' : 'bg-orange-100 text-orange-900 font-medium'}`}>
-            <span>{n.message}</span>
-            {!n.read && <button className="shrink-0 text-xs text-orange-600 hover:underline" onClick={() => markRead(n.id)}>✓ קראתי</button>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const defaultSlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00', preferred_room_id: '' };
 
@@ -144,7 +107,6 @@ export default function MySchedule() {
           </div>
         </div>
       )}
-      <Notifications />
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <div>

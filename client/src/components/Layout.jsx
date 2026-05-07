@@ -3,6 +3,49 @@ import { useAuth } from '../context/AuthContext';
 import { useState, useEffect } from 'react';
 import api from '../api';
 
+function GlobalNotifications() {
+  const [notifs, setNotifs] = useState([]);
+
+  useEffect(() => {
+    const load = () => api.get('/notifications').then(r => setNotifs(r.data)).catch(() => {});
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const markRead = async id => {
+    await api.put(`/notifications/${id}/read`);
+    setNotifs(p => p.filter(n => n.id !== id));
+  };
+  const markAll = async () => {
+    await api.put('/notifications/read-all');
+    setNotifs([]);
+  };
+
+  if (!notifs.length) return null;
+
+  return (
+    <div className="max-w-7xl mx-auto px-3 pt-4">
+      <div className="card border-orange-200 bg-orange-50">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-orange-800">
+            התראות <span className="badge badge-yellow mr-1">{notifs.length} חדשות</span>
+          </h3>
+          <button className="text-xs text-orange-600 hover:underline" onClick={markAll}>סמן הכל כנקרא</button>
+        </div>
+        <div className="space-y-2">
+          {notifs.map(n => (
+            <div key={n.id} className="flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm bg-orange-100 text-orange-900 font-medium">
+              <span>{n.message}</span>
+              <button className="shrink-0 text-xs text-orange-600 hover:underline" onClick={() => markRead(n.id)}>✓ קראתי</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +108,7 @@ export default function Layout() {
           </div>
         </div>
       </nav>
+      {!isAdmin && <GlobalNotifications />}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-5">
         <Outlet />
       </main>
