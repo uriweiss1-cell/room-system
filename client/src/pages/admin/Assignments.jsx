@@ -1121,6 +1121,19 @@ export default function AdminAssignments() {
               } catch (e) { setBackupMsg('❌ ' + (e.response?.data?.error || e.message)); }
               setTimeout(() => setBackupMsg(''), 8000);
             }}>שמור בשרת</button>
+            <label className="btn btn-ghost text-sm cursor-pointer">
+              ⬆ העלה מהמחשב
+              <input type="file" accept=".json" className="hidden" onChange={async e => {
+                const file = e.target.files?.[0]; if (!file) return;
+                const form = new FormData(); form.append('file', file);
+                try {
+                  await api.post('/backups/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+                  setBackupMsg('✅ הגיבוי הועלה — מופיע ברשימה');
+                  const r = await api.get('/backups'); setBackups(r.data); setShowBackups(true);
+                } catch (e2) { setBackupMsg('❌ ' + (e2.response?.data?.error || e2.message)); }
+                e.target.value = ''; setTimeout(() => setBackupMsg(''), 5000);
+              }} />
+            </label>
             <button className="btn btn-ghost text-sm" onClick={async () => {
               if (!showBackups) { const r = await api.get('/backups'); setBackups(r.data); }
               setShowBackups(p => !p);

@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { dbPath } = require('../database');
 
@@ -69,6 +70,30 @@ router.get('/export', (req, res) => {
   res.download(dbPath, filename, err => {
     if (err && !res.headersSent) res.status(500).json({ error: 'שגיאה בהורדה' });
   });
+});
+
+// POST /api/backups/upload — upload a backup file from the user's computer
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+router.post('/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'לא נשלח קובץ' });
+    // Validate it's valid JSON
+    let parsed;
+    try { parsed = JSON.parse(req.file.buffer.toString()); } catch {
+      return res.status(400).json({ error: 'הקובץ אינו JSON תקין' });
+    }
+    // Basic sanity check — must have at least one known collection
+    if (!parsed.users && !parsed.room_assignments) return res.status(400).json({ error: 'הקובץ אינו גיבוי תקין של המערכת' });
+
+    ensureDir();
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `db_${ts}_uploaded.json`;
+    fs.writeFileSync(path.join(backupsDir, filename), req.file.buffer);
+    pruneOld();
+    res.json({ message: 'הגיבוי הועלה בהצלחה', filename });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // POST /api/backups/restore/:filename — restore a backup
