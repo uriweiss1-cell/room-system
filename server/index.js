@@ -22,6 +22,7 @@ async function main() {
   app.use('/api/assignments', require('./routes/assignments'));
   app.use('/api/requests', require('./routes/requests'));
   app.use('/api/import', require('./routes/import'));
+  app.use('/api/backups', require('./routes/backups').router);
   app.use('/api/notifications', require('./routes/notifications'));
   app.use('/api/push', require('./routes/push'));
 

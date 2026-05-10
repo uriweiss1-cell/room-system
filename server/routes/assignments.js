@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, nextId } = require('../database');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { createBackup } = require('./backups');
 
 const router = express.Router();
 router.use(authenticate);
@@ -345,6 +346,7 @@ router.delete('/dismiss-slot', requireAdmin, (req, res) => {
 });
 
 router.delete('/clear/permanent', requireAdmin, (req, res) => {
+  createBackup('before-clear-all');
   db.get('room_assignments').remove({ assignment_type: 'permanent' }).write();
   res.json({ message: 'כל השיבוצים הקבועים נמחקו' });
 });
@@ -492,7 +494,7 @@ router.delete('/my/:id', (req, res) => {
 });
 
 router.post('/generate', requireAdmin, (req, res) => {
-  try { res.json(generateAssignments()); }
+  try { createBackup('before-generate'); res.json(generateAssignments()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 

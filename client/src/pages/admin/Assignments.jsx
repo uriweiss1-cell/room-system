@@ -35,6 +35,9 @@ export default function AdminAssignments() {
   const [editForm, setEditForm] = useState({ start_time: '', end_time: '' });
   const [weekOffset, setWeekOffset] = useState(0);
   const [weeklyOneTime, setWeeklyOneTime] = useState({ oneTime: [], absences: [] });
+  const [backups, setBackups] = useState([]);
+  const [showBackups, setShowBackups] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
 
   // Compute Sun–Fri dates for the selected week
   const weekDates = (() => {
@@ -1083,6 +1086,70 @@ export default function AdminAssignments() {
                 </div>
               );
             })()}
+          </div>
+        )}
+      </div>
+
+      {/* Backups */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-700">💾 גיבויים</h3>
+          <div className="flex gap-2">
+            <button className="btn btn-ghost text-sm" onClick={async () => {
+              try {
+                await api.post('/backups', { label: 'manual' });
+                setBackupMsg('✅ גיבוי נשמר');
+                const r = await api.get('/backups'); setBackups(r.data);
+                setShowBackups(true);
+              } catch { setBackupMsg('❌ שגיאה בשמירת גיבוי'); }
+              setTimeout(() => setBackupMsg(''), 3000);
+            }}>שמור גיבוי עכשיו</button>
+            <button className="btn btn-ghost text-sm" onClick={async () => {
+              if (!showBackups) { const r = await api.get('/backups'); setBackups(r.data); }
+              setShowBackups(p => !p);
+            }}>{showBackups ? 'הסתר' : 'הצג גיבויים'}</button>
+          </div>
+        </div>
+        {backupMsg && <p className="text-sm mt-2">{backupMsg}</p>}
+        <p className="text-xs text-gray-400 mt-1">גיבוי אוטומטי נשמר לפני כל הפעלת אלגוריתם ולפני מחיקת הכל (עד 20 גיבויים)</p>
+
+        {showBackups && (
+          <div className="mt-3 space-y-2">
+            {backups.length === 0 && <p className="text-sm text-gray-500">אין גיבויים עדיין</p>}
+            {backups.map(b => {
+              const label = b.filename
+                .replace(/^db_/, '').replace(/\.json$/, '')
+                .replace('before-generate', 'לפני אלגוריתם')
+                .replace('before-clear-all', 'לפני מחיקת הכל')
+                .replace('before-restore', 'לפני שחזור')
+                .replace('manual', 'ידני')
+                .replace('auto', 'אוטומטי');
+              const date = new Date(b.created_at).toLocaleString('he-IL');
+              const kb = (b.size / 1024).toFixed(0);
+              return (
+                <div key={b.filename} className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-medium">{date}</span>
+                    <span className="text-gray-500 mr-2">({label}, {kb} KB)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="btn btn-ghost text-xs text-blue-700 border-blue-200 hover:bg-blue-50" onClick={async () => {
+                      if (!confirm(`לשחזר את המצב מ-${date}?\n\nהמצב הנוכחי יישמר כגיבוי אוטומטי לפני השחזור.`)) return;
+                      try {
+                        const r = await api.post(`/backups/restore/${b.filename}`);
+                        setBackupMsg('✅ ' + r.data.message + ' — טוען מחדש...');
+                        setTimeout(() => window.location.reload(), 1500);
+                      } catch (e) { setBackupMsg('❌ ' + (e.response?.data?.error || 'שגיאה בשחזור')); }
+                    }}>שחזר</button>
+                    <button className="text-xs text-red-400 hover:text-red-600" onClick={async () => {
+                      if (!confirm('למחוק גיבוי זה?')) return;
+                      await api.delete(`/backups/${b.filename}`);
+                      setBackups(p => p.filter(x => x.filename !== b.filename));
+                    }}>✕</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
