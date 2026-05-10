@@ -317,10 +317,7 @@ export default function AdminAssignments() {
         <div className="flex flex-wrap items-center gap-3 justify-between mb-3">
           <h2 className="text-xl font-bold">שיבוץ חדרים</h2>
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-success" onClick={importFromDoc} disabled={importing}>
-              {importing ? 'מייבא...' : '📥 ייבוא שיבוץ תשפ"ו'}
-            </button>
-            <button className="btn btn-primary" onClick={generate} disabled={generating}>
+<button className="btn btn-primary" onClick={generate} disabled={generating}>
               {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
             </button>
             <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
