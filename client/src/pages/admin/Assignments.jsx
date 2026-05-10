@@ -1118,8 +1118,8 @@ export default function AdminAssignments() {
                 setBackupMsg('✅ גיבוי נשמר בשרת');
                 const r = await api.get('/backups'); setBackups(r.data);
                 setShowBackups(true);
-              } catch { setBackupMsg('❌ שגיאה בשמירת גיבוי'); }
-              setTimeout(() => setBackupMsg(''), 3000);
+              } catch (e) { setBackupMsg('❌ ' + (e.response?.data?.error || e.message)); }
+              setTimeout(() => setBackupMsg(''), 8000);
             }}>שמור בשרת</button>
             <button className="btn btn-ghost text-sm" onClick={async () => {
               if (!showBackups) { const r = await api.get('/backups'); setBackups(r.data); }

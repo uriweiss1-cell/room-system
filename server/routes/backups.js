@@ -53,19 +53,24 @@ router.get('/', (req, res) => {
 
 // POST /api/backups — manual backup
 router.post('/', (req, res) => {
-  const { label } = req.body;
-  const filename = createBackup(label || 'manual');
-  if (!filename) return res.status(500).json({ error: 'מסד הנתונים לא נמצא' });
-  res.json({ message: 'גיבוי נוצר בהצלחה', filename });
+  try {
+    const { label } = req.body;
+    const filename = createBackup(label || 'manual');
+    if (!filename) return res.status(500).json({ error: `מסד הנתונים לא נמצא בנתיב: ${dbPath}` });
+    res.json({ message: 'גיבוי נוצר בהצלחה', filename });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET /api/backups/export — download current db.json directly to browser
 router.get('/export', (req, res) => {
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'קובץ מסד הנתונים לא נמצא' });
   const ts = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-  res.setHeader('Content-Disposition', `attachment; filename="room-system-backup-${ts}.json"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.sendFile(dbPath);
+  const filename = `room-system-backup-${ts}.json`;
+  res.download(dbPath, filename, err => {
+    if (err && !res.headersSent) res.status(500).json({ error: 'שגיאה בהורדה' });
+  });
 });
 
 // POST /api/backups/restore/:filename — restore a backup
@@ -82,9 +87,11 @@ router.post('/restore/:filename', (req, res) => {
   // Overwrite db.json
   fs.copyFileSync(src, dbPath);
 
-  // Reload lowdb from disk
-  const { db } = require('../database');
-  db.read();
+  // Reload lowdb from disk so in-memory state reflects the restored file
+  try {
+    const { db } = require('../database');
+    if (typeof db.read === 'function') db.read();
+  } catch {}
 
   res.json({ message: `שוחזר בהצלחה מגיבוי ${filename}` });
 });
