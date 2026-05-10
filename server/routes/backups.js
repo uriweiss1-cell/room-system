@@ -59,6 +59,15 @@ router.post('/', (req, res) => {
   res.json({ message: 'גיבוי נוצר בהצלחה', filename });
 });
 
+// GET /api/backups/export — download current db.json directly to browser
+router.get('/export', (req, res) => {
+  if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'קובץ מסד הנתונים לא נמצא' });
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+  res.setHeader('Content-Disposition', `attachment; filename="room-system-backup-${ts}.json"`);
+  res.setHeader('Content-Type', 'application/json');
+  res.sendFile(dbPath);
+});
+
 // POST /api/backups/restore/:filename — restore a backup
 router.post('/restore/:filename', (req, res) => {
   const { filename } = req.params;

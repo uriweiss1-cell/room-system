@@ -1104,13 +1104,23 @@ export default function AdminAssignments() {
           <div className="flex gap-2">
             <button className="btn btn-ghost text-sm" onClick={async () => {
               try {
+                const r = await api.get('/backups/export', { responseType: 'blob' });
+                const url = URL.createObjectURL(r.data);
+                const a = document.createElement('a');
+                const ts = new Date().toISOString().slice(0,19).replace(/[:.]/g,'-');
+                a.href = url; a.download = `room-system-backup-${ts}.json`; a.click();
+                URL.revokeObjectURL(url);
+              } catch { setBackupMsg('❌ שגיאה בהורדה'); setTimeout(() => setBackupMsg(''), 3000); }
+            }}>⬇ הורד גיבוי</button>
+            <button className="btn btn-ghost text-sm" onClick={async () => {
+              try {
                 await api.post('/backups', { label: 'manual' });
-                setBackupMsg('✅ גיבוי נשמר');
+                setBackupMsg('✅ גיבוי נשמר בשרת');
                 const r = await api.get('/backups'); setBackups(r.data);
                 setShowBackups(true);
               } catch { setBackupMsg('❌ שגיאה בשמירת גיבוי'); }
               setTimeout(() => setBackupMsg(''), 3000);
-            }}>שמור גיבוי עכשיו</button>
+            }}>שמור בשרת</button>
             <button className="btn btn-ghost text-sm" onClick={async () => {
               if (!showBackups) { const r = await api.get('/backups'); setBackups(r.data); }
               setShowBackups(p => !p);
