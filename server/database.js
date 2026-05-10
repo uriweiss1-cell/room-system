@@ -106,4 +106,4 @@ function nextId(table) {
   return id;
 }
 
-module.exports = { get db() { return _db; }, nextId, initDB };
+module.exports = { get db() { return _db; }, nextId, initDB, dbPath };

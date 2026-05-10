@@ -2,14 +2,12 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { dbPath } = require('../database');
 
 const router = express.Router();
 router.use(authenticate, requireAdmin);
 
-const dataDir = process.env.DATA_DIR
-  || path.join(process.env.LOCALAPPDATA || process.env.APPDATA || __dirname, 'room-system-data');
-const backupsDir = path.join(dataDir, 'backups');
-const dbPath = path.join(dataDir, 'db.json');
+const backupsDir = path.join(path.dirname(dbPath), 'backups');
 
 const MAX_BACKUPS = 20;
 
