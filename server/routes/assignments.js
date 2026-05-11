@@ -513,29 +513,35 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
 
   // After applying a suggestion, sync the regular_schedule so the algorithm
   // won't re-flag the resolved slot as a conflict or a wantToMove on the next run.
-  // Sets preferred_room_id = assigned room, and trims schedule hours to match.
-  const syncSchedule = (userId, day, roomId, start, end) => {
+  // updatePreferred=false is used for displaced users whose room was changed against their will.
+  const syncSchedule = (userId, day, roomId, start, end, { updatePreferred = true } = {}) => {
     const uid = +userId; const rid = +roomId; const d = +day;
-    // Update preferred_room_id for all schedule entries on the resolved day.
-    // Do NOT overwrite start_time/end_time — a split-day worker may have multiple entries
-    // with different hours and we must not collapse them all to the same range.
-    db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week === d).value()
-      .forEach(s => {
-        db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
-      });
-    // Also update preferred_room_id on ALL other days for this user so that
-    // getPreferredId() returns the resolved room consistently.
-    // Without this, a stale preferred_room on another day causes wantToMove to fire again.
-    db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week !== d).value()
-      .forEach(s => {
-        db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
-      });
+
+    if (updatePreferred) {
+      // Only update preferred_room_id if the user has no existing explicit preference
+      // that differs from the resolved room. This prevents conflict resolutions from
+      // silently overwriting a preference the user or admin deliberately set.
+      const allScheds = db.get('regular_schedules').filter(s => s.user_id === uid).value();
+      const hasConflictingPref = allScheds.some(s => s.preferred_room_id && +s.preferred_room_id !== rid);
+
+      if (!hasConflictingPref) {
+        // Safe to set preferred_room_id to the resolved room across all schedule entries
+        allScheds.forEach(s => {
+          db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
+        });
+      }
+      // If user already has a different explicit preference, leave it alone.
+      // They may re-trigger wantToMove on the next run, which is correct behavior —
+      // the admin can update the preference separately if needed.
+    }
+
     // If no schedule entry exists yet for this day, create one
     const hasSched = db.get('regular_schedules').find({ user_id: uid, day_of_week: d }).value();
     if (!hasSched) {
       db.get('regular_schedules').push({
         id: nextId('regular_schedules'), user_id: uid, day_of_week: d,
-        start_time: start, end_time: end, preferred_room_id: rid,
+        start_time: start, end_time: end,
+        preferred_room_id: updatePreferred ? rid : null,
         created_at: new Date().toISOString(),
       }).write();
     }
@@ -598,7 +604,8 @@ router.post('/apply-suggestion', requireAdmin, (req, res) => {
       && a.room_id === +action.toRoomId && overlap(a.start_time, a.end_time, action.displaceStart, action.displaceEnd)
     ).write();
     push({ user_id: +action.displaceUserId, room_id: +action.toRoomId, day_of_week: +action.day, start_time: action.displaceStart, end_time: action.displaceEnd });
-    syncSchedule(action.displaceUserId, action.day, action.toRoomId, action.displaceStart, action.displaceEnd);
+    // Displaced user: don't overwrite their preferred_room_id — they didn't choose this room
+    syncSchedule(action.displaceUserId, action.day, action.toRoomId, action.displaceStart, action.displaceEnd, { updatePreferred: false });
     // Remove conflict user's existing assignment before assigning to freed room
     db.get('room_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
@@ -955,6 +962,59 @@ function generateAssignments() {
 
   const suggestions = filteredConflicts.length ? suggestResolutions(filteredConflicts, grid, regularRooms) : [];
 
+  // ── Check for conflicts between permanent assignments and guest/one-time assignments ──
+  // A guest or one-time room booking on a specific date blocks a permanent employee
+  // who is regularly assigned to the same room on that day-of-week.
+  const allPermanentNow = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+  const guestSlots = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && a.guest_name && a.specific_date)
+    .value();
+  const oneTimeBooked = db.get('one_time_requests')
+    .filter(r => r.status === 'assigned' && r.assigned_room_id && r.specific_date &&
+      ['room_request','library_request','meeting_request','mamod_request'].includes(r.request_type))
+    .value();
+
+  const guestConflicts = [];
+  const seen = new Set();
+  for (const perm of allPermanentNow) {
+    if (!perm.user_id) continue;
+    const permUser = db.get('users').find({ id: perm.user_id }).value();
+    const permRoom = db.get('rooms').find({ id: perm.room_id }).value();
+
+    // Check against guest one-time room_assignments
+    for (const g of guestSlots) {
+      if (g.room_id !== perm.room_id) continue;
+      if (new Date(g.specific_date).getDay() !== perm.day_of_week) continue;
+      if (!overlap(perm.start_time, perm.end_time, g.start_time, g.end_time)) continue;
+      const key = `guest-${perm.id}-${g.id}`;
+      if (seen.has(key)) continue; seen.add(key);
+      guestConflicts.push({
+        permUserName: permUser?.name, guestName: g.guest_name,
+        roomName: permRoom?.name, date: g.specific_date,
+        dayName: DAYS_HE[perm.day_of_week],
+        permStart: perm.start_time, permEnd: perm.end_time,
+        guestStart: g.start_time, guestEnd: g.end_time, type: 'guest',
+      });
+    }
+
+    // Check against one_time_requests (room requests, library, etc.)
+    for (const otr of oneTimeBooked) {
+      if (+otr.assigned_room_id !== perm.room_id) continue;
+      if (new Date(otr.specific_date).getDay() !== perm.day_of_week) continue;
+      if (!overlap(perm.start_time, perm.end_time, otr.start_time, otr.end_time)) continue;
+      const key = `otr-${perm.id}-${otr.id}`;
+      if (seen.has(key)) continue; seen.add(key);
+      const otrUser = db.get('users').find({ id: otr.user_id }).value();
+      guestConflicts.push({
+        permUserName: permUser?.name, guestName: otrUser?.name || 'לא ידוע',
+        roomName: permRoom?.name, date: otr.specific_date,
+        dayName: DAYS_HE[perm.day_of_week],
+        permStart: perm.start_time, permEnd: perm.end_time,
+        guestStart: otr.start_time, guestEnd: otr.end_time, type: 'one_time',
+      });
+    }
+  }
+
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
@@ -962,6 +1022,7 @@ function generateAssignments() {
     assignmentTrace,
     suggestions,
     userStats,
+    guestConflicts,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length
