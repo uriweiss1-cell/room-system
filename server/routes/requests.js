@@ -617,8 +617,21 @@ router.post('/:id/assign-room', requireAdmin, (req, res) => {
     assigned_end_time: end_time || null,
   };
   if (admin_response) update.admin_response = admin_response;
+  const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
   db.get('one_time_requests').find({ id: +req.params.id }).assign(update).write();
   const room = db.get('rooms').find({ id: +room_id }).value();
+
+  // Notify the employee
+  if (request?.user_id) {
+    const s = start_time || request.start_time;
+    const e = end_time || request.end_time;
+    let notifMsg = `✅ בקשת החדר שלך ל-${request.specific_date} אושרה — ${room?.name}`;
+    if (s && e) notifMsg += ` (${s}–${e})`;
+    if (admin_response) notifMsg += `: ${admin_response}`;
+    sendNotif(request.user_id, notifMsg);
+    sendPushToUser(db, request.user_id, 'מערכת שיבוץ חדרים', notifMsg).catch(() => {});
+  }
+
   res.json({ message: `הוקצה ${room?.name}` });
 });
 
@@ -648,6 +661,15 @@ router.post('/:id/add-partial', requireAdmin, (req, res) => {
   };
   db.get('one_time_requests').push(newReq).write();
   const room = db.get('rooms').find({ id: +room_id }).value();
+
+  // Notify the employee about the additional partial slot
+  if (original.user_id) {
+    let notifMsg = `✅ נוסף שיבוץ לבקשתך ל-${original.specific_date}: ${room?.name} (${start_time}–${end_time})`;
+    if (admin_response) notifMsg += ` — ${admin_response}`;
+    sendNotif(original.user_id, notifMsg);
+    sendPushToUser(db, original.user_id, 'מערכת שיבוץ חדרים', notifMsg).catch(() => {});
+  }
+
   res.json({ message: `נוסף שיבוץ: ${room?.name} ${start_time}–${end_time}` });
 });
 
