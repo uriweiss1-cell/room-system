@@ -16,8 +16,6 @@ export default function AdminAssignments() {
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
-  const [addFormRooms, setAddFormRooms] = useState(null); // null=not fetched, []+=fetched
-  const [addFormRoomsLoading, setAddFormRoomsLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [showGuest, setShowGuest] = useState(false);
   const [guestForm, setGuestForm] = useState({ guest_name: '', specific_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '17:00' });
@@ -251,19 +249,8 @@ export default function AdminAssignments() {
   const addAssignment = async () => {
     try {
       await api.post('/assignments', addForm);
-      setShowAdd(false); setAddFormRooms(null); load(); setMsg('שיבוץ נוסף');
+      setShowAdd(false); load(); setMsg('שיבוץ נוסף');
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
-  };
-
-  const fetchAddFormRooms = async () => {
-    setAddFormRoomsLoading(true); setAddFormRooms(null);
-    try {
-      const r = await api.get('/requests/available-rooms-permanent', {
-        params: { day_of_week: addForm.day_of_week, start_time: addForm.start_time, end_time: addForm.end_time, user_id: addForm.user_id || undefined },
-      });
-      setAddFormRooms(r.data);
-    } catch { setAddFormRooms([]); }
-    finally { setAddFormRoomsLoading(false); }
   };
 
   const searchGuestRooms = async () => {
@@ -355,112 +342,29 @@ export default function AdminAssignments() {
         {showAdd && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
             <h3 className="font-semibold mb-3">הוספת שיבוץ ידני</h3>
-            {/* Step 1: choose employee, day, times */}
-            <div className="flex flex-wrap gap-3 items-end mb-3">
+            <div className="flex flex-wrap gap-3 items-end">
               <div><label className="label">עובד</label>
-                <select className="select w-44" value={addForm.user_id}
-                  onChange={e => { setAddForm(p=>({...p,user_id:e.target.value,room_id:''})); setAddFormRooms(null); }}>
+                <select className="select w-44" value={addForm.user_id} onChange={e => setAddForm(p=>({...p,user_id:e.target.value}))}>
                   <option value="">בחר...</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
+              <div><label className="label">חדר</label>
+                <select className="select w-32" value={addForm.room_id} onChange={e => setAddForm(p=>({...p,room_id:e.target.value}))}>
+                  <option value="">בחר...</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 🎥' : ''}</option>)}
+                </select>
+              </div>
               <div><label className="label">יום</label>
-                <select className="select w-24" value={addForm.day_of_week}
-                  onChange={e => { setAddForm(p=>({...p,day_of_week:+e.target.value,room_id:''})); setAddFormRooms(null); }}>
+                <select className="select w-24" value={addForm.day_of_week} onChange={e => setAddForm(p=>({...p,day_of_week:+e.target.value}))}>
                   {DAYS.map((d,i) => <option key={i} value={i}>{d}</option>)}
                 </select>
               </div>
-              <div><label className="label">משעה</label>
-                <input type="time" className="input w-28" value={addForm.start_time}
-                  onChange={e => { setAddForm(p=>({...p,start_time:e.target.value,room_id:''})); setAddFormRooms(null); }} />
-              </div>
-              <div><label className="label">עד שעה</label>
-                <input type="time" className="input w-28" value={addForm.end_time}
-                  onChange={e => { setAddForm(p=>({...p,end_time:e.target.value,room_id:''})); setAddFormRooms(null); }} />
-              </div>
-              <button className="btn btn-primary" onClick={fetchAddFormRooms} disabled={addFormRoomsLoading}>
-                {addFormRoomsLoading ? 'טוען...' : '🔍 חפש חדרים פנויים'}
-              </button>
-              <button className="btn btn-ghost" onClick={() => { setShowAdd(false); setAddFormRooms(null); }}>ביטול</button>
+              <div><label className="label">משעה</label><input type="time" className="input w-28" value={addForm.start_time} onChange={e => setAddForm(p=>({...p,start_time:e.target.value}))} /></div>
+              <div><label className="label">עד שעה</label><input type="time" className="input w-28" value={addForm.end_time} onChange={e => setAddForm(p=>({...p,end_time:e.target.value}))} /></div>
+              <button className="btn btn-primary" onClick={addAssignment}>הוסף</button>
+              <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>ביטול</button>
             </div>
-
-            {/* Step 2: room availability grid */}
-            {addFormRooms !== null && (
-              <div className="border-t border-blue-200 pt-3">
-                {addFormRooms.length === 0 ? (
-                  <p className="text-red-600 text-sm">לא ניתן לטעון חדרים</p>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-blue-800 mb-2">
-                      חדרים ליום {DAYS[addForm.day_of_week]} {addForm.start_time}–{addForm.end_time}
-                      {addForm.room_id && <span className="text-green-700 font-semibold mr-2"> — נבחר: {addFormRooms.find(r=>r.id==addForm.room_id)?.name}</span>}
-                    </p>
-
-                    {/* Fully free rooms */}
-                    {addFormRooms.filter(r => r.available).length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1">פנויים לגמרי:</p>
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                          {addFormRooms.filter(r => r.available).map(r => (
-                            <button key={r.id}
-                              onClick={() => setAddForm(p=>({...p,room_id:r.id}))}
-                              className={`border-2 rounded-lg py-1.5 px-1 text-xs font-semibold transition-colors ${+addForm.room_id===r.id ? 'bg-green-200 border-green-600 text-green-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
-                              {r.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Rooms with partial windows */}
-                    {addFormRooms.filter(r => !r.available && r.free_windows?.length > 0).length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1">פנויים חלקית (בחר חדר ועדכן שעות):</p>
-                        <div className="space-y-1">
-                          {addFormRooms.filter(r => !r.available && r.free_windows?.length > 0).map(r => (
-                            <div key={r.id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs flex-wrap border ${+addForm.room_id===r.id ? 'bg-green-100 border-green-400' : 'bg-blue-50 border-blue-200'}`}>
-                              <span className="font-semibold text-blue-800">{r.name}</span>
-                              <span className="text-blue-600">פנוי: {r.free_windows.map(w=>`${w.from}–${w.to}`).join(', ')}</span>
-                              {r.free_windows.map((w,i) => (
-                                <button key={i}
-                                  className="btn btn-ghost text-xs py-0 px-1.5 border border-blue-300 text-blue-700 hover:bg-blue-100"
-                                  onClick={() => setAddForm(p=>({...p,room_id:r.id,start_time:w.from,end_time:w.to}))}>
-                                  בחר {w.from}–{w.to}
-                                </button>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Busy rooms (collapsed) */}
-                    {addFormRooms.filter(r => !r.available && !r.free_windows?.length).length > 0 && (
-                      <details className="text-xs text-gray-500">
-                        <summary className="cursor-pointer">חדרים תפוסים ({addFormRooms.filter(r=>!r.available&&!r.free_windows?.length).length})</summary>
-                        <div className="grid grid-cols-2 gap-1 mt-1">
-                          {addFormRooms.filter(r => !r.available && !r.free_windows?.length).map(r => (
-                            <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
-                              <span className="font-medium">{r.name}</span>
-                              {r.occupants.map((o,i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-
-                    {addForm.room_id && (
-                      <div className="mt-3 flex gap-2 items-center">
-                        <button className="btn btn-success" onClick={addAssignment}>
-                          ✓ הוסף שיבוץ — {addFormRooms.find(r=>r.id==addForm.room_id)?.name} יום {DAYS[addForm.day_of_week]} {addForm.start_time}–{addForm.end_time}
-                        </button>
-                        <button className="btn btn-ghost text-sm" onClick={() => setAddForm(p=>({...p,room_id:''}))}>בטל בחירה</button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
           </div>
         )}
 
