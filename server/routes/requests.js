@@ -691,7 +691,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
 });
 
 router.put('/:id', requireAdmin, (req, res) => {
-  const { status, admin_response, assigned_room_id, room_id, assign_start_time, assign_end_time } = req.body;
+  const { status, admin_response, assigned_room_id, room_id, assign_start_time, assign_end_time, slots } = req.body;
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
 
   db.get('one_time_requests').find({ id: +req.params.id }).assign({
@@ -712,59 +712,68 @@ router.put('/:id', requireAdmin, (req, res) => {
     }
   }
 
-  // If approving a permanent_request — create a room_assignment and sync regular_schedule
+  // If approving a permanent_request — create room_assignments and sync regular_schedules.
+  // Supports multi-slot: client sends `slots` array [{ room_id, start_time, end_time }].
+  // Falls back to single-slot (legacy: room_id + assign_start_time + assign_end_time).
   if (status === 'approved' && request?.request_type === 'permanent_request') {
-    // For library/meeting requests, find the special room automatically
-    let finalRoomId = room_id ? +room_id : null;
-    if (!finalRoomId && request.target_room_type) {
-      const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();
-      if (specialRoom) finalRoomId = specialRoom.id;
+    const toMin2 = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const ovlp2 = (s1, e1, s2, e2) => toMin2(s1) < toMin2(e2) && toMin2(e1) > toMin2(s2);
+
+    // Build effective slots list
+    let effectiveSlots = [];
+    if (Array.isArray(slots) && slots.length > 0) {
+      effectiveSlots = slots.map(s => ({ roomId: +s.room_id, start: s.start_time, end: s.end_time }));
+    } else {
+      let finalRoomId = room_id ? +room_id : null;
+      if (!finalRoomId && request.target_room_type) {
+        const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();
+        if (specialRoom) finalRoomId = specialRoom.id;
+      }
+      if (finalRoomId) {
+        effectiveSlots = [{ roomId: finalRoomId, start: assign_start_time || request.start_time, end: assign_end_time || request.end_time }];
+      }
     }
-    const finalStart = assign_start_time || request.start_time;
-    const finalEnd = assign_end_time || request.end_time;
-    if (finalRoomId) {
+
+    for (const slot of effectiveSlots) {
       db.get('room_assignments').push({
         id: nextId('room_assignments'),
         user_id: request.user_id,
-        room_id: finalRoomId,
+        room_id: slot.roomId,
         day_of_week: request.day_of_week,
-        start_time: finalStart,
-        end_time: finalEnd,
+        start_time: slot.start,
+        end_time: slot.end,
         assignment_type: 'permanent',
         is_manual: true, // protect from algorithm cleanup
         notes: request.notes || null,
         created_at: new Date().toISOString(),
       }).write();
 
-      // Record the actual assigned room + times on the request record itself
-      // so that enrich() can return room_name, assigned_start_time, assigned_end_time
-      // for correct display in the Requests admin panel.
-      db.get('one_time_requests').find({ id: +req.params.id }).assign({
-        assigned_room_id: finalRoomId,
-        assigned_start_time: finalStart,
-        assigned_end_time: finalEnd,
-      }).write();
-
-      // Also ensure a matching regular_schedule entry exists so the algorithm
-      // is aware of this day/time and won't clean it up as "stale".
-      // Only create if no overlapping entry exists for this user on this day.
-      const toMin2 = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-      const ovlp2 = (s1, e1, s2, e2) => toMin2(s1) < toMin2(e2) && toMin2(e1) > toMin2(s2);
+      // Ensure a matching regular_schedule entry exists for each slot
       const existingSched = db.get('regular_schedules')
         .filter({ user_id: request.user_id, day_of_week: request.day_of_week })
         .value()
-        .some(s => ovlp2(s.start_time, s.end_time, finalStart, finalEnd));
+        .some(s => ovlp2(s.start_time, s.end_time, slot.start, slot.end));
       if (!existingSched) {
         db.get('regular_schedules').push({
           id: nextId('regular_schedules'),
           user_id: request.user_id,
           day_of_week: request.day_of_week,
-          start_time: finalStart,
-          end_time: finalEnd,
-          preferred_room_id: finalRoomId,
+          start_time: slot.start,
+          end_time: slot.end,
+          preferred_room_id: slot.roomId,
           created_at: new Date().toISOString(),
         }).write();
       }
+    }
+
+    // Record the actual assigned slot(s) on the request record for display purposes.
+    // Use the first slot as the "primary" one shown in the request card.
+    if (effectiveSlots.length > 0) {
+      db.get('one_time_requests').find({ id: +req.params.id }).assign({
+        assigned_room_id: effectiveSlots[0].roomId,
+        assigned_start_time: effectiveSlots[0].start,
+        assigned_end_time: effectiveSlots[0].end,
+      }).write();
     }
   }
 

@@ -2,10 +2,15 @@ import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LABELS } from '../../constants';
 
-function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
+function PermanentRoomPicker({ req, onSlotsChange }) {
   const [rooms, setRooms] = useState(null);
   const [adjStart, setAdjStart] = useState(req.start_time);
   const [adjEnd, setAdjEnd] = useState(req.end_time);
+  // Multi-slot: each entry = { roomId, roomName, start, end }
+  const [selectedSlots, setSelectedSlots] = useState([]);
+
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
   const fetchRooms = (s, e) => {
     setRooms(null);
@@ -16,19 +21,76 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
 
   useEffect(() => { fetchRooms(adjStart, adjEnd); }, []);
 
-  const isPartial = adjStart !== req.start_time || adjEnd !== req.end_time;
+  // Uncovered gaps within the original requested range
+  const remainingGaps = (() => {
+    const origS = toMin(req.start_time), origE = toMin(req.end_time);
+    const parts = selectedSlots.map(s => ({ s: toMin(s.start), e: toMin(s.end) })).sort((a, b) => a.s - b.s);
+    const gaps = [];
+    let cur = origS;
+    for (const p of parts) {
+      if (p.s > cur) gaps.push({ from: minToStr(cur), to: minToStr(p.s) });
+      cur = Math.max(cur, p.e);
+    }
+    if (cur < origE) gaps.push({ from: minToStr(cur), to: minToStr(origE) });
+    return gaps;
+  })();
 
-  if (!rooms) return <div className="text-sm text-gray-400">טוען חדרים...</div>;
-  const free = rooms.filter(r => r.available);
-  const busy = rooms.filter(r => !r.available);
+  const addSlot = (roomId, roomName, start, end) => {
+    const newSlots = [...selectedSlots, { roomId, roomName, start, end }];
+    setSelectedSlots(newSlots);
+    onSlotsChange(newSlots);
+    // Reset time picker to original range so admin can fill remaining gaps
+    setAdjStart(req.start_time);
+    setAdjEnd(req.end_time);
+    fetchRooms(req.start_time, req.end_time);
+  };
+
+  const removeSlot = idx => {
+    const newSlots = selectedSlots.filter((_, i) => i !== idx);
+    setSelectedSlots(newSlots);
+    onSlotsChange(newSlots);
+  };
+
+  const isPartial = adjStart !== req.start_time || adjEnd !== req.end_time;
+  const free = rooms?.filter(r => r.available) || [];
+  const busy = rooms?.filter(r => !r.available) || [];
   const withWindows = busy.filter(r => r.free_windows?.length > 0);
 
   return (
     <div>
       <p className="text-sm font-semibold mb-2">
-        חדרים פנויים ביום {DAYS[req.day_of_week]}
+        {selectedSlots.length === 0 ? `חדרים פנויים ביום ${DAYS[req.day_of_week]}` : 'הוסף שעות נוספות'}
         {isPartial && <span className="text-orange-600"> (שיבוץ חלקי — מקורי: {req.start_time}–{req.end_time})</span>}
       </p>
+
+      {/* Selected slots summary with remaining-gaps buttons */}
+      {selectedSlots.length > 0 && (
+        <div className="mb-3 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          <div className="font-semibold text-green-800 text-sm mb-1">שיבוצים שנבחרו:</div>
+          {selectedSlots.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm text-green-700">
+              <span>{s.roomName}: {s.start}–{s.end}</span>
+              <button className="text-red-500 text-xs hover:underline" onClick={() => removeSlot(i)}>הסר</button>
+            </div>
+          ))}
+          {remainingGaps.length > 0 ? (
+            <div className="mt-2 border-t border-green-200 pt-2">
+              <div className="text-xs text-orange-700 font-medium mb-1">⏱ שעות שנותרו ללא שיבוץ (מהבקשה המקורית {req.start_time}–{req.end_time}):</div>
+              <div className="flex flex-wrap gap-2">
+                {remainingGaps.map((g, i) => (
+                  <button key={i} className="btn btn-ghost text-xs py-0.5 px-2 border border-orange-300 text-orange-700 hover:bg-orange-50"
+                    onClick={() => { setAdjStart(g.from); setAdjEnd(g.to); fetchRooms(g.from, g.to); }}>
+                    השלם {g.from}–{g.to}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-green-600 mt-1">✅ הטווח המלא {req.start_time}–{req.end_time} מכוסה</div>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-3 items-end mb-3">
         <div>
           <label className="label text-xs">משעה</label>
@@ -40,71 +102,81 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
           <input type="time" className="input w-28 text-sm" value={adjEnd}
             onChange={e => { setAdjEnd(e.target.value); fetchRooms(adjStart, e.target.value); }} />
         </div>
+        {isPartial && <div className="text-xs text-orange-600 pb-1">בקשה מקורית: {req.start_time}–{req.end_time}</div>}
       </div>
 
-      {/* Rooms with partial free windows */}
-      {withWindows.length > 0 && (
-        <div className="mb-3 space-y-1">
-          {withWindows.map(r =>
-            r.free_windows.map((w, i) => {
-              const isSelected = selectedRoomId == r.id && adjStart === w.from && adjEnd === w.to;
-              return (
-                <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${isSelected ? 'bg-green-100 border-green-500' : r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
-                  <span className={`font-semibold ${isSelected ? 'text-green-900' : 'text-blue-800'}`}>{r.name}</span>
-                  {r.user_already_here?.length > 0 && (
-                    <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
-                  )}
-                  <span className={isSelected ? 'text-green-700 font-medium' : 'text-blue-700'}>
-                    {isSelected ? '✓ נבחר' : `פנוי בין ${w.from}–${w.to}`}
-                  </span>
-                  <button
-                    className={`btn text-xs py-0.5 px-2 ${isSelected ? 'btn-success' : 'btn-ghost border border-blue-300 text-blue-700 hover:bg-blue-100'}`}
-                    onClick={() => {
-                      setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to);
-                      // Also select this room+window so the admin doesn't need an extra click
-                      onSelect({ id: r.id, start_time: w.from, end_time: w.to });
-                    }}>
-                    {isSelected ? '✓ שובץ' : `שבץ ${w.from}–${w.to}`}
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {free.length === 0 && withWindows.length === 0 && (
-        <p className="text-red-500 text-sm mb-2">אין חדרים פנויים בשעות אלו</p>
-      )}
-      {free.length > 0 && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
-          {free.map(r => (
-            <button key={r.id} onClick={() => onSelect({ id: r.id, start_time: adjStart, end_time: adjEnd })}
-              className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${selectedRoomId == r.id ? 'bg-green-200 border-green-600 text-green-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
-              {r.name}
-              {r.user_already_here?.length > 0 && (
-                <div className="text-xs font-normal text-orange-600 mt-0.5">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+      {!rooms ? (
+        <div className="text-sm text-gray-400 mb-2">טוען חדרים...</div>
+      ) : (
+        <>
+          {/* Rooms with partial free windows */}
+          {withWindows.length > 0 && (
+            <div className="mb-3 space-y-1">
+              {withWindows.map(r =>
+                r.free_windows.map((w, i) => {
+                  const alreadyPicked = selectedSlots.some(s => s.roomId === r.id && s.start === w.from && s.end === w.to);
+                  return (
+                    <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${alreadyPicked ? 'bg-green-100 border-green-500' : r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
+                      <span className={`font-semibold ${alreadyPicked ? 'text-green-900' : 'text-blue-800'}`}>{r.name}</span>
+                      {r.user_already_here?.length > 0 && (
+                        <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
+                      )}
+                      <span className={alreadyPicked ? 'text-green-700 font-medium' : 'text-blue-700'}>
+                        {alreadyPicked ? '✓ נבחר' : `פנוי בין ${w.from}–${w.to}`}
+                      </span>
+                      {!alreadyPicked && (
+                        <button
+                          className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
+                          onClick={() => addSlot(r.id, r.name, w.from, w.to)}>
+                          שבץ {w.from}–{w.to}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
               )}
-            </button>
-          ))}
-        </div>
-      )}
-      {busy.length > 0 && (
-        <details className="text-xs text-gray-500 mb-2">
-          <summary className="cursor-pointer mb-1">חדרים תפוסים ({busy.length})</summary>
-          <div className="grid grid-cols-2 gap-1 mt-1">
-            {busy.map(r => (
-              <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
-                <span className="font-medium">{r.name}</span>
-                {r.free_windows?.length > 0 && <span className="text-blue-600 mr-1"> — פנוי: {r.free_windows.map(w => `${w.from}–${w.to}`).join(', ')}</span>}
-                {r.user_already_here?.length > 0 && (
-                  <div className="text-orange-600">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
-                )}
-                {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
+            </div>
+          )}
+
+          {free.length === 0 && withWindows.length === 0 && (
+            <p className="text-red-500 text-sm mb-2">אין חדרים פנויים בשעות אלו</p>
+          )}
+          {free.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
+              {free.map(r => {
+                const alreadyPicked = selectedSlots.some(s => s.roomId === r.id);
+                return (
+                  <button key={r.id}
+                    onClick={() => addSlot(r.id, r.name, adjStart, adjEnd)}
+                    disabled={alreadyPicked}
+                    className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${alreadyPicked ? 'bg-green-200 border-green-600 text-green-900 cursor-default' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
+                    {r.name}
+                    {r.user_already_here?.length > 0 && (
+                      <div className="text-xs font-normal text-orange-600 mt-0.5">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {busy.length > 0 && (
+            <details className="text-xs text-gray-500 mb-2">
+              <summary className="cursor-pointer mb-1">חדרים תפוסים ({busy.length})</summary>
+              <div className="grid grid-cols-2 gap-1 mt-1">
+                {busy.map(r => (
+                  <div key={r.id} className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                    <span className="font-medium">{r.name}</span>
+                    {r.free_windows?.length > 0 && <span className="text-blue-600 mr-1"> — פנוי: {r.free_windows.map(w => `${w.from}–${w.to}`).join(', ')}</span>}
+                    {r.user_already_here?.length > 0 && (
+                      <div className="text-orange-600">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+                    )}
+                    {r.occupants.map((o, i) => <div key={i} className="text-gray-400">{o.name} {o.start}–{o.end}</div>)}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </details>
+            </details>
+          )}
+        </>
       )}
     </div>
   );
@@ -315,6 +387,7 @@ export default function AdminRequests() {
   const [filter, setFilter] = useState('pending');
   const [expandedId, setExpandedId] = useState(null);
   const [responseForm, setResponseForm] = useState({ status: 'approved', admin_response: '', room_id: '' });
+  const [permanentSlots, setPermanentSlots] = useState([]); // multi-slot for permanent_request approval
   const [msg, setMsg] = useState('');
 
   useEffect(() => { load(); api.get('/rooms').then(r => setRooms(r.data.filter(x => x.is_active))); }, []);
@@ -323,12 +396,25 @@ export default function AdminRequests() {
   const openRespond = req => {
     setExpandedId(req.id);
     setResponseForm({ status: 'approved', admin_response: '', room_id: '' });
+    setPermanentSlots([]);
     setMsg('');
   };
 
   const submitResponse = async id => {
     await api.put(`/requests/${id}`, responseForm);
     setExpandedId(null); load();
+  };
+
+  // For permanent_request: sends slots array so backend can create multiple room_assignments
+  const submitPermanentResponse = async id => {
+    const body = { ...responseForm };
+    if (permanentSlots.length > 0) {
+      body.slots = permanentSlots.map(s => ({ room_id: s.roomId, start_time: s.start, end_time: s.end }));
+    }
+    await api.put(`/requests/${id}`, body);
+    setPermanentSlots([]);
+    setExpandedId(null);
+    load();
   };
 
   const deleteRequest = async id => {
@@ -420,12 +506,11 @@ export default function AdminRequests() {
                   </div>
                 )}
 
-                {/* Permanent request — room picker + approval */}
+                {/* Permanent request — multi-slot room picker + approval */}
                 {expandedId === req.id && req.request_type === 'permanent_request' && (
                   <div className="mt-3 border-t pt-3 space-y-3">
                     {responseForm.status === 'approved' && !req.target_room_type && (
-                      <PermanentRoomPicker req={req} selectedRoomId={responseForm.room_id}
-                        onSelect={({ id, start_time, end_time }) => setResponseForm(p => ({ ...p, room_id: id, assign_start_time: start_time, assign_end_time: end_time }))} />
+                      <PermanentRoomPicker req={req} onSlotsChange={setPermanentSlots} />
                     )}
                     {responseForm.status === 'approved' && req.target_room_type && (
                       <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-sm">
@@ -441,7 +526,8 @@ export default function AdminRequests() {
                     <div className="flex flex-wrap gap-3 items-end">
                       <div>
                         <label className="label">החלטה</label>
-                        <select className="select w-36" value={responseForm.status} onChange={e => setResponseForm(p=>({...p,status:e.target.value,room_id:''}))}>
+                        <select className="select w-36" value={responseForm.status}
+                          onChange={e => { setResponseForm(p=>({...p,status:e.target.value,room_id:''})); setPermanentSlots([]); }}>
                           <option value="approved">אישור</option>
                           <option value="rejected">דחייה</option>
                         </select>
@@ -453,13 +539,13 @@ export default function AdminRequests() {
                     </div>
                     <div className="flex gap-2 items-center">
                       <button className="btn btn-success" onClick={() => {
-                        if (responseForm.status === 'approved' && !req.target_room_type && !responseForm.room_id) {
+                        if (responseForm.status === 'approved' && !req.target_room_type && permanentSlots.length === 0) {
                           if (!confirm('לא נבחר חדר לשיבוץ. האם לאשר את הבקשה ללא שיבוץ חדר? (העובד יצטרך להישאר בחדרו הנוכחי)')) return;
                         }
-                        submitResponse(req.id);
+                        submitPermanentResponse(req.id);
                       }}>שמור</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
-                      {responseForm.status === 'approved' && !req.target_room_type && !responseForm.room_id && (
+                      {responseForm.status === 'approved' && !req.target_room_type && permanentSlots.length === 0 && (
                         <span className="text-orange-600 text-xs">⚠️ לא נבחר חדר</span>
                       )}
                     </div>
