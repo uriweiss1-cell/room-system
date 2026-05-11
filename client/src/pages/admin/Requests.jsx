@@ -2,7 +2,24 @@ import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LABELS } from '../../constants';
 
-function PermanentRoomPicker({ req, onSlotsChange }) {
+// Returns uncovered gaps within startTime–endTime that are not covered by any slot in `slots`
+const computeGaps = (startTime, endTime, slots) => {
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const minToStr = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  if (!slots.length) return [];
+  const origS = toMin(startTime), origE = toMin(endTime);
+  const parts = slots.map(s => ({ s: toMin(s.start), e: toMin(s.end) })).sort((a, b) => a.s - b.s);
+  const gaps = [];
+  let cur = origS;
+  for (const p of parts) {
+    if (p.s > cur) gaps.push({ from: minToStr(cur), to: minToStr(p.s) });
+    cur = Math.max(cur, p.e);
+  }
+  if (cur < origE) gaps.push({ from: minToStr(cur), to: minToStr(origE) });
+  return gaps;
+};
+
+function PermanentRoomPicker({ req, onSlotsChange, hideGapTracking = false }) {
   const [rooms, setRooms] = useState(null);
   const [adjStart, setAdjStart] = useState(req.start_time);
   const [adjEnd, setAdjEnd] = useState(req.end_time);
@@ -64,7 +81,7 @@ function PermanentRoomPicker({ req, onSlotsChange }) {
       </p>
 
       {/* Selected slots summary with remaining-gaps buttons */}
-      {selectedSlots.length > 0 && (
+      {!hideGapTracking && selectedSlots.length > 0 && (
         <div className="mb-3 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
           <div className="font-semibold text-green-800 text-sm mb-1">שיבוצים שנבחרו:</div>
           {selectedSlots.map((s, i) => (
@@ -388,6 +405,8 @@ export default function AdminRequests() {
   const [expandedId, setExpandedId] = useState(null);
   const [responseForm, setResponseForm] = useState({ status: 'approved', admin_response: '', room_id: '' });
   const [permanentSlots, setPermanentSlots] = useState([]); // multi-slot for permanent_request approval
+  const [addMoreId, setAddMoreId] = useState(null);   // ID of approved perm-request being extended
+  const [addMoreSlots, setAddMoreSlots] = useState([]); // slots chosen in add-more flow
   const [msg, setMsg] = useState('');
 
   useEffect(() => { load(); api.get('/rooms').then(r => setRooms(r.data.filter(x => x.is_active))); }, []);
@@ -415,6 +434,24 @@ export default function AdminRequests() {
     setPermanentSlots([]);
     setExpandedId(null);
     load();
+  };
+
+  // Add more permanent slots to an already-approved permanent_request
+  const submitAddMoreSlots = async req => {
+    if (addMoreSlots.length === 0) return;
+    try {
+      await api.put(`/requests/${req.id}`, {
+        status: 'approved',
+        admin_response: req.admin_response || '',
+        slots: addMoreSlots.map(s => ({ room_id: s.roomId, start_time: s.start, end_time: s.end })),
+      });
+      setAddMoreId(null);
+      setAddMoreSlots([]);
+      load();
+      setMsg('השעות הנוספות שובצו בהצלחה ✅');
+    } catch (e) {
+      setMsg('שגיאה: ' + (e.response?.data?.error || e.message));
+    }
   };
 
   const deleteRequest = async id => {
@@ -480,10 +517,15 @@ export default function AdminRequests() {
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {(req.status === 'pending' || (req.status === 'assigned' && req.request_type === 'room_request')) && expandedId !== req.id && (
                       <button className="btn btn-primary text-sm" onClick={() => openRespond(req)}>
                         {req.status === 'assigned' ? '+ הוסף שיבוץ' : 'טפל בבקשה'}
+                      </button>
+                    )}
+                    {req.status === 'approved' && req.request_type === 'permanent_request' && addMoreId !== req.id && (
+                      <button className="btn btn-outline text-sm" onClick={() => { setAddMoreId(req.id); setAddMoreSlots([]); setMsg(''); }}>
+                        + הוסף שעות
                       </button>
                     )}
                     <button className="btn btn-danger text-sm" onClick={() => deleteRequest(req.id)}>מחק</button>
@@ -542,6 +584,13 @@ export default function AdminRequests() {
                         if (responseForm.status === 'approved' && !req.target_room_type && permanentSlots.length === 0) {
                           if (!confirm('לא נבחר חדר לשיבוץ. האם לאשר את הבקשה ללא שיבוץ חדר? (העובד יצטרך להישאר בחדרו הנוכחי)')) return;
                         }
+                        if (responseForm.status === 'approved' && !req.target_room_type && permanentSlots.length > 0) {
+                          const gaps = computeGaps(req.start_time, req.end_time, permanentSlots);
+                          if (gaps.length > 0) {
+                            const gapStr = gaps.map(g => `${g.from}–${g.to}`).join(', ');
+                            if (!confirm(`⚠️ השעות ${gapStr} לא יכוסו בשיבוץ זה ויישארו ללא חדר קבוע.\nניתן להוסיף שעות נוספות לאחר השמירה דרך כפתור "+ הוסף שעות".\nלהמשיך בכל זאת?`)) return;
+                          }
+                        }
                         submitPermanentResponse(req.id);
                       }}>שמור</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
@@ -568,6 +617,25 @@ export default function AdminRequests() {
                     </div>
                     <button className="btn btn-success" onClick={() => submitResponse(req.id)}>שמור</button>
                     <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
+                  </div>
+                )}
+
+                {/* Add more permanent slots to an already-approved permanent_request */}
+                {addMoreId === req.id && (
+                  <div className="mt-3 border-t pt-3 space-y-3">
+                    <p className="text-sm font-semibold text-blue-700">
+                      הוספת שעות קבועות ביום {DAYS[req.day_of_week]}
+                      <span className="text-gray-500 font-normal mr-2 text-xs">(בקשה מקורית: {req.start_time}–{req.end_time})</span>
+                    </p>
+                    <PermanentRoomPicker req={req} onSlotsChange={setAddMoreSlots} hideGapTracking={true} />
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <button className="btn btn-success" disabled={addMoreSlots.length === 0}
+                        onClick={() => submitAddMoreSlots(req)}>
+                        שמור שעות נוספות
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => setAddMoreId(null)}>ביטול</button>
+                      {addMoreSlots.length === 0 && <span className="text-gray-400 text-xs">בחר חדר ושעות תחילה</span>}
+                    </div>
                   </div>
                 )}
               </div>
