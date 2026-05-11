@@ -100,14 +100,14 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
   );
 }
 
-function RoomPicker({ req, onAssigned }) {
+function RoomPicker({ req, onAssigned, alreadyAssigned = [] }) {
   const [rooms, setRooms] = useState(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [adjStart, setAdjStart] = useState(req.start_time);
   const [adjEnd, setAdjEnd] = useState(req.end_time);
   const [adminMsg, setAdminMsg] = useState('');
-  const [assignedSlots, setAssignedSlots] = useState([]); // list of {roomName, start, end}
+  const [assignedSlots, setAssignedSlots] = useState(alreadyAssigned); // list of {roomName, start, end}
 
   const fetchRooms = (s, e) => {
     setRooms(null);
@@ -342,8 +342,10 @@ export default function AdminRequests() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    {req.status === 'pending' && expandedId !== req.id && (
-                      <button className="btn btn-primary text-sm" onClick={() => openRespond(req)}>טפל בבקשה</button>
+                    {(req.status === 'pending' || (req.status === 'assigned' && req.request_type === 'room_request')) && expandedId !== req.id && (
+                      <button className="btn btn-primary text-sm" onClick={() => openRespond(req)}>
+                        {req.status === 'assigned' ? '+ הוסף שיבוץ' : 'טפל בבקשה'}
+                      </button>
                     )}
                     <button className="btn btn-danger text-sm" onClick={() => deleteRequest(req.id)}>מחק</button>
                   </div>
@@ -352,7 +354,8 @@ export default function AdminRequests() {
                 {/* Room request — show room picker */}
                 {expandedId === req.id && req.request_type === 'room_request' && (
                   <div>
-                    <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }} />
+                    <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }}
+                      alreadyAssigned={req.status === 'assigned' && req.room_name ? [{ roomName: req.room_name, start: req.start_time, end: req.end_time }] : []} />
                     <div className="flex gap-2 mt-3 border-t pt-3 flex-wrap">
                       <button className="btn btn-danger" onClick={() => { setResponseForm(p=>({...p,status:'rejected'})); submitResponse(req.id); }}>דחה בקשה</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
