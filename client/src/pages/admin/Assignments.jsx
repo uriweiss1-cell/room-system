@@ -782,19 +782,24 @@ export default function AdminAssignments() {
                 </div>
               </div>
             )}
-            {genResult.guestConflicts?.length > 0 && (
-              <div className="mt-4">
-                <p className="text-sm font-semibold text-purple-800 mb-2">⚠️ התנגשויות עם שיבוצי אורחים / חד-פעמיים — יש לבדוק ולסדר ידנית:</p>
-                <div className="space-y-1">
-                  {genResult.guestConflicts.map((gc, i) => (
-                    <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
-                      <span className="font-medium">{gc.permUserName}</span> משובץ קבוע ב<span className="font-medium">{gc.roomName}</span> כל יום {gc.dayName} ({gc.permStart}–{gc.permEnd})
-                      {' — '}אך <span className="font-medium">{gc.guestName}</span> {gc.type === 'guest' ? 'שובץ כאורח' : 'קיבל אישור'} לאותו חדר בתאריך <span className="font-medium">{gc.date}</span> ({gc.guestStart}–{gc.guestEnd})
-                    </div>
-                  ))}
+            {(() => {
+              const todayStr = new Date().toISOString().slice(0, 10);
+              const futureConflicts = (genResult.guestConflicts || []).filter(gc => gc.date >= todayStr);
+              if (!futureConflicts.length) return null;
+              return (
+                <div className="mt-4">
+                  <p className="text-sm font-semibold text-purple-800 mb-2">⚠️ התנגשויות עתידיות עם שיבוצי אורחים / חד-פעמיים — יש לבדוק ולסדר ידנית:</p>
+                  <div className="space-y-1">
+                    {futureConflicts.map((gc, i) => (
+                      <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+                        <span className="font-medium">{gc.permUserName}</span> משובץ קבוע ב<span className="font-medium">{gc.roomName}</span> כל יום {gc.dayName} ({gc.permStart}–{gc.permEnd})
+                        {' — '}אך <span className="font-medium">{gc.guestName}</span> {gc.type === 'guest' ? 'שובץ כאורח' : 'קיבל אישור'} לאותו חדר בתאריך <span className="font-medium">{gc.date}</span> ({gc.guestStart}–{gc.guestEnd})
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         )}
 

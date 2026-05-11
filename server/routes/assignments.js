@@ -990,6 +990,17 @@ function generateAssignments() {
       ['room_request','library_request','meeting_request','mamod_request'].includes(r.request_type))
     .value();
 
+  // Only report future conflicts (today and forward); past dates are irrelevant
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Returns true if the permanent employee is marked absent on a given date+time range
+  const isPermAbsent = (userId, date, start, end) =>
+    db.get('one_time_requests')
+      .filter(a => a.user_id === userId && a.specific_date === date &&
+                   a.request_type === 'absence' && a.status === 'assigned')
+      .value()
+      .some(a => !a.start_time || overlap(start, end, a.start_time, a.end_time));
+
   const guestConflicts = [];
   const seen = new Set();
   for (const perm of allPermanentNow) {
@@ -1002,6 +1013,8 @@ function generateAssignments() {
       if (g.room_id !== perm.room_id) continue;
       if (new Date(g.specific_date).getDay() !== perm.day_of_week) continue;
       if (!overlap(perm.start_time, perm.end_time, g.start_time, g.end_time)) continue;
+      if (g.specific_date < todayStr) continue;  // skip past dates
+      if (isPermAbsent(perm.user_id, g.specific_date, perm.start_time, perm.end_time)) continue;  // skip if employee is absent
       const key = `guest-${perm.id}-${g.id}`;
       if (seen.has(key)) continue; seen.add(key);
       guestConflicts.push({
@@ -1018,6 +1031,8 @@ function generateAssignments() {
       if (+otr.assigned_room_id !== perm.room_id) continue;
       if (new Date(otr.specific_date).getDay() !== perm.day_of_week) continue;
       if (!overlap(perm.start_time, perm.end_time, otr.start_time, otr.end_time)) continue;
+      if (otr.specific_date < todayStr) continue;  // skip past dates
+      if (isPermAbsent(perm.user_id, otr.specific_date, perm.start_time, perm.end_time)) continue;  // skip if employee is absent
       const key = `otr-${perm.id}-${otr.id}`;
       if (seen.has(key)) continue; seen.add(key);
       const otrUser = db.get('users').find({ id: otr.user_id }).value();
