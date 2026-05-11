@@ -36,7 +36,20 @@ function enrich(r) {
       });
   }
 
-  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, existing_assignments };
+  // For assigned room_requests, include any partial sibling assignments
+  // (created via add-partial) so the picker can reconstruct the full picture on re-open
+  let partial_siblings = [];
+  if (r.request_type === 'room_request' && r.status === 'assigned') {
+    partial_siblings = db.get('one_time_requests')
+      .filter(s => s.parent_request_id === r.id && s.status === 'assigned' && s.assigned_room_id)
+      .value()
+      .map(s => {
+        const sibRoom = db.get('rooms').find({ id: s.assigned_room_id }).value();
+        return { roomName: sibRoom?.name, start: s.assigned_start_time || s.start_time, end: s.assigned_end_time || s.end_time };
+      });
+  }
+
+  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, existing_assignments, partial_siblings };
 }
 
 router.get('/my', (req, res) => {
@@ -558,9 +571,16 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
         const u = db.get('users').find({ id: b.user_id }).value();
         return { name: u?.name, start: b.start_time, end: b.end_time };
       }),
-      ...otBusy.filter(b => b.assigned_room_id === room.id && b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)).map(b => {
+      ...otBusy.filter(b => {
+        // Use assigned_start/end if set (partial assignment), else fall back to start/end
+        const s = b.assigned_start_time || b.start_time;
+        const e = b.assigned_end_time || b.end_time;
+        return b.assigned_room_id === room.id && s && overlap(start_time, end_time, s, e);
+      }).map(b => {
         const u = db.get('users').find({ id: b.user_id }).value();
-        return { name: u?.name, start: b.start_time, end: b.end_time };
+        const s = b.assigned_start_time || b.start_time;
+        const e = b.assigned_end_time || b.end_time;
+        return { name: u?.name, start: s, end: e };
       }),
       ...guestBusy.filter(b => b.room_id === room.id && overlap(start_time, end_time, b.start_time, b.end_time)).map(b => ({
         name: b.guest_name || 'אורח', start: b.start_time, end: b.end_time,
@@ -587,9 +607,15 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
 
 router.post('/:id/assign-room', requireAdmin, (req, res) => {
   const { room_id, start_time, end_time, admin_response } = req.body;
-  const update = { assigned_room_id: +room_id, status: 'assigned' };
-  if (start_time) update.start_time = start_time;
-  if (end_time) update.end_time = end_time;
+  // IMPORTANT: Never overwrite start_time / end_time — these always hold the original
+  // requested time range so the picker can restore the full range when reopened.
+  // The actual assigned slot is stored separately in assigned_start_time / assigned_end_time.
+  const update = {
+    assigned_room_id: +room_id,
+    status: 'assigned',
+    assigned_start_time: start_time || null,
+    assigned_end_time: end_time || null,
+  };
   if (admin_response) update.admin_response = admin_response;
   db.get('one_time_requests').find({ id: +req.params.id }).assign(update).write();
   const room = db.get('rooms').find({ id: +room_id }).value();
@@ -603,12 +629,15 @@ router.post('/:id/add-partial', requireAdmin, (req, res) => {
   if (!original) return res.status(404).json({ error: 'בקשה לא נמצאה' });
   const newReq = {
     id: nextId('one_time_requests'),
+    parent_request_id: original.id, // links back to the original request
     user_id: original.user_id,
     request_type: original.request_type,
     specific_date: original.specific_date,
     day_of_week: original.day_of_week,
-    start_time,
+    start_time, // for sibling records start/end ARE the assigned times
     end_time,
+    assigned_start_time: start_time,
+    assigned_end_time: end_time,
     status: 'assigned',
     assigned_room_id: +room_id,
     notes: original.notes,

@@ -139,6 +139,23 @@ function RoomPicker({ req, onAssigned, alreadyAssigned = [] }) {
 
   const isPartial = adjStart !== req.start_time || adjEnd !== req.end_time;
 
+  // Compute remaining uncovered gaps in the original requested time range
+  const toMin2 = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+  const minToStr2 = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  const remainingGaps = (() => {
+    if (!assignedSlots.length) return [];
+    const origS = toMin2(req.start_time), origE = toMin2(req.end_time);
+    const parts = assignedSlots.map(s => ({ s: toMin2(s.start), e: toMin2(s.end) })).sort((a,b) => a.s - b.s);
+    const gaps = [];
+    let cur = origS;
+    for (const p of parts) {
+      if (p.s > cur) gaps.push({ from: minToStr2(cur), to: minToStr2(p.s) });
+      cur = Math.max(cur, p.e);
+    }
+    if (cur < origE) gaps.push({ from: minToStr2(cur), to: minToStr2(origE) });
+    return gaps;
+  })();
+
   return (
     <div className="mt-3 border-t pt-3">
       {/* Already-assigned slots summary */}
@@ -148,6 +165,22 @@ function RoomPicker({ req, onAssigned, alreadyAssigned = [] }) {
           {assignedSlots.map((s, i) => (
             <div key={i} className="text-sm text-green-700">{s.roomName}: {s.start}–{s.end}</div>
           ))}
+          {remainingGaps.length > 0 && (
+            <div className="mt-2 border-t border-green-200 pt-2">
+              <div className="text-xs text-orange-700 font-medium mb-1">⏱ שעות שנותרו ללא שיבוץ (מהבקשה המקורית {req.start_time}–{req.end_time}):</div>
+              <div className="flex flex-wrap gap-2">
+                {remainingGaps.map((g, i) => (
+                  <button key={i} className="btn btn-ghost text-xs py-0.5 px-2 border border-orange-300 text-orange-700 hover:bg-orange-50"
+                    onClick={() => { setAdjStart(g.from); setAdjEnd(g.to); fetchRooms(g.from, g.to); }}>
+                    השלם {g.from}–{g.to}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {remainingGaps.length === 0 && (
+            <div className="text-xs text-green-600 mt-1">✅ הטווח המלא {req.start_time}–{req.end_time} מכוסה</div>
+          )}
           <button className="btn btn-success mt-2 text-sm" onClick={onAssigned}>סיים ✓</button>
         </div>
       )}
@@ -355,7 +388,11 @@ export default function AdminRequests() {
                 {expandedId === req.id && req.request_type === 'room_request' && (
                   <div>
                     <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }}
-                      alreadyAssigned={req.status === 'assigned' && req.room_name ? [{ roomName: req.room_name, start: req.start_time, end: req.end_time }] : []} />
+                      alreadyAssigned={req.status === 'assigned' && req.room_name
+                        // Use assigned_start/end_time (actual partial slot) not start/end_time (original full range)
+                        ? [{ roomName: req.room_name, start: req.assigned_start_time || req.start_time, end: req.assigned_end_time || req.end_time },
+                           ...(req.partial_siblings || [])]
+                        : []} />
                     <div className="flex gap-2 mt-3 border-t pt-3 flex-wrap">
                       <button className="btn btn-danger" onClick={() => { setResponseForm(p=>({...p,status:'rejected'})); submitResponse(req.id); }}>דחה בקשה</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>

@@ -43,9 +43,12 @@ router.get('/weekly-one-time', requireAdmin, (req, res) => {
     .map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
       const room = db.get('rooms').find({ id: r.assigned_room_id }).value();
+      // Use assigned_start/end_time if set (partial assignment stored separate from original request times)
+      const st = r.assigned_start_time || r.start_time;
+      const et = r.assigned_end_time || r.end_time;
       return { id: r.id, user_id: r.user_id, user_name: user?.name, room_id: r.assigned_room_id, room_name: room?.name,
         specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
-        start_time: r.start_time, end_time: r.end_time, request_type: r.request_type, swap_reason: r.swap_reason };
+        start_time: st, end_time: et, request_type: r.request_type, swap_reason: r.swap_reason };
     });
 
   // Also include guest one-time assignments from room_assignments
@@ -201,13 +204,21 @@ router.get('/query', (req, res) => {
     .value().map(enrichAssignment);
 
   let oneTime = db.get('one_time_requests')
-    .filter(r => r.specific_date === date && r.status === 'assigned'
-      && ['room_request', 'library_request', 'meeting_request', 'mamod_request', 'room_swap'].includes(r.request_type)
-      && r.assigned_room_id && r.start_time && toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time))
+    .filter(r => {
+      if (r.specific_date !== date || r.status !== 'assigned') return false;
+      if (!['room_request', 'library_request', 'meeting_request', 'mamod_request', 'room_swap'].includes(r.request_type)) return false;
+      if (!r.assigned_room_id) return false;
+      // Use assigned_start/end_time if available (partial assignments store actual slot separately)
+      const st = r.assigned_start_time || r.start_time;
+      const et = r.assigned_end_time || r.end_time;
+      return st && toMin(st) <= toMin(time) && toMin(et) > toMin(time);
+    })
     .value().map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
       const room = db.get('rooms').find({ id: r.assigned_room_id }).value();
-      return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name };
+      const st = r.assigned_start_time || r.start_time;
+      const et = r.assigned_end_time || r.end_time;
+      return { ...r, start_time: st, end_time: et, user_name: user?.name, role: user?.role, room_name: room?.name };
     });
 
   // Guest one-time room assignments for this specific date
@@ -248,7 +259,12 @@ router.get('/locate', (req, res) => {
   // One-time room request (assigned)
   const oneTime = db.get('one_time_requests')
     .filter(r => r.user_id === uid && r.specific_date === date && r.status === 'assigned')
-    .filter(r => !r.start_time || (toMin(r.start_time) <= toMin(time) && toMin(r.end_time) > toMin(time)))
+    .filter(r => {
+      // Use assigned_start/end_time if set (partial assignment stores actual slot separately)
+      const st = r.assigned_start_time || r.start_time;
+      const et = r.assigned_end_time || r.end_time;
+      return !st || (toMin(st) <= toMin(time) && toMin(et) > toMin(time));
+    })
     .value();
 
   // If marked absent, return not found even if there is also a room booking
