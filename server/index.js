@@ -32,8 +32,20 @@ async function main() {
   // Serve React build in production
   const clientDist = path.join(__dirname, '..', 'client', 'dist');
   if (fs.existsSync(clientDist)) {
-    app.use(express.static(clientDist));
-    app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+    // Hashed assets (JS/CSS) can be cached indefinitely — their filename changes on every build.
+    // index.html must NEVER be cached: it references the hashed bundle, so stale cache = wrong bundle.
+    app.use(express.static(clientDist, {
+      setHeaders: (res, filePath) => {
+        if (path.basename(filePath) === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+        }
+      }
+    }));
+    app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
   }
 
   const PORT = process.env.PORT || 3001;
