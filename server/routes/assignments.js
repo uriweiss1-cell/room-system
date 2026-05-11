@@ -289,7 +289,9 @@ router.post('/', requireAdmin, (req, res) => {
     id: nextId('room_assignments'),
     user_id: +user_id, room_id: +room_id, day_of_week: +day_of_week,
     start_time, end_time, assignment_type: aType,
-    specific_date: specific_date || null, created_at: new Date().toISOString(),
+    specific_date: specific_date || null,
+    is_manual: aType === 'permanent' && !!user_id, // protected from algorithm cleanup
+    created_at: new Date().toISOString(),
   };
   db.get('room_assignments').push(a).write();
 
@@ -710,7 +712,9 @@ function generateAssignments() {
   rooms.forEach(r => (grid[r.id] = []));
   allExisting.forEach(a => {
     if (!grid[a.room_id]) return;
-    if (a.user_id && wantToMoveIds.has(a.user_id)) return; // will be cleared
+    // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
+    // Manual (admin-added) assignments are always preserved, even for wantToMove users
+    if (a.user_id && wantToMoveIds.has(a.user_id) && !a.is_manual) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -754,27 +758,35 @@ function generateAssignments() {
 
     if (isMoving) {
       // ── wantToMove: try to get preferred room for ALL slots ───────────────
+      // Slots already covered by manual (admin-added) assignments are kept as-is
+      const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
+      const slotsToAssign = slots.filter(s =>
+        !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time))
+      );
+
+      if (!slotsToAssign.length) continue; // all slots are already covered by manual assignments
+
       let chosenRoom = null;
       const pr = regularRooms.find(r => r.id === preferredId);
 
-      if (pr && slots.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
+      if (pr && slotsToAssign.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
         chosenRoom = pr;
       }
 
       // Preferred partially available → per-slot (assign to preferred where free)
       const preferredPartiallyAvail = pr &&
-        slots.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
+        slotsToAssign.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
 
       if (!chosenRoom && !preferredPartiallyAvail) {
         for (const room of regularRooms) {
-          if (slots.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
+          if (slotsToAssign.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
         }
       }
 
       // Move conflict: target room occupied (at least partially)
       if (pr && (!chosenRoom || chosenRoom.id !== preferredId)) {
         const blockersMap = new Map();
-        slots.forEach(s => {
+        slotsToAssign.forEach(s => {
           (grid[preferredId] || [])
             .filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end) && a.userId)
             .forEach(b => {
@@ -788,7 +800,7 @@ function generateAssignments() {
           // Compute partial split options: preferred room where free + assigned room for blocked parts
           const partialOptions = [];
           if (chosenRoom && chosenRoom.id !== preferredId) {
-            for (const s of slots) {
+            for (const s of slotsToAssign) {
               const startM = toMin(s.start_time), endM = toMin(s.end_time);
               const occ = (grid[preferredId] || [])
                 .filter(a => a.day === s.day_of_week)
@@ -814,18 +826,18 @@ function generateAssignments() {
             assignedRoomName: chosenRoom?.name || null,
             takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
             blockers: allBlockers,
-            slots: slots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+            slots: slotsToAssign.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
             partialOptions,
           });
         }
       }
 
       if (chosenRoom) {
-        slots.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
+        slotsToAssign.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
       } else {
         // Per-slot: preferred where free → any
         const unassigned = [];
-        for (const s of slots) {
+        for (const s of slotsToAssign) {
           let slotRoom = null;
           if (preferredId && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
             slotRoom = regularRooms.find(r => r.id === preferredId) || null;
@@ -884,6 +896,7 @@ function generateAssignments() {
     const uid = +uidStr;
     if (wantToMoveIds.has(uid)) continue;
     for (const a of existing) {
+      if (a.is_manual) continue; // manual assignments are never auto-removed
       const stillNeeded = (userSched[uid] || []).some(s =>
         s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
       );
@@ -899,7 +912,7 @@ function generateAssignments() {
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size) {
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && wantToMoveIds.has(a.user_id))
+      .remove(a => a.assignment_type === 'permanent' && wantToMoveIds.has(a.user_id) && !a.is_manual)
       .write();
   }
   newAssignments.forEach(a => {
@@ -916,7 +929,10 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      ...(wantToMoveIds.has(user.id) ? [] : (existingByUser[user.id] || [])),
+      // For wantToMove users: existing assignments were cleared, but manual ones were kept
+      ...(wantToMoveIds.has(user.id)
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
+        : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),
     ];
     const assignedRooms = [...new Set(allAssigned.map(a => a.room_id))]
