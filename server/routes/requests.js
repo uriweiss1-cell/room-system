@@ -714,6 +714,15 @@ router.put('/:id', requireAdmin, (req, res) => {
         created_at: new Date().toISOString(),
       }).write();
 
+      // Record the actual assigned room + times on the request record itself
+      // so that enrich() can return room_name, assigned_start_time, assigned_end_time
+      // for correct display in the Requests admin panel.
+      db.get('one_time_requests').find({ id: +req.params.id }).assign({
+        assigned_room_id: finalRoomId,
+        assigned_start_time: finalStart,
+        assigned_end_time: finalEnd,
+      }).write();
+
       // Also ensure a matching regular_schedule entry exists so the algorithm
       // is aware of this day/time and won't clean it up as "stale".
       // Only create if no overlapping entry exists for this user on this day.

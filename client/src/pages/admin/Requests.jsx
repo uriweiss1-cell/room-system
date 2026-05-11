@@ -374,7 +374,16 @@ export default function AdminRequests() {
                       {req.specific_date && <span>{req.specific_date} | </span>}
                       {req.day_of_week != null && <span>יום {DAYS[req.day_of_week]} | </span>}
                       {req.start_time && <span>{req.start_time}–{req.end_time}</span>}
-                      {req.room_name && <span> | חדר: {req.room_name}</span>}
+                      {req.room_name && <span> | {req.room_name}</span>}
+                      {/* For approved permanent_requests: show actual assigned slot if partial */}
+                      {req.status === 'approved' && req.assigned_start_time && (
+                        req.assigned_start_time !== req.start_time || req.assigned_end_time !== req.end_time
+                          ? <span className="text-orange-600 font-medium"> ← שובץ: {req.assigned_start_time}–{req.assigned_end_time}</span>
+                          : null
+                      )}
+                      {req.status === 'approved' && !req.room_name && (
+                        <span className="text-gray-400 italic"> | ללא שיבוץ חדר</span>
+                      )}
                     </div>
                     {req.swap_reason && <div className="text-sm text-orange-700 mt-1">🔄 סיבה לחדר חלופי: {req.swap_reason}</div>}
                     {req.notes && <div className="text-sm text-gray-500 mt-1">הערת עובד: {req.notes}</div>}
