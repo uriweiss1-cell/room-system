@@ -83,7 +83,7 @@ export default function AdminAssignments() {
   };
 
   const generate = async () => {
-    if (!confirm('פעולה זו תמחק את כל השיבוצים הקבועים הקיימים ותיצור חדשים. להמשיך?')) return;
+    if (!confirm('הפעלת אלגוריתם שיבוץ:\n• שיבוצים קיימים נשמרים כנקודת מוצא\n• עובדים שביקשו לעבור חדר — יועברו אם אפשר\n• שעות חדשות בלוח הזמנים — יתווספו\n• ימים שהוסרו מלוח הזמנים — השיבוץ שלהם יימחק\n\nלהמשיך?')) return;
     setGenerating(true); setGenResult(null); setOccupiedSlots([]);
     try {
       const r = await api.post('/assignments/generate');
