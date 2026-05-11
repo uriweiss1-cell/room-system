@@ -709,6 +709,7 @@ router.put('/:id', requireAdmin, (req, res) => {
         start_time: finalStart,
         end_time: finalEnd,
         assignment_type: 'permanent',
+        is_manual: true, // protect from algorithm cleanup
         notes: request.notes || null,
         created_at: new Date().toISOString(),
       }).write();

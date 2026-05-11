@@ -46,19 +46,29 @@ function PermanentRoomPicker({ req, selectedRoomId, onSelect }) {
       {withWindows.length > 0 && (
         <div className="mb-3 space-y-1">
           {withWindows.map(r =>
-            r.free_windows.map((w, i) => (
-              <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
-                <span className="font-semibold text-blue-800">{r.name}</span>
-                {r.user_already_here?.length > 0 && (
-                  <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
-                )}
-                <span className="text-blue-700">פנוי בין {w.from}–{w.to}</span>
-                <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
-                  onClick={() => { setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to); }}>
-                  שבץ {w.from}–{w.to}
-                </button>
-              </div>
-            ))
+            r.free_windows.map((w, i) => {
+              const isSelected = selectedRoomId == r.id && adjStart === w.from && adjEnd === w.to;
+              return (
+                <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${isSelected ? 'bg-green-100 border-green-500' : r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
+                  <span className={`font-semibold ${isSelected ? 'text-green-900' : 'text-blue-800'}`}>{r.name}</span>
+                  {r.user_already_here?.length > 0 && (
+                    <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
+                  )}
+                  <span className={isSelected ? 'text-green-700 font-medium' : 'text-blue-700'}>
+                    {isSelected ? '✓ נבחר' : `פנוי בין ${w.from}–${w.to}`}
+                  </span>
+                  <button
+                    className={`btn text-xs py-0.5 px-2 ${isSelected ? 'btn-success' : 'btn-ghost border border-blue-300 text-blue-700 hover:bg-blue-100'}`}
+                    onClick={() => {
+                      setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to);
+                      // Also select this room+window so the admin doesn't need an extra click
+                      onSelect({ id: r.id, start_time: w.from, end_time: w.to });
+                    }}>
+                    {isSelected ? '✓ שובץ' : `שבץ ${w.from}–${w.to}`}
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
       )}
@@ -327,7 +337,8 @@ export default function AdminRequests() {
     load();
   };
 
-  const filtered = requests.filter(r => filter === 'all' || r.status === filter);
+  // 'assigned' tab shows both one-time (status='assigned') and permanent (status='approved') approved requests
+  const filtered = requests.filter(r => filter === 'all' || r.status === filter || (filter === 'assigned' && r.status === 'approved'));
   const pendingCount = requests.filter(r => r.status === 'pending').length;
 
   return (
@@ -431,9 +442,17 @@ export default function AdminRequests() {
                         <input className="input w-60" value={responseForm.admin_response} onChange={e => setResponseForm(p=>({...p,admin_response:e.target.value}))} placeholder="הסבר / הערה..." />
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button className="btn btn-success" onClick={() => submitResponse(req.id)}>שמור</button>
+                    <div className="flex gap-2 items-center">
+                      <button className="btn btn-success" onClick={() => {
+                        if (responseForm.status === 'approved' && !req.target_room_type && !responseForm.room_id) {
+                          if (!confirm('לא נבחר חדר לשיבוץ. האם לאשר את הבקשה ללא שיבוץ חדר? (העובד יצטרך להישאר בחדרו הנוכחי)')) return;
+                        }
+                        submitResponse(req.id);
+                      }}>שמור</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
+                      {responseForm.status === 'approved' && !req.target_room_type && !responseForm.room_id && (
+                        <span className="text-orange-600 text-xs">⚠️ לא נבחר חדר</span>
+                      )}
                     </div>
                   </div>
                 )}
