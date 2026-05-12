@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
 const { createBackup } = require('./backups');
 
 const router = express.Router();
@@ -26,13 +26,13 @@ router.get('/my', (req, res) => {
   res.json(list);
 });
 
-router.get('/all', requireAdmin, (req, res) => {
+router.get('/all', requirePerm('assignments'), (req, res) => {
   const list = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
   res.json(list);
 });
 
 // Weekly one-time assignments + absences for the grid
-router.get('/weekly-one-time', requireAdmin, (req, res) => {
+router.get('/weekly-one-time', requirePerm('assignments'), (req, res) => {
   const { from, to } = req.query;
   if (!from || !to) return res.status(400).json({ error: 'נדרשים from ו-to' });
   const requests = db.get('one_time_requests')
@@ -74,7 +74,7 @@ router.get('/weekly-one-time', requireAdmin, (req, res) => {
 });
 
 // Create a one-time guest assignment (admin only)
-router.post('/guest', requireAdmin, (req, res) => {
+router.post('/guest', requirePerm('assignments'), (req, res) => {
   const { guest_name, room_id, specific_date, start_time, end_time } = req.body;
   if (!guest_name?.trim() || !room_id || !specific_date || !start_time || !end_time)
     return res.status(400).json({ error: 'יש למלא שם, חדר, תאריך ושעות' });
@@ -98,7 +98,7 @@ router.post('/guest', requireAdmin, (req, res) => {
 
 // Diagnostic summary for a single user — shows schedule, preferred/current room,
 // and explains why the algorithm would or wouldn't keep them in their preferred room.
-router.get('/user-debug/:userId', requireAdmin, (req, res) => {
+router.get('/user-debug/:userId', requirePerm('assignments'), (req, res) => {
   const userId = +req.params.userId;
   const user = db.get('users').find({ id: userId }).value();
   if (!user) return res.status(404).json({ error: 'עובד לא נמצא' });
@@ -167,7 +167,7 @@ router.get('/user-debug/:userId', requireAdmin, (req, res) => {
 });
 
 // List all upcoming guest assignments (admin only)
-router.get('/guests', requireAdmin, (req, res) => {
+router.get('/guests', requirePerm('assignments'), (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const list = db.get('room_assignments')
     .filter(a => a.assignment_type === 'one_time' && !a.user_id && a.specific_date >= today)
@@ -289,7 +289,7 @@ router.get('/locate', (req, res) => {
   res.json({ room: null, message: 'לא נמצא חדר מוקצה בשעה זו' });
 });
 
-router.post('/', requireAdmin, (req, res) => {
+router.post('/', requirePerm('assignments'), (req, res) => {
   const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap } = req.body;
   const aType = assignment_type ?? 'permanent';
 
@@ -335,7 +335,7 @@ router.post('/', requireAdmin, (req, res) => {
   res.json({ id: a.id });
 });
 
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requirePerm('assignments'), (req, res) => {
   const { start_time, end_time, room_id } = req.body;
   if (!start_time || !end_time) return res.status(400).json({ error: 'נדרשות שעת התחלה וסיום' });
   const a = db.get('room_assignments').find({ id: +req.params.id }).value();
@@ -348,7 +348,7 @@ router.put('/:id', requireAdmin, (req, res) => {
 
 // Admin dismisses an unresolvable conflict — store in dismissed_conflicts so algorithm won't show it again.
 // Uses effective slot times (post-effectiveSlots), so exact schedule times don't need to match.
-router.delete('/dismiss-slot', requireAdmin, (req, res) => {
+router.delete('/dismiss-slot', requirePerm('algorithm'), (req, res) => {
   const { user_id, day_of_week, start_time, end_time } = req.body;
   if (!user_id || day_of_week == null || !start_time || !end_time)
     return res.status(400).json({ error: 'חסרים פרמטרים' });
@@ -371,7 +371,7 @@ router.delete('/clear/permanent', requireAdmin, (req, res) => {
   res.json({ message: 'כל השיבוצים הקבועים נמחקו' });
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requirePerm('assignments'), (req, res) => {
   // Admin delete: removes only the room_assignment, keeps regular_schedule intact.
   // The employee stays in the "needs assignment" pool — the algorithm will reassign
   // them on the next run.
@@ -381,7 +381,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
 });
 
 // Resolve a preference conflict: notify the employee OR displace a blocker and assign the employee
-router.post('/resolve-preference', requireAdmin, (req, res) => {
+router.post('/resolve-preference', requirePerm('algorithm'), (req, res) => {
   const { action, userId, blockerUserId, roomId, day, start, end, message } = req.body;
   try {
     const sendNotif = (toUserId, msg) => {
@@ -460,7 +460,7 @@ router.post('/resolve-preference', requireAdmin, (req, res) => {
 // Assign one or more users to a contested room (admin resolves conflict manually).
 // Removes any existing permanent assignment for those users on those slots, then
 // creates new assignments in the chosen room.
-router.post('/assign-contested', requireAdmin, (req, res) => {
+router.post('/assign-contested', requirePerm('algorithm'), (req, res) => {
   const { assignments, roomId } = req.body;
   if (!assignments?.length || !roomId) return res.status(400).json({ error: 'חסרים פרמטרים' });
   for (const { userId, slots } of assignments) {
@@ -513,12 +513,12 @@ router.delete('/my/:id', (req, res) => {
   res.json({ message: 'השיבוץ נמחק' });
 });
 
-router.post('/generate', requireAdmin, (req, res) => {
+router.post('/generate', requirePerm('algorithm'), (req, res) => {
   try { createBackup('before-generate'); res.json(generateAssignments()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/apply-suggestion', requireAdmin, (req, res) => {
+router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
   const { action } = req.body;
   if (!action) return res.status(400).json({ error: 'חסר action' });
 

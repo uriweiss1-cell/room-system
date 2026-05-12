@@ -17,11 +17,24 @@ function authenticate(req, res, next) {
   }
 }
 
+// Full admin only (role === 'admin'). Use for destructive / system operations.
 function requireAdmin(req, res, next) {
-  if (!req.user?.can_admin && req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'הרשאת מנהל נדרשת' });
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'הרשאת מנהל ראשי נדרשת' });
   }
   next();
 }
 
-module.exports = { authenticate, requireAdmin, JWT_SECRET };
+// Granular permission check. Full admin always passes; otherwise checks perm_<perm> flag.
+// Valid perms: 'assignments' | 'algorithm' | 'requests' | 'users' | 'rooms'
+function requirePerm(perm) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(401).json({ error: 'נדרשת התחברות' });
+    if (u.role === 'admin') return next();
+    if (u[`perm_${perm}`]) return next();
+    return res.status(403).json({ error: 'אין הרשאה לפעולה זו' });
+  };
+}
+
+module.exports = { authenticate, requireAdmin, requirePerm, JWT_SECRET };

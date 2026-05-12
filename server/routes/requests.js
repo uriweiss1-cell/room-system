@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
 const { sendAdminEmail, REQUEST_TYPE_LABELS, DAYS_HE } = require('../email');
 const { sendPushToUser } = require('../webpush');
 
@@ -57,7 +57,7 @@ router.get('/my', (req, res) => {
   res.json(list);
 });
 
-router.get('/all', requireAdmin, (req, res) => {
+router.get('/all', requirePerm('requests'), (req, res) => {
   res.json(db.get('one_time_requests').value().map(enrich).reverse());
 });
 
@@ -65,7 +65,7 @@ router.post('/', (req, res) => {
   const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type } = req.body;
 
   // Admin can submit on behalf of another user
-  const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
 
   // Absence with date range — create one record per day
   if (request_type === 'absence' && date_to && date_to > specific_date) {
@@ -276,7 +276,7 @@ router.post('/book-room', (req, res) => {
   if (is_swap && !swap_reason?.trim()) {
     return res.status(400).json({ error: 'יש להזין סיבה לבקשת חדר חלופי' });
   }
-  const userId = (req.user.role === 'admin' && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
 
   // Verify the new room is still free (race-condition guard)
   const dayOfWeek = new Date(specific_date).getDay();
@@ -355,7 +355,7 @@ router.post('/book-room', (req, res) => {
 });
 
 // Admin: weekly room-swap summary
-router.get('/swaps-weekly', requireAdmin, (req, res) => {
+router.get('/swaps-weekly', requirePerm('requests'), (req, res) => {
   // Current week: Sun–Thu (or the trailing 7 days if no specific week)
   const today = new Date();
   const dow = today.getDay();
@@ -504,7 +504,7 @@ router.get('/mamod-schedule', (req, res) => {
   res.json(result);
 });
 
-router.get('/available-rooms-permanent', requireAdmin, (req, res) => {
+router.get('/available-rooms-permanent', requirePerm('requests'), (req, res) => {
   const { day_of_week, start_time, end_time, user_id } = req.query;
   if (day_of_week == null || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dow = +day_of_week;
@@ -542,7 +542,7 @@ router.get('/available-rooms-permanent', requireAdmin, (req, res) => {
   res.json(allRooms);
 });
 
-router.get('/available-rooms', requireAdmin, (req, res) => {
+router.get('/available-rooms', requirePerm('requests'), (req, res) => {
   const { date, start_time, end_time } = req.query;
   if (!date || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dayOfWeek = new Date(date).getDay();
@@ -605,7 +605,7 @@ router.get('/available-rooms', requireAdmin, (req, res) => {
   res.json(allRooms);
 });
 
-router.post('/:id/assign-room', requireAdmin, (req, res) => {
+router.post('/:id/assign-room', requirePerm('requests'), (req, res) => {
   const { room_id, start_time, end_time, admin_response } = req.body;
   // IMPORTANT: Never overwrite start_time / end_time — these always hold the original
   // requested time range so the picker can restore the full range when reopened.
@@ -636,7 +636,7 @@ router.post('/:id/assign-room', requireAdmin, (req, res) => {
 });
 
 // Add an additional partial assignment for a request (keeps original, creates sibling record)
-router.post('/:id/add-partial', requireAdmin, (req, res) => {
+router.post('/:id/add-partial', requirePerm('requests'), (req, res) => {
   const { room_id, start_time, end_time, admin_response } = req.body;
   const original = db.get('one_time_requests').find({ id: +req.params.id }).value();
   if (!original) return res.status(404).json({ error: 'בקשה לא נמצאה' });
@@ -673,7 +673,7 @@ router.post('/:id/add-partial', requireAdmin, (req, res) => {
   res.json({ message: `נוסף שיבוץ: ${room?.name} ${start_time}–${end_time}` });
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requirePerm('requests'), (req, res) => {
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
   // If an approved permanent special-room request is deleted, also remove its room_assignment
   if (request?.request_type === 'permanent_request' && request?.status === 'approved' && request?.target_room_type) {
@@ -690,7 +690,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ message: 'הבקשה נמחקה' });
 });
 
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requirePerm('requests'), (req, res) => {
   const { status, admin_response, assigned_room_id, room_id, assign_start_time, assign_end_time, slots } = req.body;
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
 

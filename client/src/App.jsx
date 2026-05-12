@@ -13,11 +13,11 @@ import AdminRooms from './pages/admin/Rooms';
 import AdminAssignments from './pages/admin/Assignments';
 import AdminRequests from './pages/admin/Requests';
 
-function Guard({ adminOnly, children }) {
-  const { user, loading, isAdmin } = useAuth();
+function Guard({ perm, children }) {
+  const { user, loading, perms } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen text-lg text-gray-500">טוען...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && !isAdmin) return <Navigate to="/my-schedule" replace />;
+  if (perm && !perms[perm]) return <Navigate to="/my-schedule" replace />;
   return children;
 }
 
@@ -36,10 +36,10 @@ export default function App() {
         <Route path="library"          element={<Library />} />
         <Route path="meeting-room"     element={<MeetingRoom />} />
         <Route path="mamod"            element={<Mamod />} />
-        <Route path="admin/users"       element={<Guard adminOnly><AdminUsers /></Guard>} />
-        <Route path="admin/rooms"       element={<Guard adminOnly><AdminRooms /></Guard>} />
-        <Route path="admin/assignments" element={<Guard adminOnly><AdminAssignments /></Guard>} />
-        <Route path="admin/requests"    element={<Guard adminOnly><AdminRequests /></Guard>} />
+        <Route path="admin/users"       element={<Guard perm="users"><AdminUsers /></Guard>} />
+        <Route path="admin/rooms"       element={<Guard perm="rooms"><AdminRooms /></Guard>} />
+        <Route path="admin/assignments" element={<Guard perm="assignments"><AdminAssignments /></Guard>} />
+        <Route path="admin/requests"    element={<Guard perm="requests"><AdminRequests /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

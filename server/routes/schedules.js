@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
@@ -91,9 +91,9 @@ router.put('/my', (req, res) => {
   res.json({ message: 'לוח הזמנים עודכן' });
 });
 
-router.get('/user/:userId', requireAdmin, (req, res) => res.json(getSchedule(+req.params.userId)));
+router.get('/user/:userId', requirePerm('users'), (req, res) => res.json(getSchedule(+req.params.userId)));
 
-router.put('/user/:userId', requireAdmin, (req, res) => {
+router.put('/user/:userId', requirePerm('users'), (req, res) => {
   saveSchedule(+req.params.userId, req.body.schedules ?? []);
   res.json({ message: 'לוח הזמנים עודכן' });
 });
@@ -107,7 +107,7 @@ router.delete('/clear-auto-imported', requireAdmin, (req, res) => {
   res.json({ message: `נמחקו ${removed.length} לוחות זמנים שנוצרו אוטומטית` });
 });
 
-router.get('/all', requireAdmin, (req, res) => {
+router.get('/all', requirePerm('assignments'), (req, res) => {
   const schedules = db.get('regular_schedules').value().map(s => {
     const user = db.get('users').find({ id: s.user_id }).value();
     const room = s.preferred_room_id ? db.get('rooms').find({ id: +s.preferred_room_id }).value() : null;

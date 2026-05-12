@@ -27,8 +27,18 @@ export function AuthProvider({ children }) {
 
   const logout = () => { localStorage.removeItem('token'); setUser(null); };
 
+  const isFullAdmin = user?.role === 'admin';
+  const perms = {
+    assignments: isFullAdmin || !!user?.perm_assignments,
+    algorithm:   isFullAdmin || !!user?.perm_algorithm,
+    requests:    isFullAdmin || !!user?.perm_requests,
+    users:       isFullAdmin || !!user?.perm_users,
+    rooms:       isFullAdmin || !!user?.perm_rooms,
+  };
+  const isAdmin = isFullAdmin || Object.values(perms).some(Boolean);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin: !!(user?.can_admin || user?.role === 'admin') }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin, perms }}>
       {children}
     </AuthContext.Provider>
   );

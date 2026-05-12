@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS } from '../../constants';
+import { useAuth } from '../../context/AuthContext';
 export default function AdminAssignments() {
+  const { perms } = useAuth();
   const [assignments, setAssignments] = useState([]);
   const [users, setUsers] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -327,13 +329,17 @@ export default function AdminAssignments() {
         <div className="flex flex-wrap items-center gap-3 justify-between mb-3">
           <h2 className="text-xl font-bold">שיבוץ חדרים</h2>
           <div className="flex flex-wrap gap-2">
-<button className="btn btn-primary" onClick={generate} disabled={generating}>
-              {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
-            </button>
+{perms?.algorithm && (
+              <button className="btn btn-primary" onClick={generate} disabled={generating}>
+                {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
+              </button>
+            )}
             <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
             <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
-            <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
-            <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
+            {perms?.algorithm && <>
+              <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
+              <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
+            </>}
           </div>
         </div>
 
@@ -457,7 +463,7 @@ export default function AdminAssignments() {
           </div>
         )}
 
-        {genResult && (
+        {genResult && perms?.algorithm && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
             <p className="font-semibold">{genResult.message}</p>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}

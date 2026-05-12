@@ -32,7 +32,18 @@ function ShareLinkBanner() {
 }
 
 const ROLE_OPTIONS = Object.entries(ROLES).filter(([k]) => k !== 'admin');
-const emptyUser = { name: '', email: '', password: '', role: 'clinical_intern', phone: '', notes: '', can_admin: false };
+const emptyPerms = { perm_assignments: false, perm_algorithm: false, perm_requests: false, perm_users: false, perm_rooms: false };
+const emptyUser = { name: '', email: '', password: '', role: 'clinical_intern', phone: '', notes: '', ...emptyPerms };
+
+const PERM_LABELS = [
+  { key: 'perm_assignments', label: 'ניהול שיבוץ', desc: 'רשת שבועית, הוספה ידנית, אורחים' },
+  { key: 'perm_algorithm',   label: 'הפעלת אלגוריתם', desc: 'הרצה ופתרון קונפליקטים' },
+  { key: 'perm_requests',    label: 'ניהול בקשות', desc: 'אישור/דחיית בקשות עובדים' },
+  { key: 'perm_users',       label: 'ניהול עובדים', desc: 'הוספה, עריכה, לוח זמנים' },
+  { key: 'perm_rooms',       label: 'ניהול חדרים', desc: 'הוספה, עריכה, קבצים' },
+];
+
+const COORDINATOR_PRESET = { perm_assignments: true, perm_algorithm: false, perm_requests: true, perm_users: false, perm_rooms: false };
 const emptySlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00' };
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 
@@ -59,7 +70,10 @@ export default function AdminUsers() {
   ]);
 
   const openAdd = () => { setForm(emptyUser); setEditing(null); setShowForm(true); setMsg(''); setSchedulePanel(null); };
-  const openEdit = u => { setForm({ ...u, password: '' }); setEditing(u.id); setShowForm(true); setMsg(''); setSchedulePanel(null); };
+  const openEdit = u => {
+    setForm({ ...emptyPerms, ...u, password: '' });
+    setEditing(u.id); setShowForm(true); setMsg(''); setSchedulePanel(null);
+  };
   const cancel = () => { setShowForm(false); setMsg(''); };
 
   const save = async () => {
@@ -145,8 +159,8 @@ export default function AdminUsers() {
             <h3 className="font-semibold mb-4">{editing ? 'עריכת עובד' : 'הוספת עובד חדש'}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="label">שם מלא *</label><input className="input" value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} /></div>
-              {(form.can_admin || editing && users.find(u=>u.id===editing)?.can_admin) && (
-                <div><label className="label">אימייל (נדרש למנהל)</label><input type="email" className="input" dir="ltr" value={form.email||''} onChange={e => setForm(p=>({...p,email:e.target.value}))} /></div>
+              {Object.keys(emptyPerms).some(k => form[k]) && (
+                <div><label className="label">אימייל (לכניסה עם סיסמה)</label><input type="email" className="input" dir="ltr" value={form.email||''} onChange={e => setForm(p=>({...p,email:e.target.value}))} /></div>
               )}
               <div><label className="label">{editing ? 'סיסמה חדשה (ריק = ללא שינוי)' : 'סיסמה (ריק = changeme123)'}</label><input type="password" className="input" value={form.password} onChange={e => setForm(p=>({...p,password:e.target.value}))} /></div>
               <div><label className="label">תפקיד *</label>
@@ -156,9 +170,26 @@ export default function AdminUsers() {
               </div>
               <div><label className="label">טלפון</label><input type="tel" className="input" dir="ltr" value={form.phone||''} onChange={e => setForm(p=>({...p,phone:e.target.value}))} /></div>
               <div className="sm:col-span-2"><label className="label">הערות</label><textarea className="input h-16 resize-none" value={form.notes||''} onChange={e => setForm(p=>({...p,notes:e.target.value}))} /></div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="can_admin" checked={!!form.can_admin} onChange={e => setForm(p=>({...p,can_admin:e.target.checked}))} />
-                <label htmlFor="can_admin" className="text-sm">הרשאת מנהל (גישה לפאנל ניהול)</label>
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label font-semibold">הרשאות ניהול</label>
+                  <button type="button" className="btn btn-ghost text-xs px-2 py-1"
+                    onClick={() => setForm(p => ({ ...p, ...COORDINATOR_PRESET }))}>
+                    🗂 הגדר כמרכז/ת (ברירת מחדל)
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {PERM_LABELS.map(({ key, label, desc }) => (
+                    <label key={key} className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${form[key] ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                      <input type="checkbox" className="mt-0.5" checked={!!form[key]}
+                        onChange={e => setForm(p => ({ ...p, [key]: e.target.checked }))} />
+                      <span>
+                        <span className="text-sm font-medium block">{label}</span>
+                        <span className="text-xs text-gray-500">{desc}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
               {editing && (
                 <div className="flex items-center gap-2">
@@ -176,14 +207,16 @@ export default function AdminUsers() {
 
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>שם</th><th>תפקיד</th><th>טלפון</th><th>מנהל</th><th>פעולות</th></tr></thead>
+            <thead><tr><th>שם</th><th>תפקיד</th><th>טלפון</th><th>הרשאות</th><th>פעולות</th></tr></thead>
             <tbody>
               {filtered.filter(u => u.is_active).map(u => (
                 <tr key={u.id} className={schedulePanel?.userId === u.id ? 'bg-blue-50' : ''}>
                   <td className="font-medium">{u.name}</td>
                   <td><span className={`badge ${ROLE_COLORS[u.role]||'badge-gray'}`}>{ROLES[u.role]}</span></td>
                   <td dir="ltr">{u.phone||'—'}</td>
-                  <td>{u.can_admin ? '✓' : ''}</td>
+                  <td className="text-xs text-gray-600">
+                    {[u.perm_assignments && 'שיבוץ', u.perm_algorithm && 'אלגוריתם', u.perm_requests && 'בקשות', u.perm_users && 'עובדים', u.perm_rooms && 'חדרים'].filter(Boolean).join(', ') || '—'}
+                  </td>
                   <td>
                     <div className="flex gap-1 flex-wrap">
                       <button className="btn btn-ghost px-2 py-1 text-xs" onClick={() => openEdit(u)}>עריכה</button>

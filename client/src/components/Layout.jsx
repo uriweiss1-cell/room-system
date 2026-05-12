@@ -47,19 +47,19 @@ function GlobalNotifications() {
 }
 
 export default function Layout() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, perms } = useAuth();
   const navigate = useNavigate();
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!perms?.requests) return;
     const fetch = () => api.get('/requests/all').then(r => {
       setPendingCount(r.data.filter(x => x.status === 'pending').length);
     }).catch(() => {});
     fetch();
     const interval = setInterval(fetch, 30000);
     return () => clearInterval(interval);
-  }, [isAdmin]);
+  }, [perms?.requests]);
 
   const employeeLinks = [
     { to: '/my-schedule',      label: 'הלוח שלי' },
@@ -70,11 +70,11 @@ export default function Layout() {
     { to: '/mamod',            label: 'ממד' },
   ];
   const adminLinks = [
-    { to: '/admin/users',       label: 'עובדים' },
-    { to: '/admin/rooms',       label: 'חדרים' },
-    { to: '/admin/assignments', label: 'שיבוץ' },
-    { to: '/admin/requests',    label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
-  ];
+    perms?.users       && { to: '/admin/users',       label: 'עובדים' },
+    perms?.rooms       && { to: '/admin/rooms',       label: 'חדרים' },
+    perms?.assignments && { to: '/admin/assignments', label: 'שיבוץ' },
+    perms?.requests    && { to: '/admin/requests',    label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
+  ].filter(Boolean);
 
   const linkClass = ({ isActive }) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
