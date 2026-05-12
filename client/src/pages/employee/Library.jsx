@@ -26,6 +26,12 @@ export default function Library() {
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [impersonateUserId, setImpersonateUserId] = useState('');
+
+  useEffect(() => {
+    if (isAdmin) api.get('/users').then(r => setUsers(r.data.filter(u => !u.is_admin))).catch(() => {});
+  }, [isAdmin]);
 
   const dates = weekDates(weekOffset);
 
@@ -51,6 +57,7 @@ export default function Library() {
         start_time: form.start_time,
         end_time: form.end_time,
         notes: form.notes || '',
+        ...(isAdmin && impersonateUserId ? { impersonate_user_id: +impersonateUserId } : {}),
       });
       setMsg(r.data.message);
       if (!permanent) loadSchedule();
@@ -115,6 +122,16 @@ export default function Library() {
       {/* Booking form */}
       <div className="card">
         <h3 className="font-semibold mb-3">הזמנת ספריה</h3>
+
+        {isAdmin && (
+          <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <label className="label text-amber-800">📋 הגשה בשם עובד (אופציונלי)</label>
+            <select className="input w-full" value={impersonateUserId} onChange={e => setImpersonateUserId(e.target.value)}>
+              <option value="">— בשמי (מנהל) —</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="flex gap-2 mb-4">
           <button className={`btn text-sm ${!permanent ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setPermanent(false); setMsg(''); setError(''); }}>חד-פעמי</button>
