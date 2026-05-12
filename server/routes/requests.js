@@ -192,6 +192,10 @@ router.post('/', (req, res) => {
     .filter(a => !swappedOut.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
       && s.start_time && overlap(start_time, end_time, s.start_time, s.end_time)));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id).value();
+  // Guest one-time assignments stored in room_assignments (not one_time_requests)
+  const guestBusy = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && a.specific_date === specific_date)
+    .value();
 
   // Check if the requesting user already has a room at these times
   const userAlreadyHasRoom = [
@@ -209,6 +213,7 @@ router.post('/', (req, res) => {
       const busy = [
         ...permBusy.filter(b => b.room_id === room.id),
         ...otBusy.filter(b => b.assigned_room_id === room.id),
+        ...guestBusy.filter(b => b.room_id === room.id),
       ];
       return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
     });
@@ -229,6 +234,7 @@ router.post('/', (req, res) => {
     const busy = [
       ...permBusy.filter(b => b.room_id === room.id),
       ...otBusy.filter(b => b.assigned_room_id === room.id),
+      ...guestBusy.filter(b => b.room_id === room.id),
     ];
     return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
   });
