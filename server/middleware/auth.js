@@ -17,21 +17,29 @@ function authenticate(req, res, next) {
   }
 }
 
-// Full admin only (role === 'admin'). Use for destructive / system operations.
-function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'הרשאת מנהל ראשי נדרשת' });
-  }
-  next();
+const PERM_KEYS = ['assignments', 'algorithm', 'requests', 'users', 'rooms'];
+
+// Returns true for legacy can_admin users who haven't been migrated to the new perm flags yet.
+// Once any perm flag is explicitly set on the user, legacy mode is off.
+function isLegacyAdmin(u) {
+  return !!u?.can_admin && !PERM_KEYS.some(p => u[`perm_${p}`]);
 }
 
-// Granular permission check. Full admin always passes; otherwise checks perm_<perm> flag.
+// Full admin only (role === 'admin') OR legacy can_admin. Use for destructive / system operations.
+function requireAdmin(req, res, next) {
+  const u = req.user;
+  if (u?.role === 'admin' || isLegacyAdmin(u)) return next();
+  return res.status(403).json({ error: 'הרשאת מנהל ראשי נדרשת' });
+}
+
+// Granular permission check. Full admin and legacy can_admin always pass.
 // Valid perms: 'assignments' | 'algorithm' | 'requests' | 'users' | 'rooms'
 function requirePerm(perm) {
   return (req, res, next) => {
     const u = req.user;
     if (!u) return res.status(401).json({ error: 'נדרשת התחברות' });
     if (u.role === 'admin') return next();
+    if (isLegacyAdmin(u)) return next();   // backward compat
     if (u[`perm_${perm}`]) return next();
     return res.status(403).json({ error: 'אין הרשאה לפעולה זו' });
   };

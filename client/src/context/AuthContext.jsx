@@ -27,15 +27,18 @@ export function AuthProvider({ children }) {
 
   const logout = () => { localStorage.removeItem('token'); setUser(null); };
 
+  const PERM_KEYS = ['assignments', 'algorithm', 'requests', 'users', 'rooms'];
   const isFullAdmin = user?.role === 'admin';
+  // Legacy: can_admin users who haven't been migrated to new perm flags yet → grant all perms
+  const isLegacyAdmin = !!user?.can_admin && !PERM_KEYS.some(p => user?.[`perm_${p}`]);
   const perms = {
-    assignments: isFullAdmin || !!user?.perm_assignments,
-    algorithm:   isFullAdmin || !!user?.perm_algorithm,
-    requests:    isFullAdmin || !!user?.perm_requests,
-    users:       isFullAdmin || !!user?.perm_users,
-    rooms:       isFullAdmin || !!user?.perm_rooms,
+    assignments: isFullAdmin || isLegacyAdmin || !!user?.perm_assignments,
+    algorithm:   isFullAdmin || isLegacyAdmin || !!user?.perm_algorithm,
+    requests:    isFullAdmin || isLegacyAdmin || !!user?.perm_requests,
+    users:       isFullAdmin || isLegacyAdmin || !!user?.perm_users,
+    rooms:       isFullAdmin || isLegacyAdmin || !!user?.perm_rooms,
   };
-  const isAdmin = isFullAdmin || Object.values(perms).some(Boolean);
+  const isAdmin = isFullAdmin || isLegacyAdmin || Object.values(perms).some(Boolean);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, loading, isAdmin, perms }}>

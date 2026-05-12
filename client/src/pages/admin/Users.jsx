@@ -44,6 +44,8 @@ const PERM_LABELS = [
 ];
 
 const COORDINATOR_PRESET = { perm_assignments: true, perm_algorithm: false, perm_requests: true, perm_users: false, perm_rooms: false };
+const FULL_ADMIN_PRESET  = { perm_assignments: true, perm_algorithm: true,  perm_requests: true, perm_users: true,  perm_rooms: true  };
+const allPermsOn = form => Object.keys(emptyPerms).every(k => !!form[k]);
 const emptySlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00' };
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 
@@ -171,12 +173,22 @@ export default function AdminUsers() {
               <div><label className="label">טלפון</label><input type="tel" className="input" dir="ltr" value={form.phone||''} onChange={e => setForm(p=>({...p,phone:e.target.value}))} /></div>
               <div className="sm:col-span-2"><label className="label">הערות</label><textarea className="input h-16 resize-none" value={form.notes||''} onChange={e => setForm(p=>({...p,notes:e.target.value}))} /></div>
               <div className="sm:col-span-2">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <label className="label font-semibold">הרשאות ניהול</label>
-                  <button type="button" className="btn btn-ghost text-xs px-2 py-1"
-                    onClick={() => setForm(p => ({ ...p, ...COORDINATOR_PRESET }))}>
-                    🗂 הגדר כמרכז/ת (ברירת מחדל)
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn btn-ghost text-xs px-2 py-1"
+                      onClick={() => setForm(p => ({ ...p, ...COORDINATOR_PRESET }))}>
+                      🗂 מרכז/ת
+                    </button>
+                    <button type="button" className="btn btn-ghost text-xs px-2 py-1 text-blue-700 border-blue-300"
+                      onClick={() => setForm(p => ({ ...p, ...FULL_ADMIN_PRESET }))}>
+                      ⭐ גישה מלאה
+                    </button>
+                    <button type="button" className="btn btn-ghost text-xs px-2 py-1 text-gray-500"
+                      onClick={() => setForm(p => ({ ...p, ...emptyPerms }))}>
+                      ✕ נקה הכל
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {PERM_LABELS.map(({ key, label, desc }) => (
@@ -215,7 +227,14 @@ export default function AdminUsers() {
                   <td><span className={`badge ${ROLE_COLORS[u.role]||'badge-gray'}`}>{ROLES[u.role]}</span></td>
                   <td dir="ltr">{u.phone||'—'}</td>
                   <td className="text-xs text-gray-600">
-                    {[u.perm_assignments && 'שיבוץ', u.perm_algorithm && 'אלגוריתם', u.perm_requests && 'בקשות', u.perm_users && 'עובדים', u.perm_rooms && 'חדרים'].filter(Boolean).join(', ') || '—'}
+                    {(() => {
+                      const hasNewPerms = ['perm_assignments','perm_algorithm','perm_requests','perm_users','perm_rooms'].some(k => u[k]);
+                      if (!hasNewPerms && u.can_admin) return <span className="text-blue-700 font-medium">⭐ גישה מלאה</span>;
+                      const list = [u.perm_assignments && 'שיבוץ', u.perm_algorithm && 'אלגוריתם', u.perm_requests && 'בקשות', u.perm_users && 'עובדים', u.perm_rooms && 'חדרים'].filter(Boolean);
+                      return list.length === 5 ? <span className="text-blue-700 font-medium">⭐ גישה מלאה</span>
+                           : list.length ? list.join(', ')
+                           : '—';
+                    })()}
                   </td>
                   <td>
                     <div className="flex gap-1 flex-wrap">
