@@ -3,14 +3,15 @@ import api from '../../api';
 import { DAYS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
-const WORK_DAYS = DAYS.slice(0, 5); // ראשון–חמישי
+const WORK_DAYS = DAYS.slice(0, 6); // ראשון–שישי
 const defaultSlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00', preferred_room_id: '' };
 
 function getWeekDates(offset) {
   const today = new Date();
   const sunday = new Date(today);
   sunday.setDate(today.getDate() - today.getDay() + offset * 7);
-  return Array.from({ length: 5 }, (_, i) => {
+  // Always generate 6 days (Sun–Fri); caller decides whether to show Friday
+  return Array.from({ length: 6 }, (_, i) => {
     const d = new Date(sunday);
     d.setDate(sunday.getDate() + i);
     return d.toISOString().slice(0, 10);
@@ -108,6 +109,11 @@ export default function MySchedule() {
   const weekDates = getWeekDates(weekOffset);
   const today = todayISO();
 
+  // Show Friday column only if the employee has any permanent or one-time Friday data
+  const hasFriday = assignments.some(a => a.day_of_week === 5) ||
+    oneTimeItems.some(x => new Date(x.specific_date).getDay() === 5);
+  const displayDates = hasFriday ? weekDates : weekDates.slice(0, 5);
+
   // Returns true only if the absence covers the ENTIRE slot (or is a full-day absence).
   // Used for striking through a permanent slot — partial absences should not cross out the whole slot.
   const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -117,8 +123,8 @@ export default function MySchedule() {
         : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
     );
 
-  // Week label e.g. "12.5 – 16.5"
-  const weekLabel = `${fmtDate(weekDates[0])} – ${fmtDate(weekDates[4])}`;
+  // Week label e.g. "12.5 – 16.5" (or "12.5 – 17.5" when Friday is shown)
+  const weekLabel = `${fmtDate(weekDates[0])} – ${fmtDate(displayDates[displayDates.length - 1])}`;
 
   if (loading) return <div className="text-center py-10 text-gray-500">טוען...</div>;
 
@@ -244,8 +250,8 @@ export default function MySchedule() {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-200 inline-block" /> היעדרות</span>
         </div>
 
-        <div className="grid grid-cols-5 gap-2">
-          {weekDates.map((date, i) => {
+        <div className={`grid gap-2 ${hasFriday ? 'grid-cols-6' : 'grid-cols-5'}`}>
+          {displayDates.map((date, i) => {
             const isToday = date === today;
             const isPast = date < today;
             const permSlots = assignments.filter(a => a.day_of_week === i);
