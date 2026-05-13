@@ -842,6 +842,7 @@ export default function AdminAssignments() {
                                       ...prev,
                                       roomWishMismatches: prev.roomWishMismatches.filter(x => x.assignmentId !== m.assignmentId),
                                     }));
+                                    load();
                                   } catch (e) {
                                     alert('שגיאה: ' + (e.response?.data?.error || e.message));
                                   }
