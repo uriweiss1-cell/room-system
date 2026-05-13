@@ -108,6 +108,15 @@ export default function MySchedule() {
   const weekDates = getWeekDates(weekOffset);
   const today = todayISO();
 
+  // Returns true only if the absence covers the ENTIRE slot (or is a full-day absence).
+  // Used for striking through a permanent slot — partial absences should not cross out the whole slot.
+  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const slotFullyAbsent = (absenceList, slotStart, slotEnd) =>
+    absenceList.some(a =>
+      !a.start_time ? true
+        : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
+    );
+
   // Week label e.g. "12.5 – 16.5"
   const weekLabel = `${fmtDate(weekDates[0])} – ${fmtDate(weekDates[4])}`;
 
@@ -270,14 +279,14 @@ export default function MySchedule() {
                   return (
                     <div key={a.id}
                       className={`text-xs rounded px-2 py-1
-                        ${isAbsent || isSwappedOut
+                        ${slotFullyAbsent(absences, a.start_time, a.end_time) || isSwappedOut
                           ? 'bg-gray-200 text-gray-400 line-through'
                           : 'bg-blue-100 text-blue-800'}
                       `}
                     >
                       <div className="font-medium break-words">{a.room_name}</div>
                       <div>{a.start_time}–{a.end_time}</div>
-                      {!isAbsent && !isSwappedOut && !isPast && (
+                      {!slotFullyAbsent(absences, a.start_time, a.end_time) && !isSwappedOut && !isPast && (
                         <div className="flex gap-1 mt-0.5">
                           <button
                             className="text-blue-400 hover:text-blue-600 text-xs"

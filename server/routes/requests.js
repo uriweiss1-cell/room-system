@@ -215,9 +215,10 @@ router.post('/', (req, res) => {
   const absences = db.get('one_time_requests')
     .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
     .value();
-  // A user is considered absent at a given time if they have an absence that covers it
+  // A user's room is freed only if their absence covers the ENTIRE requested window.
+  // Partial absences don't free the room — the employee is still there for the non-absent hours.
   const isAbsentAt = (userId, s, e) => absences.filter(a => a.user_id === userId).some(a =>
-    !a.start_time ? true : overlap(s, e, a.start_time, a.end_time)
+    !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
   // Users who already swapped their room for this date — their original room is freed
   const swappedOut = db.get('one_time_requests')
@@ -328,7 +329,7 @@ router.post('/book-room', (req, res) => {
     .filter(x => x.specific_date === specific_date && x.request_type === 'absence' && x.status === 'assigned')
     .value();
   const isAbsentAt2 = (userId, s, e) => absences2.filter(a => a.user_id === userId).some(a =>
-    !a.start_time ? true : overlap(s, e, a.start_time, a.end_time)
+    !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
   // For swaps: the swapping user's original permanent room is freed — don't count it
   const swappedOut = db.get('one_time_requests')
@@ -595,7 +596,7 @@ router.get('/available-rooms', requirePerm('requests'), (req, res) => {
     .filter(x => x.specific_date === date && x.request_type === 'absence' && x.status === 'assigned')
     .value();
   const isAbsentAt = (userId, s, e) => absencesForDate.filter(a => a.user_id === userId).some(a =>
-    !a.start_time ? true : overlap(s, e, a.start_time, a.end_time)
+    !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
   const permBusy = db.get('room_assignments')
     .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })

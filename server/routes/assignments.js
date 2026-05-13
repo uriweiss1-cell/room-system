@@ -993,13 +993,15 @@ function generateAssignments() {
   // Only report future conflicts (today and forward); past dates are irrelevant
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Returns true if the permanent employee is marked absent on a given date+time range
+  // Returns true if the employee is absent for the ENTIRE given time range on that date.
+  // Partial absences that don't cover the full slot are not treated as full absence
+  // (the employee is still present for the non-absent hours).
   const isPermAbsent = (userId, date, start, end) =>
     db.get('one_time_requests')
       .filter(a => a.user_id === userId && a.specific_date === date &&
                    a.request_type === 'absence' && a.status === 'assigned')
       .value()
-      .some(a => !a.start_time || overlap(start, end, a.start_time, a.end_time));
+      .some(a => !a.start_time || (toMin(a.start_time) <= toMin(start) && toMin(a.end_time) >= toMin(end)));
 
   const guestConflicts = [];
   const seen = new Set();
