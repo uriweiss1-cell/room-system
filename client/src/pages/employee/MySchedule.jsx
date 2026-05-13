@@ -88,6 +88,15 @@ export default function MySchedule() {
     setMsg(`שיבוצי יום ${WORK_DAYS[dayIdx]} נמחקו`);
   };
 
+  const cancelOneTime = async (id, label) => {
+    if (!confirm(`לבטל את השיבוץ: ${label}?`)) return;
+    try {
+      await api.delete(`/requests/my/${id}`);
+      load();
+      setMsg('השיבוץ בוטל');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+  };
+
   const save = async () => {
     try {
       await api.put('/schedules/my', { schedules: slots.map(s => ({ ...s, preferred_room_id: s.preferred_room_id || null })) });
@@ -308,9 +317,18 @@ export default function MySchedule() {
                   const origRoom = rooms.find(r => r.id === s.original_room_id);
                   return (
                     <div key={s.id} className="text-xs bg-purple-100 text-purple-800 rounded px-2 py-1">
-                      <div className="font-medium">🔄 {s.room_name}</div>
-                      {origRoom && <div className="text-purple-500 text-xs">במקום {origRoom.name}</div>}
-                      <div>{s.start_time}–{s.end_time}</div>
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <div className="font-medium">🔄 {s.room_name}</div>
+                          {origRoom && <div className="text-purple-500">במקום {origRoom.name}</div>}
+                          <div>{s.start_time}–{s.end_time}</div>
+                        </div>
+                        {!isPast && (
+                          <button className="text-purple-400 hover:text-red-500 shrink-0"
+                            title="בטל שיבוץ"
+                            onClick={() => cancelOneTime(s.id, `החלפה ל-${s.room_name} ב-${date}`)}>✕</button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -318,8 +336,17 @@ export default function MySchedule() {
                 {/* One-time room bookings */}
                 {roomReqs.map(r => (
                   <div key={r.id} className="text-xs bg-orange-100 text-orange-800 rounded px-2 py-1">
-                    <div className="font-medium">📅 {r.room_name}</div>
-                    <div>{r.start_time}–{r.end_time}</div>
+                    <div className="flex items-start justify-between gap-1">
+                      <div>
+                        <div className="font-medium">📅 {r.room_name}</div>
+                        <div>{r.start_time}–{r.end_time}</div>
+                      </div>
+                      {!isPast && (
+                        <button className="text-orange-400 hover:text-red-500 shrink-0"
+                          title="בטל שיבוץ"
+                          onClick={() => cancelOneTime(r.id, `${r.room_name} ב-${date}`)}>✕</button>
+                      )}
+                    </div>
                   </div>
                 ))}
 
@@ -330,8 +357,17 @@ export default function MySchedule() {
                     : '🏥 ממד';
                   return (
                     <div key={s.id} className="text-xs bg-green-100 text-green-800 rounded px-2 py-1">
-                      <div className="font-medium">{label}</div>
-                      <div>{s.start_time}–{s.end_time}</div>
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <div className="font-medium">{label}</div>
+                          <div>{s.start_time}–{s.end_time}</div>
+                        </div>
+                        {!isPast && (
+                          <button className="text-green-500 hover:text-red-500 shrink-0"
+                            title="בטל שיבוץ"
+                            onClick={() => cancelOneTime(s.id, `${label} ב-${date}`)}>✕</button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

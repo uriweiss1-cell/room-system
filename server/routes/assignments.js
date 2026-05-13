@@ -1046,6 +1046,42 @@ function generateAssignments() {
     }
   }
 
+  // ── Room wish mismatches: users whose current room ≠ preferred room ──────
+  // These are informational — admin decides whether to act on them.
+  const roomWishMismatches = [];
+  const seenMismatch = new Set();
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    const pid = getPreferredId(rawSlots);
+    if (!pid) continue;
+    const preferredRoom = rooms.find(r => r.id === pid);
+    if (!preferredRoom) continue;
+    const mismatchedAssignments = db.get('room_assignments')
+      .filter({ user_id: user.id, assignment_type: 'permanent' })
+      .value()
+      .filter(a => a.room_id !== pid);
+    for (const a of mismatchedAssignments) {
+      const key = `${user.id}-${a.room_id}-${a.day_of_week}-${a.start_time}`;
+      if (seenMismatch.has(key)) continue;
+      seenMismatch.add(key);
+      const currentRoom = rooms.find(r => r.id === a.room_id);
+      const preferredConflicts = db.get('room_assignments')
+        .filter({ room_id: pid, day_of_week: a.day_of_week, assignment_type: 'permanent' })
+        .value()
+        .filter(b => b.user_id !== user.id && overlap(a.start_time, a.end_time, b.start_time, b.end_time));
+      const blockedBy = preferredConflicts.map(b => db.get('users').find({ id: b.user_id }).value()?.name || '?');
+      roomWishMismatches.push({
+        userId: user.id, userName: user.name,
+        dayName: DAYS_HE[a.day_of_week], start: a.start_time, end: a.end_time,
+        currentRoomName: currentRoom?.name || '?',
+        preferredRoomName: preferredRoom.name,
+        canMove: blockedBy.length === 0,
+        blockedBy,
+      });
+    }
+  }
+
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
@@ -1054,6 +1090,7 @@ function generateAssignments() {
     suggestions,
     userStats,
     guestConflicts,
+    roomWishMismatches,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length

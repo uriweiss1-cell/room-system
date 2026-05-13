@@ -26,6 +26,8 @@ export default function Library() {
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [conflictInfo, setConflictInfo] = useState(null); // { conflict_rooms }
+  const [conflictReason, setConflictReason] = useState('');
   const [users, setUsers] = useState([]);
   const [impersonateUserId, setImpersonateUserId] = useState('');
 
@@ -46,7 +48,7 @@ export default function Library() {
     finally { setLoading(false); }
   };
 
-  const book = async () => {
+  const book = async (forceConflict = false, reason = '') => {
     setMsg(''); setError(''); setSubmitting(true);
     try {
       const r = await api.post('/requests', {
@@ -56,13 +58,19 @@ export default function Library() {
         day_of_week: permanent ? form.day_of_week : null,
         start_time: form.start_time,
         end_time: form.end_time,
-        notes: form.notes || '',
+        notes: reason ? `${reason}${form.notes ? ' | ' + form.notes : ''}` : (form.notes || ''),
         ...(isAdmin && impersonateUserId ? { impersonate_user_id: +impersonateUserId } : {}),
+        ...(forceConflict ? { force_conflict: true } : {}),
       });
       setMsg(r.data.message);
+      setConflictInfo(null); setConflictReason('');
       if (!permanent) loadSchedule();
     } catch (e) {
-      setError(e.response?.data?.error || e.message);
+      if (e.response?.data?.employee_conflict) {
+        setConflictInfo(e.response.data);
+      } else {
+        setError(e.response?.data?.error || e.message);
+      }
     } finally { setSubmitting(false); }
   };
 
@@ -178,9 +186,25 @@ export default function Library() {
         {msg && <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded text-sm mb-3">{msg}</div>}
         {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm mb-3">{error}</div>}
 
-        <button className="btn btn-primary" onClick={book} disabled={submitting}>
-          {submitting ? 'שולח...' : permanent ? 'שלח לאישור מנהל' : 'הזמן ספריה'}
-        </button>
+        {conflictInfo && (
+          <div className="bg-orange-50 border border-orange-300 rounded-lg px-3 py-3 mb-3 space-y-2">
+            <p className="text-orange-800 text-sm font-semibold">⚠️ כבר משובץ/ת בשעות אלו: {conflictInfo.conflict_rooms}</p>
+            <p className="text-orange-700 text-xs">להמשיך בכל זאת יש להזין סיבה:</p>
+            <input className="input w-full text-sm" placeholder="סיבה לצורך בספרייה בנוסף לחדר הרגיל..."
+              value={conflictReason} onChange={e => setConflictReason(e.target.value)} />
+            <div className="flex gap-2">
+              <button className="btn btn-primary text-sm" disabled={!conflictReason.trim() || submitting}
+                onClick={() => book(true, conflictReason)}>המשך בכל זאת</button>
+              <button className="btn btn-ghost text-sm" onClick={() => { setConflictInfo(null); setConflictReason(''); }}>ביטול</button>
+            </div>
+          </div>
+        )}
+
+        {!conflictInfo && (
+          <button className="btn btn-primary" onClick={() => book()} disabled={submitting}>
+            {submitting ? 'שולח...' : permanent ? 'שלח לאישור מנהל' : 'הזמן ספריה'}
+          </button>
+        )}
       </div>
     </div>
   );

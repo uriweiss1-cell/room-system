@@ -806,6 +806,27 @@ export default function AdminAssignments() {
                 </div>
               );
             })()}
+
+            {/* Room wish mismatches — informational report */}
+            {(genResult.roomWishMismatches?.length > 0) && (
+              <div className="mt-4 border border-blue-200 rounded-xl p-3 bg-blue-50">
+                <p className="font-semibold text-blue-800 mb-2">💡 עובדים הרשומים בחדר שאינו החדר המבוקש ({genResult.roomWishMismatches.length})</p>
+                <div className="space-y-1">
+                  {genResult.roomWishMismatches.map((m, i) => (
+                    <div key={i} className={`text-xs rounded-lg px-3 py-2 flex flex-wrap gap-x-3 items-start ${m.canMove ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                      <span className="font-medium">{m.userName}</span>
+                      <span className="text-gray-500">יום {m.dayName} {m.start}–{m.end}</span>
+                      <span>חדר נוכחי: <span className="font-medium">{m.currentRoomName}</span></span>
+                      <span>מבוקש: <span className="font-medium">{m.preferredRoomName}</span></span>
+                      {m.canMove
+                        ? <span className="text-green-700 font-medium">✅ ניתן להעביר (החדר פנוי)</span>
+                        : <span className="text-orange-700">⛔ תפוס ע"י: {m.blockedBy.join(', ')}</span>
+                      }
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

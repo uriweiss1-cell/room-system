@@ -57,12 +57,29 @@ router.get('/my', (req, res) => {
   res.json(list);
 });
 
+// Employee cancels their own future one-time booking
+router.delete('/my/:id', (req, res) => {
+  const recId = +req.params.id;
+  const record = db.get('one_time_requests').find({ id: recId, user_id: req.user.id }).value();
+  if (!record) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  const today = new Date().toISOString().slice(0, 10);
+  if (record.specific_date && record.specific_date < today) {
+    return res.status(400).json({ error: 'לא ניתן לבטל שיבוץ שעבר תאריכו' });
+  }
+  const cancellable = ['room_request', 'room_swap', 'library_request', 'meeting_request', 'mamod_request', 'absence'];
+  if (!cancellable.includes(record.request_type)) {
+    return res.status(400).json({ error: 'לא ניתן לבטל סוג בקשה זה — פנה למנהל' });
+  }
+  db.get('one_time_requests').remove({ id: recId }).write();
+  res.json({ message: 'השיבוץ בוטל בהצלחה' });
+});
+
 router.get('/all', requirePerm('requests'), (req, res) => {
   res.json(db.get('one_time_requests').value().map(enrich).reverse());
 });
 
 router.post('/', (req, res) => {
-  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type } = req.body;
+  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type, force_conflict } = req.body;
 
   // Admin can submit on behalf of another user
   const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
@@ -165,6 +182,27 @@ router.post('/', (req, res) => {
       const names = conflict.map(b => { const u = db.get('users').find({ id: b.user_id }).value(); return `${u?.name} (${b.start_time}–${b.end_time})`; }).join(', ');
       return res.status(409).json({ error: `${roomLabel} תפוס/ה בשעות אלו: ${names}` });
     }
+    // Check if the employee is already assigned to a DIFFERENT room at this time
+    if (!force_conflict) {
+      const empPermConflict = db.get('room_assignments')
+        .filter({ user_id: userId, day_of_week: dayOfWeek, assignment_type: 'permanent' })
+        .value()
+        .filter(a => a.room_id !== specialRoom.id && overlap(start_time, end_time, a.start_time, a.end_time));
+      const empOtConflict = db.get('one_time_requests')
+        .filter(x => x.user_id === userId && x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id && x.assigned_room_id !== specialRoom.id)
+        .value()
+        .filter(a => a.start_time && overlap(start_time, end_time, a.start_time, a.end_time));
+      const empConflict = [...empPermConflict, ...empOtConflict];
+      if (empConflict.length > 0) {
+        db.get('one_time_requests').remove({ id: r.id }).write();
+        const names = empConflict.map(c => {
+          const room = db.get('rooms').find({ id: c.room_id || c.assigned_room_id }).value();
+          return `${room?.name} (${c.start_time}–${c.end_time})`;
+        }).join(', ');
+        return res.status(409).json({ employee_conflict: true, conflict_rooms: names, error: `כבר משובץ/ת ב-${names} בשעות אלו` });
+      }
+    }
+
     db.get('one_time_requests').find({ id: r.id }).assign({ assigned_room_id: specialRoom.id, status: 'assigned' }).write();
     return res.json({ requestId: r.id, message: `${roomLabel} שובץ/ה לתאריך ${specific_date} בין ${start_time}–${end_time}` });
   }
