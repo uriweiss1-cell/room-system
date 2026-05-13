@@ -819,7 +819,21 @@ export default function AdminAssignments() {
                       <span>חדר נוכחי: <span className="font-medium">{m.currentRoomName}</span></span>
                       <span>מבוקש: <span className="font-medium">{m.preferredRoomName}</span></span>
                       {m.canMove
-                        ? <span className="text-green-700 font-medium">✅ ניתן להעביר (החדר פנוי)</span>
+                        ? <button
+                            className="btn btn-primary text-xs px-2 py-0.5 ml-auto"
+                            onClick={async () => {
+                              if (!confirm(`להעביר את ${m.userName} מ-${m.currentRoomName} ל-${m.preferredRoomName} (יום ${m.dayName} ${m.start}–${m.end})?`)) return;
+                              try {
+                                await api.put(`/assignments/${m.assignmentId}`, { room_id: m.preferredRoomId, start_time: m.start, end_time: m.end });
+                                setGenResult(prev => ({
+                                  ...prev,
+                                  roomWishMismatches: prev.roomWishMismatches.filter(x => x.assignmentId !== m.assignmentId),
+                                }));
+                              } catch (e) {
+                                alert('שגיאה: ' + (e.response?.data?.error || e.message));
+                              }
+                            }}
+                          >✅ העבר לחדר המבוקש</button>
                         : <span className="text-orange-700">⛔ תפוס ע"י: {m.blockedBy.join(', ')}</span>
                       }
                     </div>

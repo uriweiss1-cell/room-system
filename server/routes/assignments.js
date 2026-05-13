@@ -1016,7 +1016,10 @@ function generateAssignments() {
       if (new Date(g.specific_date).getDay() !== perm.day_of_week) continue;
       if (!overlap(perm.start_time, perm.end_time, g.start_time, g.end_time)) continue;
       if (g.specific_date < todayStr) continue;  // skip past dates
-      if (isPermAbsent(perm.user_id, g.specific_date, perm.start_time, perm.end_time)) continue;  // skip if employee is absent
+      // Only skip if employee is absent during the actual overlap window (not necessarily the full perm slot)
+      const gOvStart = toMin(perm.start_time) > toMin(g.start_time) ? perm.start_time : g.start_time;
+      const gOvEnd   = toMin(perm.end_time)   < toMin(g.end_time)   ? perm.end_time   : g.end_time;
+      if (isPermAbsent(perm.user_id, g.specific_date, gOvStart, gOvEnd)) continue;
       const key = `guest-${perm.id}-${g.id}`;
       if (seen.has(key)) continue; seen.add(key);
       guestConflicts.push({
@@ -1034,7 +1037,10 @@ function generateAssignments() {
       if (new Date(otr.specific_date).getDay() !== perm.day_of_week) continue;
       if (!overlap(perm.start_time, perm.end_time, otr.start_time, otr.end_time)) continue;
       if (otr.specific_date < todayStr) continue;  // skip past dates
-      if (isPermAbsent(perm.user_id, otr.specific_date, perm.start_time, perm.end_time)) continue;  // skip if employee is absent
+      // Only skip if employee is absent during the actual overlap window
+      const otrOvStart = toMin(perm.start_time) > toMin(otr.start_time) ? perm.start_time : otr.start_time;
+      const otrOvEnd   = toMin(perm.end_time)   < toMin(otr.end_time)   ? perm.end_time   : otr.end_time;
+      if (isPermAbsent(perm.user_id, otr.specific_date, otrOvStart, otrOvEnd)) continue;
       const key = `otr-${perm.id}-${otr.id}`;
       if (seen.has(key)) continue; seen.add(key);
       const otrUser = db.get('users').find({ id: otr.user_id }).value();
@@ -1075,6 +1081,8 @@ function generateAssignments() {
       const blockedBy = preferredConflicts.map(b => db.get('users').find({ id: b.user_id }).value()?.name || '?');
       roomWishMismatches.push({
         userId: user.id, userName: user.name,
+        assignmentId: a.id,
+        preferredRoomId: pid,
         dayName: DAYS_HE[a.day_of_week], start: a.start_time, end: a.end_time,
         currentRoomName: currentRoom?.name || '?',
         preferredRoomName: preferredRoom.name,
