@@ -40,5 +40,6 @@ export const REQUEST_TYPE_LABELS = {
   permanent_request: 'בקשת שינוי קבוע',
   library_request: 'בקשת ספריה',
   meeting_request: 'בקשת חדר ישיבות',
+  mamod_request: 'בקשת ממד',
   permanent_reduce: 'הפחתת שעות קבועות',
 };
