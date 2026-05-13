@@ -250,7 +250,9 @@ export default function AdminAssignments() {
 
   const addAssignment = async () => {
     try {
-      await api.post('/assignments', addForm);
+      // replace_overlap removes any existing overlapping assignment for the same user/day
+      // preventing accidental double-booking when adding manually
+      await api.post('/assignments', { ...addForm, replace_overlap: true });
       setShowAdd(false); load(); setMsg('שיבוץ נוסף');
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };

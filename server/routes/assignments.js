@@ -343,6 +343,15 @@ router.put('/:id', requirePerm('assignments'), (req, res) => {
   const update = { start_time, end_time };
   if (room_id) update.room_id = +room_id;
   db.get('room_assignments').find({ id: +req.params.id }).assign(update).write();
+  // When changing the room: remove any OTHER overlapping permanent assignments for the same user/day
+  // to prevent accidental double-booking (e.g. from a previous manual add without replace_overlap).
+  if (room_id && a.user_id && a.assignment_type === 'permanent') {
+    db.get('room_assignments')
+      .remove(b => b.id !== a.id && b.user_id === a.user_id && b.day_of_week === a.day_of_week
+        && b.assignment_type === 'permanent'
+        && overlap(b.start_time, b.end_time, start_time, end_time))
+      .write();
+  }
   res.json({ message: 'שיבוץ עודכן' });
 });
 
