@@ -266,7 +266,7 @@ export default function MySchedule() {
                           : 'bg-blue-100 text-blue-800'}
                       `}
                     >
-                      <div className="font-medium truncate">{a.room_name}</div>
+                      <div className="font-medium break-words">{a.room_name}</div>
                       <div>{a.start_time}–{a.end_time}</div>
                       {!isAbsent && !isSwappedOut && !isPast && (
                         <div className="flex gap-1 mt-0.5">
