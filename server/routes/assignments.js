@@ -341,7 +341,11 @@ router.put('/:id', requirePerm('assignments'), (req, res) => {
   const a = db.get('room_assignments').find({ id: +req.params.id }).value();
   if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
   const update = { start_time, end_time };
-  if (room_id) update.room_id = +room_id;
+  if (room_id) {
+    update.room_id = +room_id;
+    // Moving to a different room is an explicit admin action — protect it from algorithm overwrite
+    if (a.assignment_type === 'permanent' && a.user_id) update.is_manual = true;
+  }
   db.get('room_assignments').find({ id: +req.params.id }).assign(update).write();
   // When changing the room: remove any OTHER overlapping permanent assignments for the same user/day
   // to prevent accidental double-booking (e.g. from a previous manual add without replace_overlap).
