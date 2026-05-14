@@ -50,6 +50,9 @@ export default function AdminAssignments() {
   const [backups, setBackups] = useState([]);
   const [showBackups, setShowBackups] = useState(false);
   const [backupMsg, setBackupMsg] = useState('');
+  const [auditResult, setAuditResult] = useState(null);
+  const [auditing, setAuditing] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
 
   // Compute Sun–Fri dates for the selected week
   const weekDates = (() => {
@@ -204,6 +207,16 @@ export default function AdminAssignments() {
     } finally { setResolving(null); }
   };
 
+  const runAudit = async () => {
+    setAuditing(true);
+    try {
+      const r = await api.get('/assignments/audit');
+      setAuditResult(r.data);
+      setShowAudit(true);
+    } catch (e) { setMsg('שגיאה בבדיקת ציות: ' + (e.response?.data?.error || e.message)); }
+    finally { setAuditing(false); }
+  };
+
   const clearAll = async () => {
     if (!confirm('למחוק את כל השיבוצים הקבועים?')) return;
     await api.delete('/assignments/clear/permanent'); load();
@@ -299,8 +312,74 @@ export default function AdminAssignments() {
     return acc;
   }, {});
 
+  const ROLE_LABELS = { psychiatrist: 'פסיכיאטר/ית', supervisor: 'מדריך/מנהל', art_therapist: 'מטפל/ת באמנות', clinical_intern: 'מתמחה קליני', educational_intern: 'מתמחה חינוכי', admin: 'מנהל מערכת' };
+  const VIOLATION_LABELS = { unassigned_days: 'ימים ללא חדר', missing_priority_day: 'יום עדיפות ללא חדר', no_fixed_room: 'חדר לא קבוע', missing_day: 'יום ללא חדר' };
+
   return (
     <div className="space-y-5">
+      {/* Audit modal */}
+      {showAudit && auditResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowAudit(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl my-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg">🔍 בדיקת ציות לקריטריוני השיבוץ</h3>
+              <button className="text-gray-400 hover:text-gray-600 text-xl" onClick={() => setShowAudit(false)}>✕</button>
+            </div>
+            {/* Summary */}
+            <div className="flex gap-4 text-sm">
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2 text-center">
+                <div className="text-2xl font-bold text-green-700">{auditResult.okCount}</div>
+                <div className="text-green-600">עמידה בקריטריונים</div>
+              </div>
+              <div className={`border rounded-xl px-4 py-2 text-center ${auditResult.violations.length ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                <div className={`text-2xl font-bold ${auditResult.violations.length ? 'text-red-700' : 'text-gray-500'}`}>{auditResult.violations.length}</div>
+                <div className={auditResult.violations.length ? 'text-red-600' : 'text-gray-500'}>חריגות</div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-center">
+                <div className="text-2xl font-bold text-gray-600">{auditResult.totalChecked}</div>
+                <div className="text-gray-500">עובדים עם לוח זמנים</div>
+              </div>
+            </div>
+
+            {auditResult.violations.length === 0 ? (
+              <div className="text-center py-6 text-green-700 font-medium">✅ כל השיבוצים עומדים בקריטריוני התפקיד</div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {auditResult.violations.map((v, i) => (
+                  <div key={i} className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{v.userName}</span>
+                      <span className="text-xs bg-red-100 border border-red-300 text-red-700 px-2 py-0.5 rounded">{ROLE_LABELS[v.role] || v.role}</span>
+                      <span className="text-xs text-gray-500">ימי עבודה: {v.scheduledDays.join(', ')}</span>
+                    </div>
+                    {/* Room per day */}
+                    <div className="text-xs flex flex-wrap gap-2">
+                      {Object.entries(v.roomPerDay).map(([day, room]) => (
+                        <span key={day} className="bg-white border border-gray-200 rounded px-2 py-0.5">
+                          <span className="text-gray-500">{day}: </span>
+                          <span className={room === '—' ? 'text-red-600 font-medium' : 'font-medium'}>{room}</span>
+                        </span>
+                      ))}
+                    </div>
+                    {/* Violations */}
+                    <div className="space-y-1">
+                      {v.violations.map((viol, j) => (
+                        <div key={j} className="text-xs bg-white border border-red-200 rounded px-2 py-1 text-red-700">
+                          <span className="font-medium">{VIOLATION_LABELS[viol.type] || viol.type}: </span>
+                          {viol.message}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="text-xs text-gray-400 border-t border-gray-100 pt-2">
+              הבדיקה בוחנת: חדר קבוע למטפלות באמנות (2 ימי עדיפות) · חדר קבוע ל-2+ ימים למתמחים קליניים · שיבוץ בכל הימים לפסיכיאטרית ומדריך · מקסימום יום אחד ללא חדר לכולם
+            </div>
+          </div>
+        </div>
+      )}
       {/* Edit slot modal */}
       {editingSlot && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingSlot(null)}>
@@ -346,6 +425,9 @@ export default function AdminAssignments() {
                 {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
               </button>
             )}
+            <button className="btn btn-ghost" onClick={runAudit} disabled={auditing} title="בדוק שהשיבוצים הנוכחיים עומדים בקריטריונים של כל תפקיד">
+              {auditing ? 'בודק...' : '🔍 בדיקת ציות'}
+            </button>
             <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
             <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
             {perms?.algorithm && <>

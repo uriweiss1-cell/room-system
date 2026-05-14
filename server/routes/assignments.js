@@ -526,6 +526,103 @@ router.delete('/my/:id', (req, res) => {
   res.json({ message: 'השיבוץ נמחק' });
 });
 
+// ── Compliance audit: check current assignments against role-based rules ────
+router.get('/audit', requirePerm('assignments'), (req, res) => {
+  const AUDIT_DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const toMinA = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const overlapA = (s1, e1, s2, e2) => toMinA(s1) < toMinA(e2) && toMinA(e1) > toMinA(s2);
+
+  function effectiveDays(role, schedules) {
+    const slots = schedules.flatMap(s => {
+      if (s.day_of_week !== 3) return [s];
+      const keep = [];
+      if (['supervisor','clinical_intern','educational_intern'].includes(role)) {
+        if (toMinA(s.start_time) < toMinA('09:00')) keep.push({ ...s, end_time: '09:00' });
+        if (toMinA(s.end_time) > toMinA('13:00')) keep.push({ ...s, start_time: '13:00' });
+      } else if (role === 'art_therapist') {
+        if (toMinA(s.start_time) < toMinA('11:00')) keep.push({ ...s, end_time: '11:00' });
+        if (toMinA(s.end_time) > toMinA('13:00')) keep.push({ ...s, start_time: '13:00' });
+      } else {
+        keep.push(s);
+      }
+      return keep;
+    });
+    return [...new Set(slots.map(s => s.day_of_week))].sort((a, b) => a - b);
+  }
+
+  const users = db.get('users').filter(u => u.is_active).value();
+  const allSchedules = db.get('regular_schedules').value();
+  const allAssignments = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+  const rooms = db.get('rooms').value();
+  const roomName = id => rooms.find(r => r.id === id)?.name || `#${id}`;
+
+  const violations = [];
+  let okCount = 0;
+
+  for (const user of users) {
+    const userSched = allSchedules.filter(s => s.user_id === user.id);
+    if (!userSched.length) continue;
+
+    const scheduledDays = effectiveDays(user.role, userSched);
+    const userAssignments = allAssignments.filter(a => a.user_id === user.id);
+    const assignedDays = new Set(userAssignments.map(a => a.day_of_week));
+    const unassignedDays = scheduledDays.filter(d => !assignedDays.has(d));
+
+    // Dominant room per day (most-assigned room on that day)
+    const roomPerDay = {};
+    scheduledDays.forEach(day => {
+      const dayA = userAssignments.filter(a => a.day_of_week === day);
+      if (!dayA.length) { roomPerDay[day] = null; return; }
+      const counts = {};
+      dayA.forEach(a => { counts[a.room_id] = (counts[a.room_id] || 0) + 1; });
+      roomPerDay[day] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+    });
+
+    const userViolations = [];
+
+    // Universal: max 1 day without assignment
+    if (unassignedDays.length > 1) {
+      userViolations.push({ type: 'unassigned_days', message: `חסר שיבוץ ב-${unassignedDays.length} ימים: ${unassignedDays.map(d => AUDIT_DAYS_HE[d]).join(', ')}` });
+    }
+
+    if (user.role === 'art_therapist') {
+      const priorityDays = scheduledDays.slice(0, 2);
+      if (priorityDays.length >= 2) {
+        const rooms2 = priorityDays.map(d => roomPerDay[d]);
+        if (rooms2.some(r => r === null)) {
+          userViolations.push({ type: 'missing_priority_day', message: `חסר שיבוץ ביום עדיפות: ${priorityDays.filter(d => !roomPerDay[d]).map(d => AUDIT_DAYS_HE[d]).join(', ')}` });
+        } else if (new Set(rooms2).size > 1) {
+          userViolations.push({ type: 'no_fixed_room', message: `חדרים שונים בימי עדיפות: ${priorityDays.map(d => `${AUDIT_DAYS_HE[d]}=${roomName(roomPerDay[d])}`).join(', ')}` });
+        }
+      }
+    } else if (user.role === 'clinical_intern') {
+      const roomCounts = {};
+      scheduledDays.forEach(d => { if (roomPerDay[d]) roomCounts[roomPerDay[d]] = (roomCounts[roomPerDay[d]] || 0) + 1; });
+      const maxFixed = Math.max(0, ...Object.values(roomCounts));
+      if (maxFixed < 2 && scheduledDays.length >= 2) {
+        userViolations.push({ type: 'no_fixed_room', message: `אין חדר קבוע ל-2 ימים. חדרים: ${scheduledDays.map(d => `${AUDIT_DAYS_HE[d]}=${roomPerDay[d] ? roomName(roomPerDay[d]) : 'ללא'}`).join(', ')}` });
+      }
+    } else if (user.role === 'psychiatrist' || user.role === 'supervisor') {
+      if (unassignedDays.length > 0) {
+        userViolations.push({ type: 'missing_day', message: `חסר שיבוץ בימים: ${unassignedDays.map(d => AUDIT_DAYS_HE[d]).join(', ')}` });
+      }
+    }
+
+    if (userViolations.length) {
+      violations.push({
+        userId: user.id, userName: user.name, role: user.role,
+        scheduledDays: scheduledDays.map(d => AUDIT_DAYS_HE[d]),
+        roomPerDay: Object.fromEntries(scheduledDays.map(d => [AUDIT_DAYS_HE[d], roomPerDay[d] ? roomName(roomPerDay[d]) : '—'])),
+        violations: userViolations,
+      });
+    } else {
+      okCount++;
+    }
+  }
+
+  res.json({ violations, okCount, totalChecked: okCount + violations.length });
+});
+
 router.post('/generate', requirePerm('algorithm'), (req, res) => {
   try { createBackup('before-generate'); res.json(generateAssignments()); }
   catch (e) { res.status(500).json({ error: e.message }); }
