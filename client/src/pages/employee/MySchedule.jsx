@@ -38,6 +38,8 @@ export default function MySchedule() {
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [editAssignForm, setEditAssignForm] = useState({ start_time: '', end_time: '' });
   const [weekOffset, setWeekOffset] = useState(0);
+  const [editingAbsence, setEditingAbsence] = useState(null); // absence record being edited
+  const [absenceForm, setAbsenceForm] = useState({ full_day: false, start_time: '', end_time: '' });
 
   const load = () => Promise.all([
     api.get('/schedules/my'),
@@ -87,6 +89,20 @@ export default function MySchedule() {
     await Promise.all(daySlots.map(a => api.delete(`/assignments/my/${a.id}`)));
     load();
     setMsg(`שיבוצי יום ${WORK_DAYS[dayIdx]} נמחקו`);
+  };
+
+  const openAbsenceEdit = (a) => {
+    setAbsenceForm({ full_day: !a.start_time, start_time: a.start_time || '08:00', end_time: a.end_time || '17:00' });
+    setEditingAbsence(a);
+  };
+
+  const saveAbsenceEdit = async () => {
+    try {
+      await api.put(`/requests/my/${editingAbsence.id}`, absenceForm);
+      setEditingAbsence(null);
+      load();
+      setMsg('ההיעדרות עודכנה');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
   const cancelOneTime = async (id, label) => {
@@ -153,6 +169,39 @@ export default function MySchedule() {
             <div className="flex gap-2 justify-end">
               <button className="btn btn-ghost" onClick={() => setEditingAssignment(null)}>ביטול</button>
               <button className="btn btn-primary" onClick={saveAssignmentEdit}>שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit absence modal */}
+      {editingAbsence && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingAbsence(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg">עריכת היעדרות</h3>
+            <div className="text-sm text-gray-600">{editingAbsence.specific_date}</div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={absenceForm.full_day}
+                onChange={e => setAbsenceForm(p => ({ ...p, full_day: e.target.checked }))} />
+              היעדרות כל היום
+            </label>
+            {!absenceForm.full_day && (
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="label">משעה</label>
+                  <input type="time" className="input w-full" value={absenceForm.start_time}
+                    onChange={e => setAbsenceForm(p => ({ ...p, start_time: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="label">עד שעה</label>
+                  <input type="time" className="input w-full" value={absenceForm.end_time}
+                    onChange={e => setAbsenceForm(p => ({ ...p, end_time: e.target.value }))} />
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button className="btn btn-ghost" onClick={() => setEditingAbsence(null)}>ביטול</button>
+              <button className="btn btn-primary" onClick={saveAbsenceEdit}>שמור</button>
             </div>
           </div>
         </div>
@@ -322,8 +371,22 @@ export default function MySchedule() {
                 {/* Absence */}
                 {absences.map(a => (
                   <div key={a.id} className="text-xs bg-gray-200 text-gray-600 rounded px-2 py-1">
-                    <div className="font-medium">⬜ היעדרות</div>
-                    {a.start_time && <div>{a.start_time}–{a.end_time}</div>}
+                    <div className="flex items-start justify-between gap-1">
+                      <div>
+                        <div className="font-medium">⬜ היעדרות</div>
+                        {a.start_time ? <div>{a.start_time}–{a.end_time}</div> : <div>כל היום</div>}
+                      </div>
+                      {!isPast && (
+                        <div className="flex gap-1 shrink-0">
+                          <button className="text-gray-400 hover:text-blue-500"
+                            title="ערוך שעות"
+                            onClick={() => openAbsenceEdit(a)}>✎</button>
+                          <button className="text-gray-400 hover:text-red-500"
+                            title="בטל היעדרות"
+                            onClick={() => cancelOneTime(a.id, `היעדרות ב-${date}`)}>✕</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
 

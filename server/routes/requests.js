@@ -57,6 +57,23 @@ router.get('/my', (req, res) => {
   res.json(list);
 });
 
+// Employee edits their own absence (shorten / extend / toggle full-day)
+router.put('/my/:id', (req, res) => {
+  const recId = +req.params.id;
+  const record = db.get('one_time_requests').find({ id: recId, user_id: req.user.id }).value();
+  if (!record) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  if (record.request_type !== 'absence') return res.status(400).json({ error: 'עריכה אפשרית רק להיעדרות' });
+  const today = new Date().toISOString().slice(0, 10);
+  if (record.specific_date && record.specific_date < today)
+    return res.status(400).json({ error: 'לא ניתן לערוך היעדרות שעבר תאריכה' });
+  const { start_time, end_time, full_day } = req.body;
+  const update = full_day
+    ? { start_time: null, end_time: null }    // full-day absence
+    : { start_time: start_time || null, end_time: end_time || null };
+  db.get('one_time_requests').find({ id: recId }).assign(update).write();
+  res.json({ message: 'ההיעדרות עודכנה' });
+});
+
 // Employee cancels their own future one-time booking
 router.delete('/my/:id', (req, res) => {
   const recId = +req.params.id;
