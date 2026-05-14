@@ -762,6 +762,56 @@ export default function AdminAssignments() {
                 })}
               </div>
             )}
+            {/* Role constraint conflicts — fixed-room requirement could not be met */}
+            {genResult.roleConstraintConflicts?.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-red-700">🔒 אי-עמידה בדרישת חדר קבוע לפי תפקיד ({genResult.roleConstraintConflicts.length})</p>
+                {genResult.roleConstraintConflicts.map((rc, i) => {
+                  const roleLabel = rc.role === 'art_therapist' ? 'מטפל/ת באמנות' : rc.role === 'clinical_intern' ? 'מתמחה קליני' : rc.role;
+                  const constraintMsg = rc.constraintType === 'min_fixed_days'
+                    ? `לא ניתן למצוא חדר קבוע לפחות ל-${rc.requiredFixedDays} ימים`
+                    : 'לא ניתן למצוא חדר קבוע לימים הנדרשים';
+                  return (
+                    <div key={i} className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{rc.userName}</span>
+                        <span className="text-xs bg-red-100 border border-red-300 text-red-700 px-2 py-0.5 rounded">{roleLabel}</span>
+                        <span className="text-red-700 text-xs">{constraintMsg}</span>
+                        <button
+                          className="mr-auto text-xs text-gray-400 hover:text-gray-600 border border-gray-300 rounded px-2 py-0.5 bg-white"
+                          onClick={() => setGenResult(prev => {
+                            const updated = { ...prev, roleConstraintConflicts: (prev.roleConstraintConflicts || []).filter((_, j) => j !== i) };
+                            localStorage.setItem('lastGenResult', JSON.stringify(updated));
+                            return updated;
+                          })}>✓ טופל</button>
+                      </div>
+                      {/* Available rooms per day */}
+                      <div className="space-y-1">
+                        <p className="text-xs text-gray-500 font-medium">חדרים פנויים לפי יום:</p>
+                        {rc.availablePerDay.map((d, di) => (
+                          <div key={di} className="text-xs flex gap-2 flex-wrap">
+                            <span className="font-medium text-gray-700 min-w-[40px]">{d.dayName}:</span>
+                            {d.freeRooms.length > 0
+                              ? d.freeRooms.map(r => <span key={r.id} className="bg-white border border-gray-200 rounded px-1.5 py-0.5">{r.name}</span>)
+                              : <span className="text-red-500">אין חדר פנוי</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {/* Rooms free across ALL required days */}
+                      {rc.candidateRooms?.length > 0 && (
+                        <div className="text-xs bg-green-50 border border-green-200 rounded px-3 py-1.5">
+                          <span className="font-medium text-green-800">✓ חדרים פנויים בכל הימים הנדרשים: </span>
+                          {rc.candidateRooms.map(r => r.name).join(', ')}
+                          <span className="text-green-700 mr-1"> — ניתן לשבץ ידנית</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400">לפתרון: השתמש ב"הוסף שיבוץ ידני" ובחר חדר קבוע לכל ימי העבודה</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length > 0 && (
               <div className="mt-4">
                 <p className="text-sm font-semibold text-gray-700 mb-2">🔍 מעקב שיבוצים — עובדים שלא קיבלו את החדר הרצוי:</p>

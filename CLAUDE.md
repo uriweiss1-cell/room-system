@@ -98,13 +98,22 @@ Three tiers of access:
 
 **Wednesday protection**: `effectiveSlots()` removes Wednesday 09:00–13:00 slots for supervisors/clinical_interns/educational_interns, and 11:00–13:00 for art_therapists (staff meeting time).
 
-**Two-pass logic**:
-1. **Pass 1**: Users whose `preferred_room_id === currentRoomId` are pre-reserved — they keep their room regardless of priority.
-2. **Pass 2**: Everyone else, in priority order: try preferred room → try current room (only if it doesn't block someone else's explicit preference, via `blocksPreference()`) → try any free room → per-slot fallback.
+**Role-based assignment rules**:
+- **psychiatrist / supervisor**: must get a room for ALL requested hours; can be different rooms on different days if needed.
+- **art_therapist**: priority capped at first 2 unique work-days; must get the SAME room across those days. Day 3+ is processed after all higher-priority users with whatever rooms remain (no fixed-room guarantee, no conflict raised). If no single room is free for the 2 priority days → `roleConstraintConflict`.
+- **clinical_intern**: must get the SAME room for at least 2 days; remaining days can be any available room. If no single room is free for even 2 days → `roleConstraintConflict`.
+- **educational_intern**: any available room per day; no fixed-room requirement.
 
-**`blocksPreference(roomId, userId)`**: Returns true if some OTHER user has `roomId` as their preferred room. Prevents "current room" continuity from blocking another user's explicit preference.
+**Three-path processing** (per user, in priority order):
+1. **wantToMove** (`preferred_room_id ≠ most-used current room`): clear non-manual assignments, re-assign applying role rules above.
+2. **stay/extend**: keep existing assignments; fill only uncovered sub-slots using `targetRoomId = preferredId || currentRoomId`.
+3. **lowPriorityExtraSlots**: art_therapist day 3+ slots, processed after the main loop with no priority guarantee.
 
-**Algorithm output** includes `roomWishMismatches[]` — users whose current room ≠ preferred room, each with `canMove` (bool) and `blockedBy` (array of names). Displayed in Assignments.jsx after running the algorithm.
+**Algorithm output** includes:
+- `conflicts[]` — slots with no available room.
+- `preferenceConflicts[]` — user wants room X but it's blocked by someone else.
+- `roleConstraintConflicts[]` — fixed-room rule can't be met (art_therapist or clinical_intern). Each entry includes `availablePerDay` and `candidateRooms` (rooms free across all required days) so the admin can manually resolve.
+- `roomWishMismatches[]` — users whose current room ≠ preferred room, each with `canMove` and `assignmentId` for the actionable "move" button.
 
 **Import behavior** (`import.js`):
 - Renames 24 rooms to match תשנ"ו document numbers
