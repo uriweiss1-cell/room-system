@@ -53,6 +53,23 @@ export default function AdminAssignments() {
   const [auditResult, setAuditResult] = useState(null);
   const [auditing, setAuditing] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  // dismissedPanels: panelKey → count at time of dismissal
+  // Panel re-appears only when current count exceeds dismissed count
+  const [dismissedPanels, setDismissedPanels] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dismissedPanels')) || {}; } catch { return {}; }
+  });
+  const dismissPanel = (key, count) => {
+    setDismissedPanels(prev => {
+      const updated = { ...prev, [key]: count };
+      localStorage.setItem('dismissedPanels', JSON.stringify(updated));
+      return updated;
+    });
+  };
+  const isPanelVisible = (key, count) => {
+    if (!count) return false;
+    const d = dismissedPanels[key];
+    return d == null || count > d;
+  };
 
   // Compute Sun–Fri dates for the selected week
   const weekDates = (() => {
@@ -562,9 +579,12 @@ export default function AdminAssignments() {
             <p className="font-semibold">{genResult.message}</p>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}
             {genResult.applyError && <p className="text-red-700 text-sm mt-1 font-medium">{genResult.applyError}</p>}
-            {genResult.suggestions?.length > 0 && (
+            {isPanelVisible('suggestions', genResult.suggestions?.length) && (
               <div className="mt-4 space-y-4">
-                <p className="text-sm font-semibold text-yellow-800">הצעות לפתרון התנגשויות:</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-yellow-800">הצעות לפתרון התנגשויות:</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('suggestions', genResult.suggestions.length)}>×</button>
+                </div>
                 {genResult.suggestions.map((s, i) => (
                   <div key={i} className="bg-white border border-yellow-200 rounded-xl p-3">
                     <p className="font-semibold text-gray-800 mb-2">{s.userName}</p>
@@ -637,9 +657,12 @@ export default function AdminAssignments() {
                 ))}
               </div>
             )}
-            {genResult.preferenceConflicts?.some(pc => pc.type === 'contested') && (
+            {isPanelVisible('contested', genResult.preferenceConflicts?.filter(pc => pc.type === 'contested').length) && (
               <div className="mt-4 space-y-3">
-                <p className="text-sm font-semibold text-red-700">🔴 חדרים שנדרשו על ידי יותר מעובד אחד — יש להכריע ידנית:</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-red-700">🔴 חדרים שנדרשו על ידי יותר מעובד אחד — יש להכריע ידנית:</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('contested', genResult.preferenceConflicts.filter(pc => pc.type === 'contested').length)}>×</button>
+                </div>
                 {genResult.preferenceConflicts.filter(pc => pc.type === 'contested').map((pc, i) => {
                   const [resolving2, setResolving2] = [null, () => {}]; // local stub — handled via assignConflict below
                   return (
@@ -700,9 +723,12 @@ export default function AdminAssignments() {
                 })}
               </div>
             )}
-            {genResult.preferenceConflicts?.some(pc => !pc.type) && (
+            {isPanelVisible('preference', genResult.preferenceConflicts?.filter(pc => !pc.type).length) && (
               <div className="mt-4 space-y-3">
-                <p className="text-sm font-semibold text-orange-700">⚠️ חדר מועדף תפוס — עובדים שרצו חדר ספציפי אך שובצו לאחר:</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-orange-700">⚠️ חדר מועדף תפוס — עובדים שרצו חדר ספציפי אך שובצו לאחר:</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('preference', genResult.preferenceConflicts.filter(pc => !pc.type).length)}>×</button>
+                </div>
                 {genResult.preferenceConflicts.filter(pc => !pc.type).map((pc, i) => {
                   const stats = genResult.userStats?.[pc.userId];
                   const blockers = pc.blockers || (pc.takenByUserId ? [{ userId: pc.takenByUserId, userName: pc.takenByUserName }] : []);
@@ -845,9 +871,12 @@ export default function AdminAssignments() {
               </div>
             )}
             {/* Role constraint conflicts — fixed-room requirement could not be met */}
-            {genResult.roleConstraintConflicts?.length > 0 && (
+            {isPanelVisible('roleConstraint', genResult.roleConstraintConflicts?.length) && (
               <div className="mt-4 space-y-3">
-                <p className="text-sm font-semibold text-red-700">🔒 אי-עמידה בדרישת חדר קבוע לפי תפקיד ({genResult.roleConstraintConflicts.length})</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-red-700">🔒 אי-עמידה בדרישת חדר קבוע לפי תפקיד ({genResult.roleConstraintConflicts.length})</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('roleConstraint', genResult.roleConstraintConflicts.length)}>×</button>
+                </div>
                 {genResult.roleConstraintConflicts.map((rc, i) => {
                   const roleLabel = rc.role === 'art_therapist' ? 'מטפל/ת באמנות' : rc.role === 'clinical_intern' ? 'מתמחה קליני' : rc.role;
                   const constraintMsg = rc.constraintType === 'min_fixed_days'
@@ -894,9 +923,12 @@ export default function AdminAssignments() {
               </div>
             )}
 
-            {genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length > 0 && (
+            {isPanelVisible('assignmentTrace', genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length) && (
               <div className="mt-4">
-                <p className="text-sm font-semibold text-gray-700 mb-2">🔍 מעקב שיבוצים — עובדים שלא קיבלו את החדר הרצוי:</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-sm font-semibold text-gray-700">🔍 מעקב שיבוצים — עובדים שלא קיבלו את החדר הרצוי:</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('assignmentTrace', genResult.assignmentTrace.filter(t => t.wanted && t.result !== 'got_wanted').length)}>×</button>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
                     <thead>
@@ -935,10 +967,13 @@ export default function AdminAssignments() {
             {(() => {
               const todayStr = new Date().toISOString().slice(0, 10);
               const futureConflicts = (genResult.guestConflicts || []).filter(gc => gc.date >= todayStr);
-              if (!futureConflicts.length) return null;
+              if (!isPanelVisible('guestConflicts', futureConflicts.length)) return null;
               return (
                 <div className="mt-4">
-                  <p className="text-sm font-semibold text-purple-800 mb-2">⚠️ התנגשויות עתידיות עם שיבוצי אורחים / חד-פעמיים — יש לבדוק ולסדר ידנית:</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-sm font-semibold text-purple-800">⚠️ התנגשויות עתידיות עם שיבוצי אורחים / חד-פעמיים — יש לבדוק ולסדר ידנית:</p>
+                    <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('guestConflicts', futureConflicts.length)}>×</button>
+                  </div>
                   <div className="space-y-1">
                     {futureConflicts.map((gc, i) => (
                       <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
@@ -952,9 +987,12 @@ export default function AdminAssignments() {
             })()}
 
             {/* Room wish mismatches — informational report */}
-            {(genResult.roomWishMismatches?.length > 0) && (
+            {isPanelVisible('wishMismatches', genResult.roomWishMismatches?.length) && (
               <div className="mt-4 border border-blue-200 rounded-xl p-3 bg-blue-50">
-                <p className="font-semibold text-blue-800 mb-2">💡 עובדים הרשומים בחדר שאינו החדר המבוקש ({genResult.roomWishMismatches.length})</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-semibold text-blue-800">💡 עובדים הרשומים בחדר שאינו החדר המבוקש ({genResult.roomWishMismatches.length})</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('wishMismatches', genResult.roomWishMismatches.length)}>×</button>
+                </div>
                 <div className="space-y-1">
                   {genResult.roomWishMismatches.map((m, i) => (
                     <div key={i} className={`text-xs rounded-lg px-3 py-2 flex flex-wrap gap-x-3 items-start ${m.canMove ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
