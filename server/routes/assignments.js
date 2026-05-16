@@ -1273,8 +1273,7 @@ function generateAssignments() {
       .value()
       .some(a => !a.start_time || (toMin(a.start_time) <= toMin(start) && toMin(a.end_time) >= toMin(end)));
 
-  const guestConflicts = [];
-  const seen = new Set();
+  const guestConflictsMap = new Map(); // key → conflict entry (for merging perm time ranges)
   for (const perm of allPermanentNow) {
     if (!perm.user_id) continue;
     const permUser = db.get('users').find({ id: perm.user_id }).value();
@@ -1290,15 +1289,23 @@ function generateAssignments() {
       const gOvStart = toMin(perm.start_time) > toMin(g.start_time) ? perm.start_time : g.start_time;
       const gOvEnd   = toMin(perm.end_time)   < toMin(g.end_time)   ? perm.end_time   : g.end_time;
       if (isPermAbsent(perm.user_id, g.specific_date, gOvStart, gOvEnd)) continue;
-      const key = `guest-${perm.id}-${g.id}`;
-      if (seen.has(key)) continue; seen.add(key);
-      guestConflicts.push({
-        permUserName: permUser?.name, guestName: g.guest_name,
-        roomName: permRoom?.name, date: g.specific_date,
-        dayName: DAYS_HE[perm.day_of_week],
-        permStart: perm.start_time, permEnd: perm.end_time,
-        guestStart: g.start_time, guestEnd: g.end_time, type: 'guest',
-      });
+      // Deduplicate by (employee, guest booking) — not by individual perm slot
+      const key = `guest-${perm.user_id}-${g.id}`;
+      if (guestConflictsMap.has(key)) {
+        // Merge perm time range to cover all consecutive slots
+        const existing = guestConflictsMap.get(key);
+        if (perm.start_time < existing.permStart) existing.permStart = perm.start_time;
+        if (perm.end_time   > existing.permEnd)   existing.permEnd   = perm.end_time;
+      } else {
+        const entry = {
+          permUserName: permUser?.name, guestName: g.guest_name,
+          roomName: permRoom?.name, date: g.specific_date,
+          dayName: DAYS_HE[perm.day_of_week],
+          permStart: perm.start_time, permEnd: perm.end_time,
+          guestStart: g.start_time, guestEnd: g.end_time, type: 'guest',
+        };
+        guestConflictsMap.set(key, entry);
+      }
     }
 
     // Check against one_time_requests (room requests, library, etc.)
@@ -1311,18 +1318,26 @@ function generateAssignments() {
       const otrOvStart = toMin(perm.start_time) > toMin(otr.start_time) ? perm.start_time : otr.start_time;
       const otrOvEnd   = toMin(perm.end_time)   < toMin(otr.end_time)   ? perm.end_time   : otr.end_time;
       if (isPermAbsent(perm.user_id, otr.specific_date, otrOvStart, otrOvEnd)) continue;
-      const key = `otr-${perm.id}-${otr.id}`;
-      if (seen.has(key)) continue; seen.add(key);
-      const otrUser = db.get('users').find({ id: otr.user_id }).value();
-      guestConflicts.push({
-        permUserName: permUser?.name, guestName: otrUser?.name || 'לא ידוע',
-        roomName: permRoom?.name, date: otr.specific_date,
-        dayName: DAYS_HE[perm.day_of_week],
-        permStart: perm.start_time, permEnd: perm.end_time,
-        guestStart: otr.start_time, guestEnd: otr.end_time, type: 'one_time',
-      });
+      // Deduplicate by (employee, otr booking) — not by individual perm slot
+      const key = `otr-${perm.user_id}-${otr.id}`;
+      if (guestConflictsMap.has(key)) {
+        const existing = guestConflictsMap.get(key);
+        if (perm.start_time < existing.permStart) existing.permStart = perm.start_time;
+        if (perm.end_time   > existing.permEnd)   existing.permEnd   = perm.end_time;
+      } else {
+        const otrUser = db.get('users').find({ id: otr.user_id }).value();
+        const entry = {
+          permUserName: permUser?.name, guestName: otrUser?.name || 'לא ידוע',
+          roomName: permRoom?.name, date: otr.specific_date,
+          dayName: DAYS_HE[perm.day_of_week],
+          permStart: perm.start_time, permEnd: perm.end_time,
+          guestStart: otr.start_time, guestEnd: otr.end_time, type: 'one_time',
+        };
+        guestConflictsMap.set(key, entry);
+      }
     }
   }
+  const guestConflicts = [...guestConflictsMap.values()];
 
   // ── Room wish mismatches: users whose current room ≠ preferred room ──────
   // These are informational — admin decides whether to act on them.
