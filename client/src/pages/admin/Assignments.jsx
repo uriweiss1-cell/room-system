@@ -30,7 +30,7 @@ export default function AdminAssignments({ readOnly = false }) {
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
   const [msg, setMsg] = useState('');
   const [showGuest, setShowGuest] = useState(false);
-  const [guestForm, setGuestForm] = useState({ guest_name: '', specific_date: new Date().toISOString().slice(0,10), start_time: '08:00', end_time: '17:00' });
+  const [guestForm, setGuestForm] = useState({ guest_name: '', specific_date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })(), start_time: '08:00', end_time: '17:00' });
   const [guestStep, setGuestStep] = useState('form'); // 'form' | 'pick-room'
   const [guestAvailableRooms, setGuestAvailableRooms] = useState([]);
   const [guestSearching, setGuestSearching] = useState(false);
@@ -78,7 +78,7 @@ export default function AdminAssignments({ readOnly = false }) {
     sunday.setDate(today.getDate() - today.getDay() + weekOffset * 7);
     return [0,1,2,3,4,5].map(d => {
       const dt = new Date(sunday); dt.setDate(sunday.getDate() + d);
-      return dt.toISOString().slice(0,10);
+      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
     });
   })();
 
@@ -967,7 +967,7 @@ export default function AdminAssignments({ readOnly = false }) {
               </div>
             )}
             {(() => {
-              const todayStr = new Date().toISOString().slice(0, 10);
+              const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
               const futureConflicts = (genResult.guestConflicts || []).filter(gc => gc.date >= todayStr);
               if (!isPanelVisible('guestConflicts', futureConflicts.length)) return null;
               return (

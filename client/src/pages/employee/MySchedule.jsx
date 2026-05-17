@@ -14,7 +14,7 @@ function getWeekDates(offset) {
   return Array.from({ length: 6 }, (_, i) => {
     const d = new Date(sunday);
     d.setDate(sunday.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
 }
 
@@ -23,7 +23,10 @@ function fmtDate(dateStr) {
   return `${d.getDate()}.${d.getMonth() + 1}`;
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 
 export default function MySchedule() {
   const { user } = useAuth();

@@ -3,7 +3,10 @@ import api from '../../api';
 import { DAYS, STATUS_LABELS, STATUS_COLORS, REQUEST_TYPE_LABELS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
-function todayStr() { return new Date().toISOString().slice(0,10); }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
 export default function OneTimeRequest() {
   const { isAdmin, user } = useAuth();

@@ -3,7 +3,10 @@ import api from '../../api';
 import { DAYS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function todayStr() { return localDateStr(new Date()); }
 
 function weekDates(offset = 0) {
   const today = new Date();
@@ -12,7 +15,7 @@ function weekDates(offset = 0) {
   return Array.from({ length: 5 }, (_, i) => {
     const d = new Date(sunday);
     d.setDate(sunday.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
 }
 
