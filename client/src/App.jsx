@@ -27,6 +27,13 @@ function HomeRedirect() {
   return <Navigate to={isSecretary ? '/secretary/grid' : '/my-schedule'} replace />;
 }
 
+// Blocks secretary from employee-only pages and redirects to her grid
+function NotForSecretary({ children }) {
+  const { isSecretary } = useAuth();
+  if (isSecretary) return <Navigate to="/secretary/grid" replace />;
+  return children;
+}
+
 export default function App() {
   const { loading } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen text-lg text-gray-500">טוען מערכת...</div>;
@@ -36,9 +43,9 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Guard><Layout /></Guard>}>
         <Route index element={<HomeRedirect />} />
-        <Route path="my-schedule"      element={<MySchedule />} />
+        <Route path="my-schedule"      element={<NotForSecretary><MySchedule /></NotForSecretary>} />
         <Route path="room-query"       element={<RoomQuery />} />
-        <Route path="one-time-request" element={<OneTimeRequest />} />
+        <Route path="one-time-request" element={<NotForSecretary><OneTimeRequest /></NotForSecretary>} />
         <Route path="library"          element={<Library />} />
         <Route path="meeting-room"     element={<MeetingRoom />} />
         <Route path="mamod"            element={<Mamod />} />
