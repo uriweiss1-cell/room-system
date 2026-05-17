@@ -25,22 +25,18 @@ function GlobalNotifications() {
   if (!notifs.length) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-3 pt-4">
-      <div className="card border-orange-200 bg-orange-50">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-orange-800">
-            התראות <span className="badge badge-yellow mr-1">{notifs.length} חדשות</span>
-          </h3>
-          <button className="text-xs text-orange-600 hover:underline" onClick={markAll}>סמן הכל כנקרא</button>
-        </div>
-        <div className="space-y-2">
+    <div className="sticky top-12 z-40 bg-orange-500 shadow-lg">
+      <div className="max-w-7xl mx-auto px-3 py-2 flex items-start justify-between gap-3">
+        <div className="flex-1 space-y-1.5">
+          <div className="text-white font-bold text-sm">🔔 {notifs.length} הודעות חדשות</div>
           {notifs.map(n => (
-            <div key={n.id} className="flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm bg-orange-100 text-orange-900 font-medium">
+            <div key={n.id} className="flex items-start justify-between gap-2 bg-orange-600 rounded-lg px-3 py-2 text-sm text-white">
               <span>{n.message}</span>
-              <button className="shrink-0 text-xs text-orange-600 hover:underline" onClick={() => markRead(n.id)}>✓ קראתי</button>
+              <button className="shrink-0 text-orange-200 hover:text-white font-medium" onClick={() => markRead(n.id)}>✓ קראתי</button>
             </div>
           ))}
         </div>
+        <button className="text-orange-100 hover:text-white text-xs underline shrink-0 mt-6" onClick={markAll}>סמן הכל כנקרא</button>
       </div>
     </div>
   );
