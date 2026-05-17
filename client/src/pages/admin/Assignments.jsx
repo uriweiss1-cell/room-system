@@ -1094,14 +1094,19 @@ export default function AdminAssignments({ readOnly = false }) {
                     const otSlots = weeklyOneTime.oneTime
                       .filter(a => a.room_id === room.id && a.day_of_week === dayIdx)
                       .sort((a, b) => (a.start_time||'').localeCompare(b.start_time||''));
-                    const absentUserIds = new Set(weeklyOneTime.absences
-                      .filter(a => a.day_of_week === dayIdx).map(a => a.user_id));
+                    const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+                    const dayAbsences = weeklyOneTime.absences.filter(a => a.day_of_week === dayIdx);
+                    const slotFullyAbsent = (userId, slotStart, slotEnd) =>
+                      dayAbsences.some(a => a.user_id === userId && (
+                        !a.start_time ? true
+                          : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
+                      ));
                     return (
                       <td key={dayIdx} className="border border-gray-300 px-1 py-1 align-top">
                         {/* Permanent assignments */}
                         {permSlots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
-                          const isAbsent = absentUserIds.has(a.user_id);
+                          const isAbsent = slotFullyAbsent(a.user_id, a.start_time, a.end_time);
                           if (isAbsent) return (
                             <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
                               <div className="flex items-start justify-between gap-0.5">
