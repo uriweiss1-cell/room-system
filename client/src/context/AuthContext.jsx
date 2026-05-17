@@ -39,9 +39,10 @@ export function AuthProvider({ children }) {
     rooms:       isFullAdmin || isLegacyAdmin || !!user?.perm_rooms,
   };
   const isAdmin = isFullAdmin || isLegacyAdmin || Object.values(perms).some(Boolean);
+  const isSecretary = user?.role === 'secretary';
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin, perms }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin, isSecretary, perms }}>
       {children}
     </AuthContext.Provider>
   );

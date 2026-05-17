@@ -45,4 +45,14 @@ function requirePerm(perm) {
   };
 }
 
-module.exports = { authenticate, requireAdmin, requirePerm, JWT_SECRET };
+// Like requirePerm but also allows specific roles (e.g. 'secretary' for read-only grid access).
+function requirePermOrRole(perm, ...roles) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(401).json({ error: 'נדרשת התחברות' });
+    if (roles.includes(u.role)) return next();
+    return requirePerm(perm)(req, res, next);
+  };
+}
+
+module.exports = { authenticate, requireAdmin, requirePerm, requirePermOrRole, JWT_SECRET };

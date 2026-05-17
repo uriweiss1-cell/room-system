@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../api';
 import { DAYS, ROLES, ROLE_COLORS } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
-export default function AdminAssignments() {
+export default function AdminAssignments({ readOnly = false }) {
   const { perms } = useAuth();
   const [assignments, setAssignments] = useState([]);
   const [users, setUsers] = useState([]);
@@ -435,28 +435,30 @@ export default function AdminAssignments() {
       {/* Controls */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-3 justify-between mb-3">
-          <h2 className="text-xl font-bold">שיבוץ חדרים</h2>
-          <div className="flex flex-wrap gap-2">
-{perms?.algorithm && (
-              <button className="btn btn-primary" onClick={generate} disabled={generating}>
-                {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
+          <h2 className="text-xl font-bold">{readOnly ? 'גריד שיבוץ חדרים' : 'שיבוץ חדרים'}</h2>
+          {!readOnly && (
+            <div className="flex flex-wrap gap-2">
+              {perms?.algorithm && (
+                <button className="btn btn-primary" onClick={generate} disabled={generating}>
+                  {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={runAudit} disabled={auditing} title="בדוק שהשיבוצים הנוכחיים עומדים בקריטריונים של כל תפקיד">
+                {auditing ? 'בודק...' : '🔍 בדיקת ציות'}
               </button>
-            )}
-            <button className="btn btn-ghost" onClick={runAudit} disabled={auditing} title="בדוק שהשיבוצים הנוכחיים עומדים בקריטריונים של כל תפקיד">
-              {auditing ? 'בודק...' : '🔍 בדיקת ציות'}
-            </button>
-            <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
-            <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
-            {perms?.algorithm && <>
-              <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
-              <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
-            </>}
-          </div>
+              <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
+              <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
+              {perms?.algorithm && <>
+                <button className="btn btn-ghost text-orange-700 border-orange-300 hover:bg-orange-50" onClick={clearAutoSchedules} title="מחק לוחות זמנים שנוצרו אוטומטית ביבוא">🧹 נקה לוחות אוטומטיים</button>
+                <button className="btn btn-danger" onClick={clearAll}>מחק הכל</button>
+              </>}
+            </div>
+          )}
         </div>
 
-        {msg && <div className={`px-4 py-2 rounded-lg text-sm mb-3 ${msg.startsWith('שגיאה') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>}
+        {!readOnly && msg && <div className={`px-4 py-2 rounded-lg text-sm mb-3 ${msg.startsWith('שגיאה') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>}
 
-        {showAdd && (
+        {!readOnly && showAdd && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
             <h3 className="font-semibold mb-3">הוספת שיבוץ ידני</h3>
             <div className="flex flex-wrap gap-3 items-end">
@@ -485,7 +487,7 @@ export default function AdminAssignments() {
           </div>
         )}
 
-        {showGuest && (
+        {!readOnly && showGuest && (
           <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 mb-4">
             <h3 className="font-semibold mb-3 text-teal-900">שיבוץ אורח חד-פעמי</h3>
 
@@ -574,7 +576,7 @@ export default function AdminAssignments() {
           </div>
         )}
 
-        {genResult && perms?.algorithm && (
+        {!readOnly && genResult && perms?.algorithm && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
             <p className="font-semibold">{genResult.message}</p>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}
@@ -1112,10 +1114,12 @@ export default function AdminAssignments() {
                             <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : a.is_guest ? 'bg-teal-50 border-teal-300' : 'bg-blue-50 border-blue-200'}`}>
                               <div className="flex items-start justify-between gap-0.5">
                                 <div className={`font-medium leading-tight flex-1 ${highlighted ? 'text-yellow-900' : a.is_guest ? 'text-teal-900' : 'text-blue-900'}`}>{a.user_name}{a.is_guest && ' 👤'}</div>
-                                <div className="flex gap-0.5 shrink-0">
-                                  <button onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, room_id: a.room_id, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time, room_id: a.room_id }); }} className="flex items-center justify-center w-4 h-4 bg-blue-400 hover:bg-blue-600 text-white rounded text-xs leading-none" title="ערוך שעות">✎</button>
-                                  <button onClick={() => deleteAssignment(a.id)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
-                                </div>
+                                {!readOnly && (
+                                  <div className="flex gap-0.5 shrink-0">
+                                    <button onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, room_id: a.room_id, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time, room_id: a.room_id }); }} className="flex items-center justify-center w-4 h-4 bg-blue-400 hover:bg-blue-600 text-white rounded text-xs leading-none" title="ערוך שעות">✎</button>
+                                    <button onClick={() => deleteAssignment(a.id)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
+                                  </div>
+                                )}
                               </div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
                             </div>
@@ -1129,7 +1133,7 @@ export default function AdminAssignments() {
                             <div key={`ot-${a.id}`} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-orange-50 border-orange-400'}`}>
                               <div className="flex items-start justify-between gap-0.5">
                                 <div className={`font-medium leading-tight flex-1 ${highlighted ? 'text-yellow-900' : 'text-orange-900'}`}>{typeLabel} {a.user_name}</div>
-                                <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
+                                {!readOnly && <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>}
                               </div>
                               <div className="text-orange-700 leading-tight">{a.start_time}–{a.end_time}</div>
                               {a.swap_reason && <div className="text-orange-600 leading-tight truncate" title={a.swap_reason}>💬 {a.swap_reason}</div>}
@@ -1175,10 +1179,12 @@ export default function AdminAssignments() {
                       <td><span className={`badge ${ROLE_COLORS[a.role]||'badge-gray'}`}>{ROLES[a.role]}</span></td>
                       <td>{a.start_time}</td>
                       <td>{a.end_time}</td>
-                      <td className="flex gap-2">
-                        <button className="text-blue-500 hover:text-blue-700 text-xs" onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, room_id: a.room_id, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time, room_id: a.room_id }); }}>ערוך</button>
-                        <button className="text-red-500 hover:text-red-700 text-xs" onClick={() => deleteAssignment(a.id)}>מחק</button>
-                      </td>
+                      {!readOnly && (
+                        <td className="flex gap-2">
+                          <button className="text-blue-500 hover:text-blue-700 text-xs" onClick={() => { setEditingSlot({ id: a.id, user_name: a.user_name, room_name: a.room_name, room_id: a.room_id, day: a.day_of_week }); setEditForm({ start_time: a.start_time, end_time: a.end_time, room_id: a.room_id }); }}>ערוך</button>
+                          <button className="text-red-500 hover:text-red-700 text-xs" onClick={() => deleteAssignment(a.id)}>מחק</button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -1207,7 +1213,7 @@ export default function AdminAssignments() {
                         <div>{a.room_name}</div>
                         <div className="text-gray-500">{a.start_time}–{a.end_time}</div>
                       </div>
-                      <button onClick={() => deleteAssignment(a.id)} className="text-red-400 hover:text-red-600 text-base leading-none mt-0.5">×</button>
+                      {!readOnly && <button onClick={() => deleteAssignment(a.id)} className="text-red-400 hover:text-red-600 text-base leading-none mt-0.5">×</button>}
                     </div>
                   ))}
                 </div>

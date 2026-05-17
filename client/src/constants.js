@@ -8,6 +8,7 @@ export const ROLES = {
   educational_intern: 'מתמחה חינוכי',
   art_therapist: 'מטפל/ת באמנות',
   psychiatrist: 'פסיכיאטר/ית',
+  secretary: 'מזכירה',
 };
 
 export const ROLE_COLORS = {
@@ -17,6 +18,7 @@ export const ROLE_COLORS = {
   art_therapist: 'badge-red',
   psychiatrist: 'badge-blue',
   admin: 'badge-gray',
+  secretary: 'badge-purple',
 };
 
 export const STATUS_LABELS = {

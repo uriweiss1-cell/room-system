@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm, requirePermOrRole } = require('../middleware/auth');
 const { createBackup } = require('./backups');
 
 const router = express.Router();
@@ -26,13 +26,13 @@ router.get('/my', (req, res) => {
   res.json(list);
 });
 
-router.get('/all', requirePerm('assignments'), (req, res) => {
+router.get('/all', requirePermOrRole('assignments', 'secretary'), (req, res) => {
   const list = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
   res.json(list);
 });
 
 // Weekly one-time assignments + absences for the grid
-router.get('/weekly-one-time', requirePerm('assignments'), (req, res) => {
+router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (req, res) => {
   const { from, to } = req.query;
   if (!from || !to) return res.status(400).json({ error: 'נדרשים from ו-to' });
   const requests = db.get('one_time_requests')
@@ -167,7 +167,7 @@ router.get('/user-debug/:userId', requirePerm('assignments'), (req, res) => {
 });
 
 // List all upcoming guest assignments (admin only)
-router.get('/guests', requirePerm('assignments'), (req, res) => {
+router.get('/guests', requirePermOrRole('assignments', 'secretary'), (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const list = db.get('room_assignments')
     .filter(a => a.assignment_type === 'one_time' && !a.user_id && a.specific_date >= today)

@@ -47,7 +47,7 @@ function GlobalNotifications() {
 }
 
 export default function Layout() {
-  const { user, logout, isAdmin, perms } = useAuth();
+  const { user, logout, isAdmin, isSecretary, perms } = useAuth();
   const navigate = useNavigate();
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -61,7 +61,13 @@ export default function Layout() {
     return () => clearInterval(interval);
   }, [perms?.requests]);
 
-  const employeeLinks = [
+  const employeeLinks = isSecretary ? [
+    { to: '/secretary/grid',   label: '📋 גריד שבועי' },
+    { to: '/room-query',       label: '🔍 שאילתת חדר' },
+    { to: '/library',          label: 'ספריה' },
+    { to: '/meeting-room',     label: 'חדר ישיבות' },
+    { to: '/mamod',            label: 'ממד' },
+  ] : [
     { to: '/my-schedule',      label: 'הלוח שלי' },
     { to: '/room-query',       label: 'שאילתת חדר' },
     { to: '/one-time-request', label: 'בקשת חדרים' },
@@ -108,7 +114,7 @@ export default function Layout() {
           </div>
         </div>
       </nav>
-      {(!isAdmin || user?.can_admin) && <GlobalNotifications />}
+      {(!isAdmin || user?.can_admin || isSecretary) && <GlobalNotifications />}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-5">
         <Outlet />
       </main>

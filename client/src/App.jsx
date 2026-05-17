@@ -13,12 +13,18 @@ import AdminRooms from './pages/admin/Rooms';
 import AdminAssignments from './pages/admin/Assignments';
 import AdminRequests from './pages/admin/Requests';
 
-function Guard({ perm, children }) {
-  const { user, loading, perms } = useAuth();
+function Guard({ perm, role, children }) {
+  const { user, loading, perms, isSecretary } = useAuth();
   if (loading) return <div className="flex items-center justify-center h-screen text-lg text-gray-500">טוען...</div>;
   if (!user) return <Navigate to="/login" replace />;
+  if (role === 'secretary' && !isSecretary) return <Navigate to="/my-schedule" replace />;
   if (perm && !perms[perm]) return <Navigate to="/my-schedule" replace />;
   return children;
+}
+
+function HomeRedirect() {
+  const { isSecretary } = useAuth();
+  return <Navigate to={isSecretary ? '/secretary/grid' : '/my-schedule'} replace />;
 }
 
 export default function App() {
@@ -29,13 +35,15 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Guard><Layout /></Guard>}>
-        <Route index element={<Navigate to="/my-schedule" replace />} />
+        <Route index element={<HomeRedirect />} />
         <Route path="my-schedule"      element={<MySchedule />} />
         <Route path="room-query"       element={<RoomQuery />} />
         <Route path="one-time-request" element={<OneTimeRequest />} />
         <Route path="library"          element={<Library />} />
         <Route path="meeting-room"     element={<MeetingRoom />} />
         <Route path="mamod"            element={<Mamod />} />
+        {/* Secretary-only: read-only weekly grid */}
+        <Route path="secretary/grid"   element={<Guard role="secretary"><AdminAssignments readOnly /></Guard>} />
         <Route path="admin/users"       element={<Guard perm="users"><AdminUsers /></Guard>} />
         <Route path="admin/rooms"       element={<Guard perm="rooms"><AdminRooms /></Guard>} />
         <Route path="admin/assignments" element={<Guard perm="assignments"><AdminAssignments /></Guard>} />

@@ -33,4 +33,5 @@ body {
   .badge-red    { @apply bg-red-100 text-red-800; }
   .badge-gray   { @apply bg-gray-100 text-gray-700; }
   .badge-teal   { @apply bg-teal-100 text-teal-800; }
+  .badge-purple { @apply bg-purple-100 text-purple-800; }
 }
