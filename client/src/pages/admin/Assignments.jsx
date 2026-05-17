@@ -65,6 +65,14 @@ export default function AdminAssignments({ readOnly = false }) {
       return updated;
     });
   };
+  const undismissPanel = (key) => {
+    setDismissedPanels(prev => {
+      const updated = { ...prev };
+      delete updated[key];
+      localStorage.setItem('dismissedPanels', JSON.stringify(updated));
+      return updated;
+    });
+  };
   const isPanelVisible = (key, count) => {
     if (!count) return false;
     const d = dismissedPanels[key];
@@ -659,6 +667,9 @@ export default function AdminAssignments({ readOnly = false }) {
                 ))}
               </div>
             )}
+            {!isPanelVisible('suggestions', genResult.suggestions?.length) && (genResult.suggestions?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('suggestions')}>↩ הצג הצעות לפתרון ({genResult.suggestions.length})</button>
+            )}
             {isPanelVisible('contested', genResult.preferenceConflicts?.filter(pc => pc.type === 'contested').length) && (
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-2">
@@ -724,6 +735,9 @@ export default function AdminAssignments({ readOnly = false }) {
                   );
                 })}
               </div>
+            )}
+            {!isPanelVisible('contested', genResult.preferenceConflicts?.filter(pc => pc.type === 'contested').length) && (genResult.preferenceConflicts?.filter(pc => pc.type === 'contested').length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('contested')}>↩ הצג חדרים שנדרשו ביותר מעובד ({genResult.preferenceConflicts.filter(pc => pc.type === 'contested').length})</button>
             )}
             {isPanelVisible('preference', genResult.preferenceConflicts?.filter(pc => !pc.type).length) && (
               <div className="mt-4 space-y-3">
@@ -872,6 +886,9 @@ export default function AdminAssignments({ readOnly = false }) {
                 })}
               </div>
             )}
+            {!isPanelVisible('preference', genResult.preferenceConflicts?.filter(pc => !pc.type).length) && (genResult.preferenceConflicts?.filter(pc => !pc.type).length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('preference')}>↩ הצג חדר מועדף תפוס ({genResult.preferenceConflicts.filter(pc => !pc.type).length})</button>
+            )}
             {/* Role constraint conflicts — fixed-room requirement could not be met */}
             {isPanelVisible('roleConstraint', genResult.roleConstraintConflicts?.length) && (
               <div className="mt-4 space-y-3">
@@ -925,6 +942,9 @@ export default function AdminAssignments({ readOnly = false }) {
               </div>
             )}
 
+            {!isPanelVisible('roleConstraint', genResult.roleConstraintConflicts?.length) && (genResult.roleConstraintConflicts?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('roleConstraint')}>↩ הצג אי-עמידה בדרישת חדר קבוע ({genResult.roleConstraintConflicts.length})</button>
+            )}
             {isPanelVisible('assignmentTrace', genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length) && (
               <div className="mt-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -966,10 +986,15 @@ export default function AdminAssignments({ readOnly = false }) {
                 </div>
               </div>
             )}
+            {!isPanelVisible('assignmentTrace', genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length) && (genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('assignmentTrace')}>↩ הצג מעקב שיבוצים ({genResult.assignmentTrace.filter(t => t.wanted && t.result !== 'got_wanted').length})</button>
+            )}
             {(() => {
               const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
               const futureConflicts = (genResult.guestConflicts || []).filter(gc => gc.date >= todayStr);
-              if (!isPanelVisible('guestConflicts', futureConflicts.length)) return null;
+              if (!isPanelVisible('guestConflicts', futureConflicts.length)) return futureConflicts.length > 0 ? (
+                <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('guestConflicts')}>↩ הצג התנגשויות עם אורחים ({futureConflicts.length})</button>
+              ) : null;
               return (
                 <div className="mt-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -1028,6 +1053,9 @@ export default function AdminAssignments({ readOnly = false }) {
                   ))}
                 </div>
               </div>
+            )}
+            {!isPanelVisible('wishMismatches', genResult.roomWishMismatches?.length) && (genResult.roomWishMismatches?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('wishMismatches')}>↩ הצג עובדים לא בחדר המבוקש ({genResult.roomWishMismatches.length})</button>
             )}
           </div>
         )}
