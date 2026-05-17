@@ -761,11 +761,9 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
   const { status, admin_response, assigned_room_id, room_id, assign_start_time, assign_end_time, slots } = req.body;
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
 
-  db.get('one_time_requests').find({ id: +req.params.id }).assign({
-    status,
-    admin_response: admin_response || null,
-    assigned_room_id: assigned_room_id ? +assigned_room_id : null,
-  }).write();
+  const updateFields = { status, admin_response: admin_response || null };
+  if ('assigned_room_id' in req.body) updateFields.assigned_room_id = assigned_room_id ? +assigned_room_id : null;
+  db.get('one_time_requests').find({ id: +req.params.id }).assign(updateFields).write();
 
   // If rejecting an already-approved permanent special-room request — remove its room_assignment
   if (status === 'rejected' && request?.request_type === 'permanent_request' && request?.status === 'approved' && request?.target_room_type) {

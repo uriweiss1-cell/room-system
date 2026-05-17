@@ -199,7 +199,7 @@ function PermanentRoomPicker({ req, onSlotsChange, hideGapTracking = false }) {
   );
 }
 
-function RoomPicker({ req, onAssigned, alreadyAssigned = [] }) {
+function RoomPicker({ req, onAssigned, alreadyAssigned = [], onAdminMsgChange = null }) {
   const [rooms, setRooms] = useState(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -355,7 +355,7 @@ function RoomPicker({ req, onAssigned, alreadyAssigned = [] }) {
       )}
       <div>
         <label className="label text-xs">הודעה לעובד (אופציונלי)</label>
-        <input className="input w-full text-sm" value={adminMsg} onChange={e => setAdminMsg(e.target.value)}
+        <input className="input w-full text-sm" value={adminMsg} onChange={e => { setAdminMsg(e.target.value); onAdminMsgChange?.(e.target.value); }}
           placeholder={isPartial ? `לדוגמה: שובצת לחדר רק בין ${adjStart}–${adjEnd} כיוון שהחדר תפוס בשעות הנותרות` : 'הסבר / הערה...'} />
       </div>
     </div>
@@ -407,6 +407,7 @@ export default function AdminRequests() {
   const [permanentSlots, setPermanentSlots] = useState([]); // multi-slot for permanent_request approval
   const [addMoreId, setAddMoreId] = useState(null);   // ID of approved perm-request being extended
   const [addMoreSlots, setAddMoreSlots] = useState([]); // slots chosen in add-more flow
+  const [roomPickerMsg, setRoomPickerMsg] = useState('');
   const [msg, setMsg] = useState('');
 
   useEffect(() => { load(); api.get('/rooms').then(r => setRooms(r.data.filter(x => x.is_active))); }, []);
@@ -416,6 +417,7 @@ export default function AdminRequests() {
     setExpandedId(req.id);
     setResponseForm({ status: 'approved', admin_response: '', room_id: '' });
     setPermanentSlots([]);
+    setRoomPickerMsg('');
     setMsg('');
   };
 
@@ -536,13 +538,17 @@ export default function AdminRequests() {
                 {expandedId === req.id && req.request_type === 'room_request' && (
                   <div>
                     <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }}
+                      onAdminMsgChange={setRoomPickerMsg}
                       alreadyAssigned={req.status === 'assigned' && req.room_name
                         // Use assigned_start/end_time (actual partial slot) not start/end_time (original full range)
                         ? [{ roomName: req.room_name, start: req.assigned_start_time || req.start_time, end: req.assigned_end_time || req.end_time },
                            ...(req.partial_siblings || [])]
                         : []} />
                     <div className="flex gap-2 mt-3 border-t pt-3 flex-wrap">
-                      <button className="btn btn-danger" onClick={() => { setResponseForm(p=>({...p,status:'rejected'})); submitResponse(req.id); }}>דחה בקשה</button>
+                      <button className="btn btn-danger" onClick={async () => {
+                        await api.put(`/requests/${req.id}`, { status: 'rejected', admin_response: roomPickerMsg || null });
+                        setExpandedId(null); load();
+                      }}>דחה בקשה</button>
                       <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
                     </div>
                   </div>

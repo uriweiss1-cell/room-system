@@ -62,8 +62,23 @@ export default function RoomQuery() {
     : [];
   const hasDropdown = employeeSearch && !selectedUser && (filteredEmployees.length > 0 || filteredGuests.length > 0);
 
+  const scanNow = () => {
+    const now = new Date();
+    const d = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const t = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    setDate(d); setTime(t); setRoomSearch(''); setTab('room'); setResult(null);
+    setLoading(true);
+    api.get('/assignments/query', { params: { date: d, time: t } })
+      .then(r => setResult(r.data))
+      .finally(() => setLoading(false));
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-5">
+      <button className="w-full btn btn-primary text-base py-3" onClick={scanNow} disabled={loading}>
+        {loading ? 'סורק...' : '👁 מי נמצא עכשיו?'}
+      </button>
+
       <div className="card">
         <h2 className="text-xl font-bold mb-4">שאילתת חדר ועובדים</h2>
 
@@ -143,6 +158,9 @@ export default function RoomQuery() {
         <div className="card">
           <h3 className="font-semibold mb-3">
             {roomSearch ? `חדר ${roomSearch}` : 'כל החדרים'} — {date} {time}
+            {(result.regular.length + result.oneTime.length) > 0 && (
+              <span className="text-sm font-normal text-gray-500 mr-2">({result.regular.length + result.oneTime.length} נוכחים)</span>
+            )}
           </h3>
           {(result.regular.length + result.oneTime.length) === 0 ? (
             <p className="text-gray-400 text-sm">לא נמצאו עובדים בשעה זו{roomSearch ? ` בחדר ${roomSearch}` : ''}</p>
