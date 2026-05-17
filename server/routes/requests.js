@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm, requirePermOrRole } = require('../middleware/auth');
 const { sendAdminEmail, REQUEST_TYPE_LABELS, DAYS_HE } = require('../email');
 const { sendPushToUser } = require('../webpush');
 
@@ -735,8 +735,13 @@ router.post('/:id/add-partial', requirePerm('requests'), (req, res) => {
   res.json({ message: `נוסף שיבוץ: ${room?.name} ${start_time}–${end_time}` });
 });
 
-router.delete('/:id', requirePerm('requests'), (req, res) => {
+const SECRETARY_DELETABLE = ['library_request', 'meeting_request', 'mamod_request'];
+router.delete('/:id', requirePermOrRole('requests', 'secretary'), (req, res) => {
   const request = db.get('one_time_requests').find({ id: +req.params.id }).value();
+  // Secretary may only delete special-room one-time bookings, not other request types
+  if (req.user.role === 'secretary' && (!request || !SECRETARY_DELETABLE.includes(request.request_type))) {
+    return res.status(403).json({ error: 'אין הרשאה למחיקה זו' });
+  }
   // If an approved permanent special-room request is deleted, also remove its room_assignment
   if (request?.request_type === 'permanent_request' && request?.status === 'approved' && request?.target_room_type) {
     const specialRoom = db.get('rooms').find({ room_type: request.target_room_type, is_active: true }).value();

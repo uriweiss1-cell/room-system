@@ -1,14 +1,14 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin, requirePerm } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm, requirePermOrRole } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
 
 const safe = u => { const { password_hash, pin_hash, ...rest } = u; return rest; };
 
-router.get('/', requirePerm('users'), (req, res) => {
+router.get('/', requirePermOrRole('users', 'secretary'), (req, res) => {
   res.json(db.get('users').value().map(safe));
 });
 

@@ -1133,7 +1133,9 @@ export default function AdminAssignments({ readOnly = false }) {
                             <div key={`ot-${a.id}`} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-orange-50 border-orange-400'}`}>
                               <div className="flex items-start justify-between gap-0.5">
                                 <div className={`font-medium leading-tight flex-1 ${highlighted ? 'text-yellow-900' : 'text-orange-900'}`}>{typeLabel} {a.user_name}</div>
-                                {!readOnly && <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>}
+                                {(!readOnly || ['library_request','meeting_request','mamod_request'].includes(a.request_type)) && (
+                                  <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
+                                )}
                               </div>
                               <div className="text-orange-700 leading-tight">{a.start_time}–{a.end_time}</div>
                               {a.swap_reason && <div className="text-orange-600 leading-tight truncate" title={a.swap_reason}>💬 {a.swap_reason}</div>}
@@ -1233,7 +1235,7 @@ export default function AdminAssignments({ readOnly = false }) {
         </div>
       )}
       {/* Algorithm debugger per employee */}
-      <div className="card">
+      {!readOnly && <div className="card">
         <h3 className="font-semibold mb-3 text-gray-700">🔍 אבחון אלגוריתם לפי עובד</h3>
         <div className="flex gap-3 items-end mb-4">
           <div className="flex-1">
@@ -1346,10 +1348,10 @@ export default function AdminAssignments({ readOnly = false }) {
             })()}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Backups */}
-      <div className="card">
+      {!readOnly && <div className="card">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-700">💾 גיבויים</h3>
           <div className="flex gap-2">
@@ -1433,10 +1435,10 @@ export default function AdminAssignments({ readOnly = false }) {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Preferred room summary */}
-      <div className="card">
+      {!readOnly && <div className="card">
         <h3 className="font-semibold mb-3 text-gray-700">חדר מועדף לפי עובד</h3>
         <p className="text-xs text-gray-500 mb-3">מה כל עובד ביקש כחדר קבוע. ריק = לא הוגדרה העדפה.</p>
         <div className="overflow-x-auto">
@@ -1470,7 +1472,7 @@ export default function AdminAssignments({ readOnly = false }) {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
