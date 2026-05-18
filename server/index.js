@@ -9,6 +9,24 @@ const { initVapid } = require('./webpush');
 
 async function main() {
   await initDB();
+
+  // One-time migration: coerce day_of_week from string to number in room_assignments and regular_schedules
+  const { db } = require('./database');
+  let migrated = 0;
+  db.get('room_assignments').value().forEach(a => {
+    if (typeof a.day_of_week === 'string') {
+      db.get('room_assignments').find({ id: a.id }).assign({ day_of_week: +a.day_of_week }).write();
+      migrated++;
+    }
+  });
+  db.get('regular_schedules').value().forEach(s => {
+    if (typeof s.day_of_week === 'string') {
+      db.get('regular_schedules').find({ id: s.id }).assign({ day_of_week: +s.day_of_week }).write();
+      migrated++;
+    }
+  });
+  if (migrated > 0) console.log(`[migration] converted ${migrated} day_of_week string→number`);
+
   initVapid();
 
   const app = express();

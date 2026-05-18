@@ -197,7 +197,7 @@ router.get('/query', (req, res) => {
     .value();
 
   let regular = db.get('room_assignments')
-    .filter(a => a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
+    .filter(a => +a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time)
       && !isAbsentAtQuery(a.user_id)
       && !swaps.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id))
@@ -278,7 +278,7 @@ router.get('/locate', (req, res) => {
   }
 
   const perm = db.get('room_assignments')
-    .filter(a => a.user_id === uid && a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
+    .filter(a => a.user_id === uid && +a.day_of_week === dayOfWeek && a.assignment_type === 'permanent'
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time))
     .first().value();
 

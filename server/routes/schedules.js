@@ -30,11 +30,11 @@ function saveSchedule(userId, schedules) {
     .filter({ user_id: userId, assignment_type: 'permanent' })
     .value();
 
-  const newDays = new Set(schedules.map(s => s.day_of_week));
+  const newDays = new Set(schedules.map(s => +s.day_of_week));
 
   // Remove assignments for days no longer in schedule
   assignments.forEach(a => {
-    if (!newDays.has(a.day_of_week)) {
+    if (!newDays.has(+a.day_of_week)) {
       db.get('room_assignments').remove({ id: a.id }).write();
     }
   });
@@ -48,7 +48,7 @@ function saveSchedule(userId, schedules) {
     const newEnd = toMin(slot.end_time);
 
     const dayAssignments = assignments
-      .filter(a => a.day_of_week === slot.day_of_week)
+      .filter(a => +a.day_of_week === +slot.day_of_week)
       .sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
 
     if (dayAssignments.length === 0) return;

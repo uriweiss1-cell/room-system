@@ -188,7 +188,7 @@ router.post('/', (req, res) => {
     const specialRoom = db.get('rooms').find({ room_type: roomType, is_active: true }).value();
     if (!specialRoom) return res.status(400).json({ error: `לא הוגדר ${roomLabel} במערכת. פנה למנהל.` });
     const dayOfWeek = new Date(specific_date).getDay();
-    const permBusy = db.get('room_assignments').filter({ room_id: specialRoom.id, day_of_week: dayOfWeek }).value();
+    const permBusy = db.get('room_assignments').filter(a => a.room_id === specialRoom.id && +a.day_of_week === dayOfWeek).value();
     const otBusy = db.get('one_time_requests').filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === specialRoom.id).value();
     const conflict = [
       ...permBusy.filter(b => overlap(start_time, end_time, b.start_time, b.end_time)),
@@ -202,7 +202,7 @@ router.post('/', (req, res) => {
     // Check if the employee is already assigned to a DIFFERENT room at this time
     if (!force_conflict) {
       const empPermConflict = db.get('room_assignments')
-        .filter({ user_id: userId, day_of_week: dayOfWeek, assignment_type: 'permanent' })
+        .filter(a => a.user_id === userId && +a.day_of_week === dayOfWeek && a.assignment_type === 'permanent')
         .value()
         .filter(a => a.room_id !== specialRoom.id && overlap(start_time, end_time, a.start_time, a.end_time));
       const empOtConflict = db.get('one_time_requests')
@@ -242,7 +242,7 @@ router.post('/', (req, res) => {
     .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
     .value();
   const permBusy = db.get('room_assignments')
-    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
+    .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayOfWeek)
     .value()
     .filter(a => !isAbsentAt(a.user_id, start_time, end_time))
     .filter(a => !swappedOut.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
@@ -353,7 +353,7 @@ router.post('/book-room', (req, res) => {
     .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
     .value();
   const permBusy = db.get('room_assignments')
-    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek, room_id: +room_id })
+    .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayOfWeek && a.room_id === +room_id)
     .value()
     .filter(a => !isAbsentAt2(a.user_id, start_time, end_time))
     .filter(a => !swappedOut.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
