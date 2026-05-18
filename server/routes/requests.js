@@ -390,6 +390,20 @@ router.post('/book-room', (req, res) => {
   };
   db.get('one_time_requests').push(rec).write();
 
+  // If this swap supersedes an earlier one-time room_request for the same user/date/room,
+  // reject the old record so it disappears from the grid and scan.
+  if (is_swap && original_room_id) {
+    const superseded = db.get('one_time_requests')
+      .filter(x => x.user_id === userId && x.specific_date === specific_date
+        && x.status === 'assigned' && x.assigned_room_id === +original_room_id
+        && x.request_type === 'room_request' && x.id !== rec.id)
+      .first().value();
+    if (superseded) {
+      db.get('one_time_requests').find({ id: superseded.id })
+        .assign({ status: 'rejected', admin_response: 'הוחלף לחדר אחר' }).write();
+    }
+  }
+
   const room = db.get('rooms').find({ id: +room_id }).value();
 
   if (is_swap) {
