@@ -338,7 +338,7 @@ export default function AdminAssignments({ readOnly = false }) {
   }, {});
 
   const ROLE_LABELS = { psychiatrist: 'פסיכיאטר/ית', supervisor: 'מדריך/מנהל', art_therapist: 'מטפל/ת באמנות', clinical_intern: 'מתמחה קליני', educational_intern: 'מתמחה חינוכי', admin: 'מנהל מערכת' };
-  const VIOLATION_LABELS = { unassigned_days: 'ימים ללא חדר', missing_priority_day: 'יום עדיפות ללא חדר', no_fixed_room: 'חדר לא קבוע', missing_day: 'יום ללא חדר' };
+  const VIOLATION_LABELS = { unassigned_days: 'ימים ללא חדר', missing_priority_day: 'יום עדיפות ללא חדר', no_fixed_room: 'חדר לא קבוע', missing_day: 'יום ללא חדר', unsuitable_room: '⚠️ חדר לא מתאים לטיפול באמנות' };
 
   return (
     <div className="space-y-5">
@@ -400,7 +400,7 @@ export default function AdminAssignments({ readOnly = false }) {
               </div>
             )}
             <div className="text-xs text-gray-400 border-t border-gray-100 pt-2">
-              הבדיקה בוחנת: חדר קבוע למטפלות באמנות (2 ימי עדיפות) · חדר קבוע ל-2+ ימים למתמחים קליניים · שיבוץ בכל הימים לפסיכיאטרית ומדריך · מקסימום יום אחד ללא חדר לכולם
+              הבדיקה בוחנת: חדר קבוע למטפלות באמנות (2 ימי עדיפות) · חדר מתאים לטיפול באמנות · חדר קבוע ל-2+ ימים למתמחים קליניים · שיבוץ בכל הימים לפסיכיאטרית ומדריך · מקסימום יום אחד ללא חדר לכולם
             </div>
           </div>
         </div>

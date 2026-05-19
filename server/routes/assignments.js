@@ -531,6 +531,7 @@ router.get('/audit', requirePerm('assignments'), (req, res) => {
   const AUDIT_DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
   const toMinA = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const overlapA = (s1, e1, s2, e2) => toMinA(s1) < toMinA(e2) && toMinA(e1) > toMinA(s2);
+  const ART_THERAPY_ROOM_NUMBERS_AUDIT = [10, 11, 18, 20, 21, 22, 23, 25, 26, 27, 29];
 
   function effectiveDays(role, schedules) {
     const slots = schedules.flatMap(s => {
@@ -594,6 +595,18 @@ router.get('/audit', requirePerm('assignments'), (req, res) => {
         } else if (new Set(rooms2).size > 1) {
           userViolations.push({ type: 'no_fixed_room', message: `חדרים שונים בימי עדיפות: ${priorityDays.map(d => `${AUDIT_DAYS_HE[d]}=${roomName(roomPerDay[d])}`).join(', ')}` });
         }
+      }
+      // Check that all assigned rooms are art-therapy-suitable
+      const artTherapyRoomIdsAudit = new Set(
+        rooms.filter(r => ART_THERAPY_ROOM_NUMBERS_AUDIT.some(n => r.name === `חדר ${n}`)).map(r => r.id)
+      );
+      const nonSuitableRooms = [...new Set(userAssignments.map(a => a.room_id))]
+        .filter(rid => !artTherapyRoomIdsAudit.has(rid));
+      if (nonSuitableRooms.length > 0) {
+        userViolations.push({
+          type: 'unsuitable_room',
+          message: `שובצ/ה לחדר לא מתאים לטיפול באמנות: ${nonSuitableRooms.map(rid => roomName(rid)).join(', ')}`,
+        });
       }
     } else if (user.role === 'clinical_intern') {
       const roomCounts = {};
