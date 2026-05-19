@@ -2,13 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const EMPLOYEE_TILES = [
-  { to: '/my-schedule',      icon: '🗓',  label: 'הלוח שלי',       desc: 'לוח שיבוצים שבועי',      bg: 'bg-blue-500',    hover: 'hover:bg-blue-600',    secretaryHide: true  },
-  { to: '/absence',          icon: '⬜',  label: 'דיווח היעדרות',  desc: 'יום מלא או חלקי',        bg: 'bg-slate-500',   hover: 'hover:bg-slate-600',   secretaryHide: true  },
-  { to: '/room-query',       icon: '🔍',  label: 'שאילתת חדר',     desc: 'מי נמצא ואיפה',          bg: 'bg-emerald-500', hover: 'hover:bg-emerald-600', secretaryHide: false },
-  { to: '/one-time-request', icon: '📋',  label: 'בקשת חדר',       desc: 'חדר חד-פעמי',            bg: 'bg-indigo-500',  hover: 'hover:bg-indigo-600',  secretaryHide: true  },
-  { to: '/library',          icon: '📚',  label: 'ספרייה',          desc: 'הזמן את הספרייה',        bg: 'bg-purple-500',  hover: 'hover:bg-purple-600',  secretaryHide: false },
-  { to: '/meeting-room',     icon: '🤝',  label: 'חדר ישיבות',     desc: 'הזמן חדר ישיבות',        bg: 'bg-teal-500',    hover: 'hover:bg-teal-600',    secretaryHide: false },
-  { to: '/mamod',            icon: '🏥',  label: 'ממד',             desc: 'הזמן את הממד',           bg: 'bg-rose-500',    hover: 'hover:bg-rose-600',    secretaryHide: false },
+  { to: '/my-schedule',      icon: '🗓',  label: 'הלוח שלי',      desc: 'לוח שיבוצים שבועי', color: '#3b82f6', secretaryHide: true  },
+  { to: '/absence',          icon: '⬜',  label: 'דיווח היעדרות', desc: 'יום מלא או חלקי',   color: '#64748b', secretaryHide: true  },
+  { to: '/room-query',       icon: '🔍',  label: 'שאילתת חדר',    desc: 'מי נמצא ואיפה',     color: '#10b981', secretaryHide: false },
+  { to: '/one-time-request', icon: '📋',  label: 'בקשת חדר',      desc: 'חדר חד-פעמי',       color: '#6366f1', secretaryHide: true  },
+  { to: '/library',          icon: '📚',  label: 'ספרייה',         desc: 'הזמן את הספרייה',   color: '#a855f7', secretaryHide: false },
+  { to: '/meeting-room',     icon: '🤝',  label: 'חדר ישיבות',    desc: 'הזמן חדר ישיבות',   color: '#14b8a6', secretaryHide: false },
+  { to: '/mamod',            icon: '🏥',  label: 'ממד',            desc: 'הזמן את הממד',      color: '#f43f5e', secretaryHide: false },
 ];
 
 export default function Home() {
@@ -24,7 +24,8 @@ export default function Home() {
           <button
             key={t.to}
             onClick={() => navigate(t.to)}
-            className={`${t.bg} ${t.hover} text-white rounded-2xl p-5 flex flex-col items-center gap-2 shadow-md transition-colors active:scale-95`}
+            style={{ backgroundColor: t.color }}
+            className="text-white rounded-2xl p-5 flex flex-col items-center gap-2 shadow-md active:scale-95 active:brightness-90 hover:brightness-110 transition-all"
           >
             <span className="text-4xl">{t.icon}</span>
             <span className="font-bold text-base">{t.label}</span>

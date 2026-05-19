@@ -374,22 +374,18 @@ export default function MySchedule() {
                 {/* Absence */}
                 {absences.map(a => (
                   <div key={a.id} className="text-xs bg-gray-200 text-gray-600 rounded px-2 py-1">
-                    <div className="flex items-start justify-between gap-1">
-                      <div>
-                        <div className="font-medium">⬜ היעדרות</div>
-                        {a.start_time ? <div>{a.start_time}–{a.end_time}</div> : <div>כל היום</div>}
+                    <div className="font-medium">⬜ היעדרות</div>
+                    {a.start_time ? <div>{a.start_time}–{a.end_time}</div> : <div>כל היום</div>}
+                    {!isPast && (
+                      <div className="flex gap-1 mt-1">
+                        <button
+                          className="flex-1 flex items-center justify-center py-1.5 bg-blue-400 hover:bg-blue-600 text-white rounded text-sm"
+                          onClick={() => openAbsenceEdit(a)}>✎</button>
+                        <button
+                          className="flex-1 flex items-center justify-center py-1.5 bg-red-400 hover:bg-red-600 text-white rounded text-sm"
+                          onClick={() => cancelOneTime(a.id, `היעדרות ב-${date}`)}>✕</button>
                       </div>
-                      {!isPast && (
-                        <div className="flex gap-1 shrink-0">
-                          <button className="flex items-center justify-center w-9 h-9 bg-blue-400 hover:bg-blue-600 text-white rounded-lg text-sm leading-none"
-                            title="ערוך שעות"
-                            onClick={() => openAbsenceEdit(a)}>✎</button>
-                          <button className="flex items-center justify-center w-9 h-9 bg-red-400 hover:bg-red-600 text-white rounded-lg text-sm leading-none"
-                            title="בטל היעדרות"
-                            onClick={() => cancelOneTime(a.id, `היעדרות ב-${date}`)}>✕</button>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 ))}
 
