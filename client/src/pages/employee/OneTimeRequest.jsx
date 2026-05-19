@@ -10,7 +10,7 @@ function todayStr() {
 
 export default function OneTimeRequest() {
   const { isAdmin, user } = useAuth();
-  const [type, setType] = useState('absence');
+  const [type, setType] = useState('room_request');
   const [date, setDate] = useState(todayStr());
   const [dateTo, setDateTo] = useState('');
   const [dayOfWeek, setDayOfWeek] = useState(0);
@@ -132,7 +132,6 @@ export default function OneTimeRequest() {
               <label className="label">סוג הבקשה</label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { v: 'absence', l: 'היעדרות — לא צריך חדר' },
                   { v: 'room_request', l: 'בקשת חדר חד-פעמית' },
                   { v: 'permanent_request', l: 'בקשת שינוי קבוע (לאישור מנהל)' },
                 ].map(o => (

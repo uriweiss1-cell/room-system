@@ -381,10 +381,10 @@ export default function MySchedule() {
                       </div>
                       {!isPast && (
                         <div className="flex gap-1 shrink-0">
-                          <button className="flex items-center justify-center w-5 h-5 bg-blue-400 hover:bg-blue-600 text-white rounded text-xs leading-none"
+                          <button className="flex items-center justify-center w-9 h-9 bg-blue-400 hover:bg-blue-600 text-white rounded-lg text-sm leading-none"
                             title="ערוך שעות"
                             onClick={() => openAbsenceEdit(a)}>✎</button>
-                          <button className="flex items-center justify-center w-5 h-5 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none"
+                          <button className="flex items-center justify-center w-9 h-9 bg-red-400 hover:bg-red-600 text-white rounded-lg text-sm leading-none"
                             title="בטל היעדרות"
                             onClick={() => cancelOneTime(a.id, `היעדרות ב-${date}`)}>✕</button>
                         </div>

@@ -274,6 +274,35 @@ router.post('/', (req, res) => {
       return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
     });
 
+    // No swap rooms available — create a pending request so admin can handle it
+    if (swapAvailable.length === 0) {
+      const pending = {
+        id: nextId('one_time_requests'),
+        user_id: userId,
+        request_type: 'room_swap',
+        specific_date,
+        day_of_week: null,
+        start_time: start_time || null,
+        end_time: end_time || null,
+        status: 'pending',
+        assigned_room_id: null,
+        original_room_id: originalRoomId || null,
+        notes: notes || null,
+        admin_response: null,
+        created_at: new Date().toISOString(),
+      };
+      db.get('one_time_requests').push(pending).write();
+      const requester = db.get('users').find({ id: userId }).value();
+      sendAdminEmail('בקשת החלפת חדר — אין חדרים פנויים', [
+        ['עובד/ת', requester?.name || userId],
+        ['תאריך', specific_date],
+        ['שעות', `${start_time}–${end_time}`],
+        ['חדר נוכחי', originalRoom?.name || '—'],
+        ['הערה', notes || '—'],
+        ['סטטוס', 'ממתין לטיפול מנהל'],
+      ]);
+    }
+
     return res.json({
       availableRooms: swapAvailable,
       isSwap: true,

@@ -58,15 +58,18 @@ export default function Layout() {
   }, [perms?.requests]);
 
   const employeeLinks = isSecretary ? [
+    { to: '/',                 label: '🏠' },
     { to: '/secretary/grid',   label: '📋 גריד שבועי' },
     { to: '/room-query',       label: '🔍 שאילתת חדר' },
     { to: '/library',          label: 'ספריה' },
     { to: '/meeting-room',     label: 'חדר ישיבות' },
     { to: '/mamod',            label: 'ממד' },
   ] : [
+    { to: '/',                 label: '🏠' },
     { to: '/my-schedule',      label: 'הלוח שלי' },
+    { to: '/absence',          label: '⬜ היעדרות' },
     { to: '/room-query',       label: 'שאילתת חדר' },
-    { to: '/one-time-request', label: 'בקשת חדרים' },
+    { to: '/one-time-request', label: 'בקשת חדר' },
     { to: '/library',          label: 'ספריה' },
     { to: '/meeting-room',     label: 'חדר ישיבות' },
     { to: '/mamod',            label: 'ממד' },

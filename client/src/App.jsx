@@ -2,7 +2,9 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import Home from './pages/employee/Home';
 import MySchedule from './pages/employee/MySchedule';
+import AbsenceReport from './pages/employee/AbsenceReport';
 import RoomQuery from './pages/employee/RoomQuery';
 import OneTimeRequest from './pages/employee/OneTimeRequest';
 import Library from './pages/employee/Library';
@@ -23,8 +25,7 @@ function Guard({ perm, role, children }) {
 }
 
 function HomeRedirect() {
-  const { isSecretary } = useAuth();
-  return <Navigate to={isSecretary ? '/secretary/grid' : '/my-schedule'} replace />;
+  return <Home />;
 }
 
 // Blocks secretary from employee-only pages and redirects to her grid
@@ -44,6 +45,7 @@ export default function App() {
       <Route path="/" element={<Guard><Layout /></Guard>}>
         <Route index element={<HomeRedirect />} />
         <Route path="my-schedule"      element={<NotForSecretary><MySchedule /></NotForSecretary>} />
+        <Route path="absence"          element={<NotForSecretary><AbsenceReport /></NotForSecretary>} />
         <Route path="room-query"       element={<RoomQuery />} />
         <Route path="one-time-request" element={<NotForSecretary><OneTimeRequest /></NotForSecretary>} />
         <Route path="library"          element={<Library />} />
