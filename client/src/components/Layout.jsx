@@ -58,33 +58,35 @@ export default function Layout() {
   }, [perms?.requests]);
 
   const employeeLinks = isSecretary ? [
-    { to: '/',                 label: '🏠' },
-    { to: '/secretary/grid',   label: '📋 גריד שבועי' },
-    { to: '/room-query',       label: '🔍 שאילתת חדר' },
-    { to: '/library',          label: 'ספריה' },
-    { to: '/meeting-room',     label: 'חדר ישיבות' },
-    { to: '/mamod',            label: 'ממד' },
+    { to: '/',                 label: '🏠',            color: '#475569' },
+    { to: '/secretary/grid',   label: '📋 גריד שבועי', color: '#0369a1' },
+    { to: '/room-query',       label: '🔍 שאילתת חדר', color: '#059669' },
+    { to: '/library',          label: 'ספריה',          color: '#7c3aed' },
+    { to: '/meeting-room',     label: 'חדר ישיבות',    color: '#0f766e' },
+    { to: '/mamod',            label: 'ממד',            color: '#be185d' },
   ] : [
-    { to: '/',                 label: '🏠' },
-    { to: '/my-schedule',      label: 'הלוח שלי' },
-    { to: '/absence',          label: '⬜ היעדרות' },
-    { to: '/room-query',       label: 'שאילתת חדר' },
-    { to: '/one-time-request', label: 'בקשת חדר' },
-    { to: '/library',          label: 'ספריה' },
-    { to: '/meeting-room',     label: 'חדר ישיבות' },
-    { to: '/mamod',            label: 'ממד' },
+    { to: '/',                 label: '🏠',            color: '#475569' },
+    { to: '/my-schedule',      label: 'הלוח שלי',      color: '#2563eb' },
+    { to: '/absence',          label: '⬜ היעדרות',    color: '#64748b' },
+    { to: '/room-query',       label: 'שאילתת חדר',    color: '#059669' },
+    { to: '/one-time-request', label: 'בקשת חדר',      color: '#4f46e5' },
+    { to: '/library',          label: 'ספריה',          color: '#7c3aed' },
+    { to: '/meeting-room',     label: 'חדר ישיבות',    color: '#0f766e' },
+    { to: '/mamod',            label: 'ממד',            color: '#be185d' },
   ];
   const adminLinks = [
-    perms?.users       && { to: '/admin/users',       label: 'עובדים' },
-    perms?.rooms       && { to: '/admin/rooms',       label: 'חדרים' },
-    perms?.assignments && { to: '/admin/assignments', label: 'שיבוץ' },
-    perms?.requests    && { to: '/admin/requests',    label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
+    perms?.users       && { to: '/admin/users',       label: 'עובדים',  color: '#b45309' },
+    perms?.rooms       && { to: '/admin/rooms',       label: 'חדרים',   color: '#b45309' },
+    perms?.assignments && { to: '/admin/assignments', label: 'שיבוץ',   color: '#b45309' },
+    perms?.requests    && { to: '/admin/requests',    color: '#b45309',  label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
   ].filter(Boolean);
 
-  const linkClass = ({ isActive }) =>
-    `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-      isActive ? 'bg-white text-blue-700' : 'text-white hover:bg-blue-600'
-    }`;
+  const linkStyle = (color, isActive) => ({
+    backgroundColor: isActive ? '#ffffff22' : color,
+    outline: isActive ? '2px solid white' : 'none',
+    outlineOffset: '1px',
+  });
+  const linkClass = 'px-3 py-1.5 rounded-lg text-sm font-medium text-white whitespace-nowrap transition-opacity hover:opacity-90';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -93,11 +95,23 @@ export default function Layout() {
           <div className="flex items-center gap-2 justify-between">
             <div className="flex items-center gap-1 overflow-x-auto pb-0.5 flex-wrap">
               <span className="text-white font-bold text-sm ml-2 hidden sm:block">🏠 שיבוץ חדרים</span>
-              {employeeLinks.map(l => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
+              {employeeLinks.map(l => (
+                <NavLink key={l.to} to={l.to} end={l.to === '/'}
+                  className={linkClass}
+                  style={({ isActive }) => linkStyle(l.color, isActive)}>
+                  {l.label}
+                </NavLink>
+              ))}
               {isAdmin && (
                 <>
                   <span className="text-blue-300 mx-1 hidden sm:block">|</span>
-                  {adminLinks.map(l => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
+                  {adminLinks.map(l => (
+                    <NavLink key={l.to} to={l.to}
+                      className={linkClass}
+                      style={({ isActive }) => linkStyle(l.color, isActive)}>
+                      {l.label}
+                    </NavLink>
+                  ))}
                 </>
               )}
             </div>
