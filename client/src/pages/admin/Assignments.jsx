@@ -945,6 +945,47 @@ export default function AdminAssignments({ readOnly = false }) {
             {!isPanelVisible('roleConstraint', genResult.roleConstraintConflicts?.length) && (genResult.roleConstraintConflicts?.length || 0) > 0 && (
               <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('roleConstraint')}>↩ הצג אי-עמידה בדרישת חדר קבוע ({genResult.roleConstraintConflicts.length})</button>
             )}
+
+            {isPanelVisible('artTherapistRooms', genResult.artTherapistRoomWarnings?.length) && (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-amber-700">🎨 מטפלות באמנות שלא שובצו בחדר מתאים ({genResult.artTherapistRoomWarnings.length})</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('artTherapistRooms', genResult.artTherapistRoomWarnings.length)}>×</button>
+                </div>
+                {genResult.artTherapistRoomWarnings.map((w, i) => {
+                  const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+                  return (
+                    <div key={i} className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{w.userName}</span>
+                        <span className="text-amber-800 text-xs">שובץ ל-<strong>{w.assignedRoomName}</strong> (חדר לא מתאים לטיפול באמנות)</span>
+                        <button
+                          className="mr-auto text-xs text-gray-400 hover:text-gray-600 border border-gray-300 rounded px-2 py-0.5 bg-white"
+                          onClick={() => setGenResult(prev => {
+                            const updated = { ...prev, artTherapistRoomWarnings: (prev.artTherapistRoomWarnings || []).filter((_, j) => j !== i) };
+                            localStorage.setItem('lastGenResult', JSON.stringify(updated));
+                            return updated;
+                          })}>✓ טופל</button>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        ימים: {w.slots.map(s => `${DAYS_HE[s.day_of_week]} ${s.start_time}–${s.end_time}`).join(', ')}
+                      </div>
+                      {w.artTherapyRoomsAvailable?.length > 0 && (
+                        <div className="text-xs bg-green-50 border border-green-200 rounded px-3 py-1.5">
+                          <span className="font-medium text-green-800">חדרים מתאימים לטיפול באמנות: </span>
+                          {w.artTherapyRoomsAvailable.map(r => r.name).join(', ')}
+                          <span className="text-green-700 mr-1"> — ניתן לשבץ ידנית</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!isPanelVisible('artTherapistRooms', genResult.artTherapistRoomWarnings?.length) && (genResult.artTherapistRoomWarnings?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('artTherapistRooms')}>↩ הצג מטפלות באמנות בחדר לא מתאים ({genResult.artTherapistRoomWarnings.length})</button>
+            )}
+
             {isPanelVisible('assignmentTrace', genResult.assignmentTrace?.filter(t => t.wanted && t.result !== 'got_wanted').length) && (
               <div className="mt-4">
                 <div className="flex items-center gap-2 mb-2">

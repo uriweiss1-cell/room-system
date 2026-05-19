@@ -861,6 +861,13 @@ function generateAssignments() {
   const roleConstraintConflicts = []; // when fixed-room rule can't be satisfied per role
   const lowPriorityExtraSlots = [];   // art_therapist day 3+ slots, deferred to after main loop
   const assignmentTrace = [];
+  const artTherapistRoomWarnings = []; // art_therapist assigned to non-suitable room
+
+  // Art-therapy-suitable rooms (prefer these for art_therapist role)
+  const ART_THERAPY_ROOM_NUMBERS = [10, 11, 18, 20, 21, 22, 23, 25, 26, 27, 29];
+  const artTherapyRoomIds = new Set(
+    rooms.filter(r => ART_THERAPY_ROOM_NUMBERS.some(n => r.name === `חדר ${n}`)).map(r => r.id)
+  );
 
   const reserve = (roomId, day, start, end, userId, role, userName) => {
     grid[roomId].push({ day, start, end, userId, role, userName });
@@ -925,7 +932,13 @@ function generateAssignments() {
         // 1. Try preferred room for ALL slots
         if (pr && slotsToAssign.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time)))
           chosenRoom = pr;
-        // 2. Try any room for ALL slots
+        // 2a. (art_therapist) Try art-therapy-suitable rooms before any room
+        if (!chosenRoom && user.role === 'art_therapist') {
+          for (const room of regularRooms.filter(r => artTherapyRoomIds.has(r.id))) {
+            if (slotsToAssign.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
+          }
+        }
+        // 2b. Try any room for ALL slots
         if (!chosenRoom) {
           for (const room of regularRooms) {
             if (slotsToAssign.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
@@ -935,6 +948,15 @@ function generateAssignments() {
         if (chosenRoom) {
           // Perfect: same room for all required days
           slotsToAssign.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
+          // Warn if art_therapist was assigned a non-suitable room
+          if (user.role === 'art_therapist' && !artTherapyRoomIds.has(chosenRoom.id)) {
+            artTherapistRoomWarnings.push({
+              userId: user.id, userName: user.name,
+              assignedRoomId: chosenRoom.id, assignedRoomName: chosenRoom.name,
+              slots: slotsToAssign.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+              artTherapyRoomsAvailable: regularRooms.filter(r => artTherapyRoomIds.has(r.id)).map(r => ({ id: r.id, name: r.name })),
+            });
+          }
 
         } else if (user.role === 'clinical_intern') {
           // Fallback: find best room for at least 2 unique days (guaranteed fixed),
@@ -972,12 +994,22 @@ function generateAssignments() {
         } else {
           // art_therapist: no single fixed room available for priority days → alert admin
           roleConstraintConflicts.push(buildRoleConstraintConflict(user, slotsToAssign, 'fixed_room_required', null));
-          // Best-effort fallback: per-slot
+          // Best-effort fallback: per-slot (prefer art-therapy rooms)
           for (const s of slotsToAssign) {
-            const slotRoom = (pr && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
-              ? pr : regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
-            if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-            else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
+            let slotRoom = (pr && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time)) ? pr : null;
+            if (!slotRoom) slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+            if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+            if (slotRoom) {
+              reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+              if (!artTherapyRoomIds.has(slotRoom.id)) {
+                artTherapistRoomWarnings.push({
+                  userId: user.id, userName: user.name,
+                  assignedRoomId: slotRoom.id, assignedRoomName: slotRoom.name,
+                  slots: [{ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time }],
+                  artTherapyRoomsAvailable: regularRooms.filter(r => artTherapyRoomIds.has(r.id)).map(r => ({ id: r.id, name: r.name })),
+                });
+              }
+            } else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
           }
         }
 
@@ -1123,8 +1155,21 @@ function generateAssignments() {
         // For new days (no existing assignment on this day): fall back to any free room
         // For hour extensions (user already has a room on this day): don't move to a different room —
         // show a conflict instead so the admin is aware and can decide.
-        if (!slotRoom && !hasExistingOnDay)
-          slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+        if (!slotRoom && !hasExistingOnDay) {
+          // art_therapist: prefer art-therapy-suitable rooms
+          if (user.role === 'art_therapist') {
+            slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+          }
+          if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+          if (slotRoom && user.role === 'art_therapist' && !artTherapyRoomIds.has(slotRoom.id)) {
+            artTherapistRoomWarnings.push({
+              userId: user.id, userName: user.name,
+              assignedRoomId: slotRoom.id, assignedRoomName: slotRoom.name,
+              slots: [{ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time }],
+              artTherapyRoomsAvailable: regularRooms.filter(r => artTherapyRoomIds.has(r.id)).map(r => ({ id: r.id, name: r.name })),
+            });
+          }
+        }
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
         else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
       }
@@ -1150,10 +1195,22 @@ function generateAssignments() {
       let slotRoom = null;
       if (preferredIdExtra && isAvail(preferredIdExtra, s.day_of_week, s.start_time, s.end_time))
         slotRoom = regularRooms.find(r => r.id === preferredIdExtra) || null;
+      // Prefer art-therapy-suitable rooms for art_therapist extra days
+      if (!slotRoom)
+        slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
       if (!slotRoom)
         slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
-      if (slotRoom)
+      if (slotRoom) {
         reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+        if (!artTherapyRoomIds.has(slotRoom.id)) {
+          artTherapistRoomWarnings.push({
+            userId: user.id, userName: user.name,
+            assignedRoomId: slotRoom.id, assignedRoomName: slotRoom.name,
+            slots: [{ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time }],
+            artTherapyRoomsAvailable: regularRooms.filter(r => artTherapyRoomIds.has(r.id)).map(r => ({ id: r.id, name: r.name })),
+          });
+        }
+      }
       // No conflict for extra days — algorithm does not guarantee priority here
     }
   }
@@ -1377,11 +1434,26 @@ function generateAssignments() {
     }
   }
 
+  // Merge artTherapistRoomWarnings by user (consolidate slots for same userId+room)
+  const artTherapistRoomWarningsMerged = [];
+  const atWarningMap = new Map(); // key: userId-roomId
+  for (const w of artTherapistRoomWarnings) {
+    const key = `${w.userId}-${w.assignedRoomId}`;
+    if (atWarningMap.has(key)) {
+      atWarningMap.get(key).slots.push(...w.slots);
+    } else {
+      const entry = { ...w, slots: [...w.slots] };
+      atWarningMap.set(key, entry);
+      artTherapistRoomWarningsMerged.push(entry);
+    }
+  }
+
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
     preferenceConflicts,
     roleConstraintConflicts,
+    artTherapistRoomWarnings: artTherapistRoomWarningsMerged,
     assignmentTrace,
     suggestions,
     userStats,
