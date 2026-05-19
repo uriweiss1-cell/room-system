@@ -29,6 +29,7 @@ room-system/
     routes/
       import.js        One-time data import from hardcoded תשנ"ו schedule
       assignments.js   Room assignment algorithm + CRUD + guest assignments + where-is query
+                       Also includes GET /assignments/audit — compliance check route
       schedules.js     Employee regular_schedules (work days/hours/preferred room)
       requests.js      One-time and permanent special-room requests (absence, room_request,
                        room_swap, library_request, meeting_request, mamod_request,
@@ -39,7 +40,8 @@ room-system/
       auth.js
   client/src/      React + Vite + Tailwind
     pages/admin/   Assignments.jsx, Users.jsx, Rooms.jsx, Requests.jsx
-    pages/employee/ MySchedule.jsx, OneTimeRequest.jsx, Library.jsx, MeetingRoom.jsx,
+    pages/employee/ Home.jsx (tile dashboard), MySchedule.jsx, AbsenceReport.jsx,
+                    OneTimeRequest.jsx, Library.jsx, MeetingRoom.jsx,
                     Mamod.jsx, RoomQuery.jsx
     api.js         Axios instance (baseURL: '/api', auto-attaches JWT from localStorage)
     constants.js   DAYS, DAY_NUMS, ROLES, ROLE_COLORS, STATUS_LABELS, STATUS_COLORS,
@@ -48,10 +50,13 @@ room-system/
 
 ## Database (lowdb v1.0.0)
 
-Collections: `users`, `rooms`, `room_assignments`, `regular_schedules`, `one_time_requests`, `notifications`, `_ids`
+Collections: `users`, `rooms`, `room_assignments`, `regular_schedules`, `one_time_requests`, `notifications`, `_ids`, `dismissed_conflicts`
+
+`dismissed_conflicts` — created on first use (not seeded). Stores admin-dismissed conflict slots so the algorithm doesn't re-surface them on the next run. Schema: `{ user_id, day_of_week, start_time, end_time }`.
 
 ### Key quirks
 - `preferred_room_id` is stored as a **string** when coming from HTML `<select>` (e.g. `"4"` not `4`). Always coerce with `+` before numeric comparison: `db.get('rooms').find({ id: +s.preferred_room_id })`
+- `day_of_week` can also arrive as a string from client inputs. Always coerce with `+` before numeric comparison: `+a.day_of_week === dayOfWeek`. lodash `.filter({ day_of_week: 1 })` will silently miss string `"1"` — use explicit `.filter(a => +a.day_of_week === N)` instead.
 - `_ids` collection stores auto-increment counters. Use `nextId('collection_name')` helper from database.js
 - Room IDs ≠ room numbers. After import, "חדר 6" has database `id: 4` (rooms were renamed/reordered). Never assume room number = room ID.
 - 24 rooms total, numbered: 3,4,5,6,7,8,9,10,11,13,14,17,18,19,20,21,22,23,24,25,26,27,28,29
@@ -67,6 +72,8 @@ Collections: `users`, `rooms`, `room_assignments`, `regular_schedules`, `one_tim
 - `assigned_start_time` / `assigned_end_time` — the **actual assigned** slot (used for partial/split assignments where the assigned window differs from the requested window). Always prefer these over `start_time`/`end_time` when computing occupancy.
 - `parent_request_id` — sibling records created via "add-partial" link back to the original request via this field.
 - `status` values: `'pending'`, `'assigned'`, `'approved'`, `'rejected'`
+- `room_swap` specific fields: `original_room_id` (the room the user is swapping from), `swap_reason` (user-provided text)
+- `permanent_request` specific field: `target_room_type` — the room type the user is requesting (e.g. `'regular'`)
 
 ## Permissions System
 
@@ -83,10 +90,18 @@ Three tiers of access:
 **Middleware**:
 - `requireAdmin` — full admin or legacy can_admin only (destructive/system operations)
 - `requirePerm('assignments')` — granular check; also passes for full admin and legacy can_admin
+- `requirePermOrRole('assignments', 'secretary')` — passes if the user has the perm flag OR has the specified role. Used for read-only access routes (e.g. the secretary grid).
 
-**Frontend**: `useAuth()` returns `{ isAdmin, perms }` where `perms` is an object with the 5 boolean flags. Use `perms.algorithm` etc. to gate UI elements, not just `isAdmin`.
+**Frontend**: `useAuth()` returns `{ isAdmin, isSecretary, perms }` where `perms` is an object with the 5 boolean flags. Use `perms.algorithm` etc. to gate UI elements, not just `isAdmin`.
 
 **Always use `requirePerm(...)` for new routes** (not `requireAdmin`) unless the operation truly requires full system admin (e.g. user role changes).
+
+### Secretary role
+`role === 'secretary'` is a special non-admin role with read-only access to the weekly grid. Secretaries:
+- See a limited nav (grid, room-query, library, meeting-room, mamod — no personal schedule/absence)
+- Access the grid via `/secretary/grid` which renders Assignments.jsx in `readOnly` mode
+- Are granted access to read-only assignment routes via `requirePermOrRole('assignments', 'secretary')`
+- `isSecretary` is exported from `useAuth()` and used to filter nav links and Home.jsx tiles
 
 ## Assignment Algorithm (assignments.js → generateAssignments)
 
@@ -109,11 +124,22 @@ Three tiers of access:
 2. **stay/extend**: keep existing assignments; fill only uncovered sub-slots using `targetRoomId = preferredId || currentRoomId`.
 3. **lowPriorityExtraSlots**: art_therapist day 3+ slots, processed after the main loop with no priority guarantee.
 
+**Art-therapy preferred rooms**: `ART_THERAPY_ROOM_NUMBERS = [10, 11, 18, 20, 21, 22, 23, 25, 26, 27, 29]`. The algorithm tries these rooms first for any `art_therapist` user, in all three processing paths. If no suitable room is available and the user is assigned elsewhere, a warning is generated.
+
 **Algorithm output** includes:
+- `assigned` — count of new assignments written.
 - `conflicts[]` — slots with no available room.
 - `preferenceConflicts[]` — user wants room X but it's blocked by someone else.
 - `roleConstraintConflicts[]` — fixed-room rule can't be met (art_therapist or clinical_intern). Each entry includes `availablePerDay` and `candidateRooms` (rooms free across all required days) so the admin can manually resolve.
+- `artTherapistRoomWarnings[]` — art_therapist assigned to a room outside `ART_THERAPY_ROOM_NUMBERS`. Each entry includes `userName`, `assignedRoomName`, `slots`, and `artTherapyRoomsAvailable` (suitable rooms that were full at the time). Displayed as a separate dismissible panel in Assignments.jsx.
 - `roomWishMismatches[]` — users whose current room ≠ preferred room, each with `canMove` and `assignmentId` for the actionable "move" button.
+- `suggestions[]` — auto-generated resolution options for conflicts.
+- `userStats` — per-user summary of assigned slots and rooms.
+- `guestConflicts[]` — permanent assignments that clash with approved one-time/guest bookings on specific dates.
+- `assignmentTrace[]` — debug log of what each user was assigned and whether they got their preferred room.
+- `message` — Hebrew summary string shown to admin after algorithm run.
+
+**Compliance audit** (`GET /assignments/audit`): a separate read-only endpoint that checks all current permanent assignments against role rules — fixed room for art_therapist priority days, art_therapist in suitable rooms, fixed room for clinical_intern, all days covered for psychiatrist/supervisor. Returns `{ violations[], okCount, totalChecked }`.
 
 **Import behavior** (`import.js`):
 - Renames 24 rooms to match תשנ"ו document numbers
@@ -135,9 +161,11 @@ Three tiers of access:
 
 ## Roles
 
-Hebrew names in UI (from constants.js): `admin=מנהל מערכת`, `psychiatrist=פסיכיאטר/ית`, `supervisor=מדריך / מנהל`, `art_therapist=מטפל/ת באמנות`, `clinical_intern=מתמחה קליני`, `educational_intern=מתמחה חינוכי`
+Hebrew names in UI (from constants.js): `admin=מנהל מערכת`, `psychiatrist=פסיכיאטר/ית`, `supervisor=מדריך / מנהל`, `art_therapist=מטפל/ת באמנות`, `clinical_intern=מתמחה קליני`, `educational_intern=מתמחה חינוכי`, `secretary=מזכיר/ה`
 
 Admin users log in with email+password (JWT). Non-admin users log in with name+PIN (or name+password).
+
+`secretary` does not appear in the assignment algorithm priority order — secretaries have no room assignments and no `regular_schedules`.
 
 ## Environment Variables (Render)
 
