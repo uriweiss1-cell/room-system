@@ -275,38 +275,10 @@ router.post('/', (req, res) => {
       return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
     });
 
-    // No swap rooms available — create a pending request so admin can handle it
-    if (swapAvailable.length === 0) {
-      const pending = {
-        id: nextId('one_time_requests'),
-        user_id: userId,
-        request_type: 'room_swap',
-        specific_date,
-        day_of_week: null,
-        start_time: start_time || null,
-        end_time: end_time || null,
-        status: 'pending',
-        assigned_room_id: null,
-        original_room_id: originalRoomId || null,
-        notes: notes || null,
-        admin_response: null,
-        created_at: new Date().toISOString(),
-      };
-      db.get('one_time_requests').push(pending).write();
-      const requester = db.get('users').find({ id: userId }).value();
-      sendAdminEmail('בקשת החלפת חדר — אין חדרים פנויים', [
-        ['עובד/ת', requester?.name || userId],
-        ['תאריך', specific_date],
-        ['שעות', `${start_time}–${end_time}`],
-        ['חדר נוכחי', originalRoom?.name || '—'],
-        ['הערה', notes || '—'],
-        ['סטטוס', 'ממתין לטיפול מנהל'],
-      ]);
-    }
-
     return res.json({
       availableRooms: swapAvailable,
       isSwap: true,
+      noRoomsAvailable: swapAvailable.length === 0,
       originalRoom: {
         room_id: originalRoomId,
         room_name: originalRoom?.name,
@@ -325,8 +297,47 @@ router.post('/', (req, res) => {
     return !busy.some(b => overlap(start_time, end_time, b.start_time, b.end_time));
   });
 
-  if (available.length === 0) {
-    // No rooms available — create a pending record so the admin can see and handle it
+  res.json({ availableRooms: available, noRoomsAvailable: available.length === 0 });
+});
+
+// Called when the user picks a room from the available-rooms list.
+// Creates the record AND assigns the room in one atomic step.
+// Employee explicitly requests admin help when no rooms are available.
+// Only called on deliberate user action — never auto-triggered.
+router.post('/request-no-room', (req, res) => {
+  const { specific_date, start_time, end_time, notes, is_swap, original_room_id, swap_reason, impersonate_user_id } = req.body;
+  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const requester = db.get('users').find({ id: userId }).value();
+
+  if (is_swap) {
+    const originalRoom = original_room_id ? db.get('rooms').find({ id: +original_room_id }).value() : null;
+    const pending = {
+      id: nextId('one_time_requests'),
+      user_id: userId,
+      request_type: 'room_swap',
+      specific_date,
+      day_of_week: null,
+      start_time: start_time || null,
+      end_time: end_time || null,
+      status: 'pending',
+      assigned_room_id: null,
+      original_room_id: original_room_id ? +original_room_id : null,
+      swap_reason: swap_reason?.trim() || null,
+      notes: notes || null,
+      admin_response: null,
+      created_at: new Date().toISOString(),
+    };
+    db.get('one_time_requests').push(pending).write();
+    sendAdminEmail('בקשת החלפת חדר — אין חדרים פנויים', [
+      ['עובד/ת', requester?.name || userId],
+      ['תאריך', specific_date],
+      ['שעות', `${start_time}–${end_time}`],
+      ['חדר נוכחי', originalRoom?.name || '—'],
+      ['סיבה', swap_reason || '—'],
+      ['הערה', notes || '—'],
+    ]);
+    return res.json({ requestId: pending.id, message: 'הבקשה הועברה למנהל לטיפול' });
+  } else {
     const pending = {
       id: nextId('one_time_requests'),
       user_id: userId,
@@ -344,21 +355,16 @@ router.post('/', (req, res) => {
       created_at: new Date().toISOString(),
     };
     db.get('one_time_requests').push(pending).write();
-    const requester = db.get('users').find({ id: userId }).value();
     sendAdminEmail('בקשת חדר ממתינה — אין חדרים פנויים', [
       ['עובד/ת', requester?.name || userId],
       ['תאריך', specific_date],
       ['שעות', `${start_time}–${end_time}`],
       ['הערה', notes || '—'],
-      ['סטטוס', 'ממתין לטיפול מנהל'],
     ]);
+    return res.json({ requestId: pending.id, message: 'הבקשה הועברה למנהל לטיפול' });
   }
-
-  res.json({ availableRooms: available });
 });
 
-// Called when the user picks a room from the available-rooms list.
-// Creates the record AND assigns the room in one atomic step.
 router.post('/book-room', (req, res) => {
   const { specific_date, start_time, end_time, notes, room_id, impersonate_user_id,
           is_swap, swap_reason, original_room_id } = req.body;

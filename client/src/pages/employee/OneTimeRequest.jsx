@@ -97,6 +97,30 @@ export default function OneTimeRequest() {
     finally { setLoading(false); }
   };
 
+  const sendRequestToAdmin = async () => {
+    if (isSwap && !swapReason.trim()) {
+      setMsg('יש להזין סיבה לבקשת החדר החלופי');
+      return;
+    }
+    setLoading(true); setMsg('');
+    try {
+      const r = await api.post('/requests/request-no-room', {
+        specific_date: date,
+        start_time: startTime,
+        end_time: endTime,
+        notes,
+        is_swap: isSwap,
+        original_room_id: isSwap ? swapOriginalRoom?.room_id : null,
+        swap_reason: isSwap ? swapReason.trim() : null,
+        ...(isAdmin && impersonateId ? { impersonate_user_id: impersonateId } : {}),
+      });
+      setMsg(r.data.message);
+      setStep('done');
+      loadRequests();
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+    finally { setLoading(false); }
+  };
+
   const reset = () => { setStep('form'); setMsg(''); setNotes(''); setDate(todayStr()); setDateTo(''); setDayOfWeek(0); setReduceAssignmentId(''); setIsSwap(false); setSwapOriginalRoom(null); setSwapReason(''); setPartialAbsence(false); };
 
   return (
@@ -233,7 +257,15 @@ export default function OneTimeRequest() {
             <h3 className="font-semibold mb-3">בחר חדר {isSwap ? 'חלופי' : 'זמין'} ל-{date} בין {startTime}–{endTime}</h3>
             {msg && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm mb-3">{msg}</div>}
             {availableRooms.length === 0 ? (
-              <div className="text-red-600 text-sm">אין חדרים פנויים בשעות הללו. הבקשה הועברה למנהל.</div>
+              <div className="space-y-3">
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm">
+                  אין חדרים פנויים בשעות הללו.
+                </div>
+                {msg && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{msg}</div>}
+                <button className="btn btn-primary" onClick={sendRequestToAdmin} disabled={loading}>
+                  {loading ? 'שולח...' : '📨 שלח בקשה למנהל'}
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {availableRooms.map(r => (
