@@ -554,6 +554,26 @@ export default function AdminRequests() {
                   </div>
                 )}
 
+                {/* Room swap (pending, no room assigned yet) — show room picker so admin can assign */}
+                {expandedId === req.id && req.request_type === 'room_swap' && !req.assigned_room_id && (
+                  <div>
+                    <div className="mt-3 mb-2 text-sm bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                      🔄 <span className="font-medium">החלפת חדר:</span> לעובד/ת יש חדר קבוע באותה שעה ואין חדר חלופי פנוי — יש לשבץ ידנית.
+                      {req.original_room_id && <span className="text-orange-700 mr-1"> החדר הנוכחי המשוחרר: {req.original_room_name || `#${req.original_room_id}`}</span>}
+                    </div>
+                    <RoomPicker req={req} onAssigned={() => { setExpandedId(null); load(); }}
+                      onAdminMsgChange={setRoomPickerMsg}
+                      alreadyAssigned={[]} />
+                    <div className="flex gap-2 mt-3 border-t pt-3 flex-wrap">
+                      <button className="btn btn-danger" onClick={async () => {
+                        await api.put(`/requests/${req.id}`, { status: 'rejected', admin_response: roomPickerMsg || null });
+                        setExpandedId(null); load();
+                      }}>דחה בקשה</button>
+                      <button className="btn btn-ghost" onClick={() => setExpandedId(null)}>ביטול</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Permanent request — multi-slot room picker + approval */}
                 {expandedId === req.id && req.request_type === 'permanent_request' && (
                   <div className="mt-3 border-t pt-3 space-y-3">
@@ -608,7 +628,9 @@ export default function AdminRequests() {
                 )}
 
                 {/* Other requests (absence etc) — standard form */}
-                {expandedId === req.id && req.request_type !== 'room_request' && req.request_type !== 'permanent_request' && (
+                {/* Exclude room_swap with no assigned room — those get the RoomPicker above */}
+                {expandedId === req.id && req.request_type !== 'room_request' && req.request_type !== 'permanent_request'
+                  && !(req.request_type === 'room_swap' && !req.assigned_room_id) && (
                   <div className="mt-3 border-t pt-3 flex flex-wrap gap-3 items-end">
                     <div>
                       <label className="label">החלטה</label>

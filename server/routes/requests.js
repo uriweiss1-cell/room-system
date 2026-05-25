@@ -49,7 +49,8 @@ function enrich(r) {
       });
   }
 
-  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, existing_assignments, partial_siblings };
+  const originalRoom = r.original_room_id ? db.get('rooms').find({ id: +r.original_room_id }).value() : null;
+  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, original_room_name: originalRoom?.name || null, existing_assignments, partial_siblings };
 }
 
 router.get('/my', (req, res) => {
