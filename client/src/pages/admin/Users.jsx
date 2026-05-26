@@ -140,7 +140,7 @@ export default function AdminUsers() {
   const removeSlot = i => setScheduleSlots(p => p.filter((_, j) => j !== i));
   const updateSlot = (i, k, v) => setScheduleSlots(p => p.map((s, j) => j === i ? { ...s, [k]: v } : s));
 
-  const ROLE_GROUP_ORDER = ['supervisor', 'clinical_intern', 'educational_intern', 'art_therapist', 'psychiatrist', 'secretary'];
+  const ROLE_GROUP_ORDER = ['supervisor', 'clinical_intern', 'educational_intern', 'art_therapist', 'psychiatrist', 'secretary', 'other'];
 
   const permLabel = u => {
     const hasNewPerms = ['perm_assignments','perm_algorithm','perm_requests','perm_users','perm_rooms'].some(k => u[k]);

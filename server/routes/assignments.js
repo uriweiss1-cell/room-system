@@ -791,7 +791,7 @@ function generateAssignments() {
   const usersWithSchedules = new Set(schedules.map(s => s.user_id));
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
-  const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4 };
+  const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
   const sorted = [...users].sort((a, b) => (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9));
 
   const getPreferredId = rawSlots => {
@@ -907,7 +907,8 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allEffSlots = effectiveSlots(user.role, rawSlots);
-    const preferredId = getPreferredId(rawSlots);
+    // 'other' role: no preferred room — assign any available room at lowest priority
+    const preferredId = user.role === 'other' ? null : getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
     const isMoving = wantToMoveIds.has(user.id);
 
@@ -1580,7 +1581,7 @@ function suggestResolutions(conflicts, grid, regularRooms) {
       // (alt_day suggestions removed — changing schedule days is not relevant here)
 
       // 4. Displacement — move a lower-priority user to free up space
-      const PRIORITY = { psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4 };
+      const PRIORITY = { psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
       const conflictPriority = PRIORITY[conflict.role] ?? 9;
 
       for (const room of regularRooms) {
