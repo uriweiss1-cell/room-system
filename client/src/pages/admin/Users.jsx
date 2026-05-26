@@ -71,10 +71,10 @@ export default function AdminUsers() {
     api.get('/rooms').then(r => setRooms(r.data)).catch(() => {}),
   ]);
 
-  const openAdd = () => { setForm(emptyUser); setEditing(null); setShowForm(true); setMsg(''); setSchedulePanel(null); };
+  const openAdd = () => { setForm(emptyUser); setEditing(null); setShowForm(true); setMsg(''); setSchedulePanel(null); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const openEdit = u => {
     setForm({ ...emptyPerms, ...u, password: '' });
-    setEditing(u.id); setShowForm(true); setMsg(''); setSchedulePanel(null);
+    setEditing(u.id); setShowForm(true); setMsg(''); setSchedulePanel(null); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const cancel = () => { setShowForm(false); setMsg(''); };
 
