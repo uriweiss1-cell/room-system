@@ -140,7 +140,7 @@ export default function AdminUsers() {
   const removeSlot = i => setScheduleSlots(p => p.filter((_, j) => j !== i));
   const updateSlot = (i, k, v) => setScheduleSlots(p => p.map((s, j) => j === i ? { ...s, [k]: v } : s));
 
-  const ROLE_GROUP_ORDER = ['psychiatrist', 'supervisor', 'art_therapist', 'clinical_intern', 'educational_intern', 'secretary'];
+  const ROLE_GROUP_ORDER = ['supervisor', 'clinical_intern', 'educational_intern', 'art_therapist', 'psychiatrist', 'secretary'];
 
   const permLabel = u => {
     const hasNewPerms = ['perm_assignments','perm_algorithm','perm_requests','perm_users','perm_rooms'].some(k => u[k]);
@@ -152,7 +152,7 @@ export default function AdminUsers() {
   };
 
   const activeFiltered = users
-    .filter(u => u.is_active && u.role !== 'admin')
+    .filter(u => u.is_active)
     .filter(u => !search || u.name.includes(search) || ROLES[u.role]?.includes(search));
 
   return (
@@ -270,6 +270,45 @@ export default function AdminUsers() {
               </div>
             );
           })}
+          {/* Catch-all: users whose role isn't in ROLE_GROUP_ORDER (e.g. admin) */}
+          {(() => {
+            const extra = activeFiltered
+              .filter(u => !ROLE_GROUP_ORDER.includes(u.role))
+              .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+            if (extra.length === 0) return null;
+            return (
+              <div>
+                <div className="flex items-center gap-2 mb-2 pb-1 border-b border-gray-200">
+                  <span className="badge badge-gray">אחר</span>
+                  <span className="text-sm text-gray-400">{extra.length}</span>
+                </div>
+                <table className="tbl">
+                  <thead><tr><th>שם</th><th>תפקיד</th><th>טלפון</th><th>הרשאות</th><th>פעולות</th></tr></thead>
+                  <tbody>
+                    {extra.map(u => (
+                      <tr key={u.id} className={schedulePanel?.userId === u.id ? 'bg-blue-50' : ''}>
+                        <td className="font-medium">{u.name}</td>
+                        <td><span className={`badge ${ROLE_COLORS[u.role] || 'badge-gray'}`}>{ROLES[u.role] || u.role}</span></td>
+                        <td dir="ltr">{u.phone || '—'}</td>
+                        <td>{permLabel(u)}</td>
+                        <td>
+                          <div className="flex gap-1 flex-wrap">
+                            <button className="btn btn-ghost px-2 py-1 text-xs" onClick={() => openEdit(u)}>עריכה</button>
+                            <button
+                              className={`btn px-2 py-1 text-xs ${schedulePanel?.userId === u.id ? 'btn-primary' : 'btn-ghost'}`}
+                              onClick={() => openSchedule(u)}
+                            >לוח זמנים</button>
+                            <button className="btn btn-ghost px-2 py-1 text-xs" onClick={() => resetPin(u)}>PIN</button>
+                            <button className="btn btn-danger px-2 py-1 text-xs" onClick={() => deactivate(u.id)}>השבת</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
           {activeFiltered.length === 0 && (
             <p className="text-gray-400 text-sm text-center py-4">לא נמצאו עובדים</p>
           )}
