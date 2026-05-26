@@ -27,6 +27,17 @@ async function main() {
   });
   if (migrated > 0) console.log(`[migration] converted ${migrated} day_of_week string→number`);
 
+  // One-time migration: change admin user (uriweiss1@gmail.com) role to supervisor + can_admin
+  const adminUser = db.get('users').find({ email: 'uriweiss1@gmail.com', role: 'admin' }).value();
+  if (adminUser) {
+    db.get('users').find({ id: adminUser.id }).assign({
+      role: 'supervisor',
+      can_admin: true,
+      perm_assignments: false, perm_algorithm: false, perm_requests: false, perm_users: false, perm_rooms: false,
+    }).write();
+    console.log(`[migration] ${adminUser.name}: role admin→supervisor, can_admin=true`);
+  }
+
   // One-time migration: change חדר 6 from room_type 'committee' to 'regular'
   const room6 = db.get('rooms').find({ name: 'חדר 6', room_type: 'committee' }).value();
   if (room6) {

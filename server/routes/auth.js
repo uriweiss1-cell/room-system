@@ -57,7 +57,7 @@ router.post('/set-pin-first', (req, res) => {
 // Public list of employees for login page
 router.get('/users-list', (req, res) => {
   const users = db.get('users')
-    .filter(u => u.is_active && u.role !== 'admin')
+    .filter(u => u.is_active && u.role !== 'admin' && !u.can_admin)
     .map(u => ({ id: u.id, name: u.name, has_pin: !!u.pin_hash }))
     .sortBy('name')
     .value();
