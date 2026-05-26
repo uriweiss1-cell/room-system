@@ -370,7 +370,7 @@ router.delete('/dismiss-slot', requirePerm('algorithm'), (req, res) => {
   const already = db.get('dismissed_conflicts').find({ user_id: +user_id, day_of_week: +day_of_week, start_time, end_time }).value();
   if (!already) {
     db.get('dismissed_conflicts').push({
-      id: (db.get('dismissed_conflicts').value().length + 1),
+      id: nextId('dismissed_conflicts'),
       user_id: +user_id, day_of_week: +day_of_week, start_time, end_time,
       created_at: new Date().toISOString(),
     }).write();

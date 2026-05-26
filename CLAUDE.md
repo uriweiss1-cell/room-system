@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Rules
+
+**Before making any code changes, always summarize what you are about to do and wait for explicit user confirmation.** Do not implement anything automatically — present the plan first.
+
 ## Commands
 
 ```bash

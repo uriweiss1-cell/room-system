@@ -27,6 +27,13 @@ async function main() {
   });
   if (migrated > 0) console.log(`[migration] converted ${migrated} day_of_week string→number`);
 
+  // One-time migration: change חדר 6 from room_type 'committee' to 'regular'
+  const room6 = db.get('rooms').find({ name: 'חדר 6', room_type: 'committee' }).value();
+  if (room6) {
+    db.get('rooms').find({ id: room6.id }).assign({ room_type: 'regular' }).write();
+    console.log(`[migration] חדר 6 (id=${room6.id}) room_type changed: committee → regular`);
+  }
+
   initVapid();
 
   const app = express();

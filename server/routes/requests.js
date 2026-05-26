@@ -306,6 +306,9 @@ router.post('/', (req, res) => {
 // Only called on deliberate user action — never auto-triggered.
 router.post('/request-no-room', (req, res) => {
   const { specific_date, start_time, end_time, notes, is_swap, original_room_id, swap_reason, impersonate_user_id } = req.body;
+  if (is_swap && !swap_reason?.trim()) {
+    return res.status(400).json({ error: 'יש להזין סיבה לבקשת החדר החלופי' });
+  }
   const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
   const requester = db.get('users').find({ id: userId }).value();
 
@@ -803,8 +806,8 @@ router.delete('/:id', requirePermOrRole('requests', 'secretary'), (req, res) => 
       ).write();
     }
   }
-  db.get('one_time_requests').remove({ id: +req.params.id }).write();
-  res.json({ message: 'הבקשה נמחקה' });
+  db.get('one_time_requests').find({ id: +req.params.id }).assign({ status: 'rejected' }).write();
+  res.json({ message: 'הבקשה נדחתה' });
 });
 
 router.put('/:id', requirePerm('requests'), (req, res) => {
