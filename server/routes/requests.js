@@ -97,7 +97,7 @@ router.get('/all', requirePerm('requests'), (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type, force_conflict } = req.body;
+  const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type, force_conflict, swap_reason, original_room_id: swap_original_room_id } = req.body;
 
   // Admin can submit on behalf of another user
   const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
@@ -200,8 +200,9 @@ router.post('/', (req, res) => {
       const names = conflict.map(b => { const u = db.get('users').find({ id: b.user_id }).value(); return `${u?.name} (${b.start_time}–${b.end_time})`; }).join(', ');
       return res.status(409).json({ error: `${roomLabel} תפוס/ה בשעות אלו: ${names}` });
     }
-    // Check if the employee is already assigned to a DIFFERENT room at this time
-    if (!force_conflict) {
+    // Check if the employee is already assigned to a DIFFERENT room at this time.
+    // If swap_reason is provided the user already confirmed — skip check and record the swap.
+    if (!swap_reason) {
       const empPermConflict = db.get('room_assignments')
         .filter(a => a.user_id === userId && +a.day_of_week === dayOfWeek && a.assignment_type === 'permanent')
         .value()
@@ -213,15 +214,31 @@ router.post('/', (req, res) => {
       const empConflict = [...empPermConflict, ...empOtConflict];
       if (empConflict.length > 0) {
         db.get('one_time_requests').remove({ id: r.id }).write();
+        const conflicting = empConflict[0];
+        const originalRoomId = conflicting.room_id || conflicting.assigned_room_id;
+        const originalRoom = db.get('rooms').find({ id: originalRoomId }).value();
         const names = empConflict.map(c => {
           const room = db.get('rooms').find({ id: c.room_id || c.assigned_room_id }).value();
           return `${room?.name} (${c.start_time}–${c.end_time})`;
         }).join(', ');
-        return res.status(409).json({ employee_conflict: true, conflict_rooms: names, error: `כבר משובץ/ת ב-${names} בשעות אלו` });
+        return res.status(409).json({
+          employee_conflict: true,
+          conflict_rooms: names,
+          original_room_id: originalRoomId,
+          original_room_name: originalRoom?.name,
+          error: `כבר משובץ/ת ב-${names} בשעות אלו`,
+        });
       }
     }
 
-    db.get('one_time_requests').find({ id: r.id }).assign({ assigned_room_id: specialRoom.id, status: 'assigned' }).write();
+    // Assign the special room, freeing the original room if this is a swap
+    const assignUpdate = {
+      assigned_room_id: specialRoom.id,
+      status: 'assigned',
+      original_room_id: swap_reason && swap_original_room_id ? +swap_original_room_id : null,
+      swap_reason: swap_reason?.trim() || null,
+    };
+    db.get('one_time_requests').find({ id: r.id }).assign(assignUpdate).write();
     return res.json({ requestId: r.id, message: `${roomLabel} שובץ/ה לתאריך ${specific_date} בין ${start_time}–${end_time}` });
   }
 
@@ -238,9 +255,10 @@ router.post('/', (req, res) => {
   const isAbsentAt = (userId, s, e) => absences.filter(a => a.user_id === userId).some(a =>
     !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
-  // Users who already swapped their room for this date — their original room is freed
+  // Users who freed their regular room for this date (swap or special-room booking)
+  const SWAP_TYPES = ['room_swap', 'library_request', 'meeting_request', 'mamod_request'];
   const swappedOut = db.get('one_time_requests')
-    .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
+    .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.original_room_id && SWAP_TYPES.includes(x.request_type))
     .value();
   const permBusy = db.get('room_assignments')
     .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayOfWeek)
@@ -387,9 +405,10 @@ router.post('/book-room', (req, res) => {
   const isAbsentAt2 = (userId, s, e) => absences2.filter(a => a.user_id === userId).some(a =>
     !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
-  // For swaps: the swapping user's original permanent room is freed — don't count it
+  // For swaps / special-room bookings: the user's original permanent room is freed — don't count it
+  const SWAP_TYPES_2 = ['room_swap', 'library_request', 'meeting_request', 'mamod_request'];
   const swappedOut = db.get('one_time_requests')
-    .filter(x => x.specific_date === specific_date && x.request_type === 'room_swap' && x.status === 'assigned')
+    .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.original_room_id && SWAP_TYPES_2.includes(x.request_type))
     .value();
   const permBusy = db.get('room_assignments')
     .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayOfWeek && a.room_id === +room_id)
@@ -668,10 +687,16 @@ router.get('/available-rooms', requirePerm('requests'), (req, res) => {
   const isAbsentAt = (userId, s, e) => absencesForDate.filter(a => a.user_id === userId).some(a =>
     !a.start_time ? true : (toMin(a.start_time) <= toMin(s) && toMin(a.end_time) >= toMin(e))
   );
+  const SWAP_TYPES_3 = ['room_swap', 'library_request', 'meeting_request', 'mamod_request'];
+  const swappedOutForDate = db.get('one_time_requests')
+    .filter(x => x.specific_date === date && x.status === 'assigned' && x.original_room_id && SWAP_TYPES_3.includes(x.request_type))
+    .value();
   const permBusy = db.get('room_assignments')
     .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
     .value()
-    .filter(a => !isAbsentAt(a.user_id, start_time, end_time));
+    .filter(a => !isAbsentAt(a.user_id, start_time, end_time))
+    .filter(a => !swappedOutForDate.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id
+      && s.start_time && overlap(start_time, end_time, s.start_time, s.end_time)));
   const otBusy = db.get('one_time_requests').filter(x => x.specific_date === date && x.status === 'assigned' && x.assigned_room_id).value();
   // Guest one-time assignments stored directly in room_assignments
   const guestBusy = db.get('room_assignments')

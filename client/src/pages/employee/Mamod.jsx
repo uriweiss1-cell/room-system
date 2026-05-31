@@ -51,7 +51,7 @@ export default function Mamod() {
     finally { setLoading(false); }
   };
 
-  const book = async (forceConflict = false, reason = '') => {
+  const book = async (swapReason = null, originalRoomId = null) => {
     setMsg(''); setError(''); setSubmitting(true);
     try {
       const r = await api.post('/requests', {
@@ -61,9 +61,9 @@ export default function Mamod() {
         day_of_week: permanent ? form.day_of_week : null,
         start_time: form.start_time,
         end_time: form.end_time,
-        notes: reason ? `${reason}${form.notes ? ' | ' + form.notes : ''}` : (form.notes || ''),
+        notes: form.notes || '',
         ...(isAdmin && impersonateUserId ? { impersonate_user_id: +impersonateUserId } : {}),
-        ...(forceConflict ? { force_conflict: true } : {}),
+        ...(swapReason ? { swap_reason: swapReason, original_room_id: originalRoomId } : {}),
       });
       setMsg(r.data.message);
       setConflictInfo(null); setConflictReason('');
@@ -192,12 +192,12 @@ export default function Mamod() {
         {conflictInfo && (
           <div className="bg-orange-50 border border-orange-300 rounded-lg px-3 py-3 mb-3 space-y-2">
             <p className="text-orange-800 text-sm font-semibold">⚠️ כבר משובץ/ת בשעות אלו: {conflictInfo.conflict_rooms}</p>
-            <p className="text-orange-700 text-xs">להמשיך בכל זאת יש להזין סיבה:</p>
-            <input className="input w-full text-sm" placeholder="סיבה לצורך בממד בנוסף לחדר הרגיל..."
+            <p className="text-orange-700 text-xs">החדר הרגיל שלך ישוחרר לשעות אלו. יש להזין סיבה:</p>
+            <input className="input w-full text-sm" placeholder="סיבה לצורך בממד (למשל: תרגיל, אירוע מיוחד...)"
               value={conflictReason} onChange={e => setConflictReason(e.target.value)} />
             <div className="flex gap-2">
               <button className="btn btn-primary text-sm" disabled={!conflictReason.trim() || submitting}
-                onClick={() => book(true, conflictReason)}>המשך בכל זאת</button>
+                onClick={() => book(conflictReason, conflictInfo.original_room_id)}>גרע מהחדר הרגיל ורשום לממד</button>
               <button className="btn btn-ghost text-sm" onClick={() => { setConflictInfo(null); setConflictReason(''); }}>ביטול</button>
             </div>
           </div>
