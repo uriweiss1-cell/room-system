@@ -24,14 +24,18 @@ router.get('/:id', requirePerm('users'), (req, res) => {
 
 router.post('/', requirePerm('users'), (req, res) => {
   const { name, email, password, role, work_percentage, phone, notes,
-          perm_assignments, perm_algorithm, perm_requests, perm_users, perm_rooms } = req.body;
+          perm_assignments, perm_algorithm, perm_requests, perm_users, perm_rooms,
+          perm_guest } = req.body;
   const resolvedEmail = email || `${name.replace(/[\s'.\/]/g, '_')}_${Date.now()}@clinic.local`;
   if (db.get('users').find({ email: resolvedEmail }).value()) {
     return res.status(400).json({ error: 'כתובת האימייל כבר קיימת' });
   }
   const tempPw = password || 'changeme123';
-  const perms = { perm_assignments: !!perm_assignments, perm_algorithm: !!perm_algorithm, perm_requests: !!perm_requests, perm_users: !!perm_users, perm_rooms: !!perm_rooms };
-  const can_admin = Object.values(perms).some(Boolean);
+  // Admin perms (determine can_admin)
+  const adminPerms = { perm_assignments: !!perm_assignments, perm_algorithm: !!perm_algorithm, perm_requests: !!perm_requests, perm_users: !!perm_users, perm_rooms: !!perm_rooms };
+  const can_admin = Object.values(adminPerms).some(Boolean);
+  // Employee-level perms (do NOT affect can_admin)
+  const perms = { ...adminPerms, perm_guest: !!perm_guest };
   const user = {
     id: nextId('users'), name, email: resolvedEmail,
     password_hash: bcrypt.hashSync(tempPw, 10),
@@ -47,9 +51,11 @@ router.post('/', requirePerm('users'), (req, res) => {
 
 router.put('/:id', requirePerm('users'), (req, res) => {
   const { name, email, role, work_percentage, phone, notes, is_active, password,
-          perm_assignments, perm_algorithm, perm_requests, perm_users, perm_rooms } = req.body;
-  const perms = { perm_assignments: !!perm_assignments, perm_algorithm: !!perm_algorithm, perm_requests: !!perm_requests, perm_users: !!perm_users, perm_rooms: !!perm_rooms };
-  const can_admin = Object.values(perms).some(Boolean);
+          perm_assignments, perm_algorithm, perm_requests, perm_users, perm_rooms,
+          perm_guest } = req.body;
+  const adminPerms = { perm_assignments: !!perm_assignments, perm_algorithm: !!perm_algorithm, perm_requests: !!perm_requests, perm_users: !!perm_users, perm_rooms: !!perm_rooms };
+  const can_admin = Object.values(adminPerms).some(Boolean);
+  const perms = { ...adminPerms, perm_guest: !!perm_guest };
   const update = { name, email, role, work_percentage, phone: phone || null, notes: notes || null, is_active: !!is_active, can_admin, ...perms };
   if (password) update.password_hash = bcrypt.hashSync(password, 10);
   db.get('users').find({ id: +req.params.id }).assign(update).write();

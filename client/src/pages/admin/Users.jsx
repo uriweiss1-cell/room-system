@@ -32,7 +32,7 @@ function ShareLinkBanner() {
 }
 
 const ROLE_OPTIONS = Object.entries(ROLES).filter(([k]) => k !== 'admin');
-const emptyPerms = { perm_assignments: false, perm_algorithm: false, perm_requests: false, perm_users: false, perm_rooms: false };
+const emptyPerms = { perm_assignments: false, perm_algorithm: false, perm_requests: false, perm_users: false, perm_rooms: false, perm_guest: false };
 const emptyUser = { name: '', email: '', password: '', role: 'clinical_intern', phone: '', notes: '', ...emptyPerms };
 
 const PERM_LABELS = [
@@ -146,9 +146,12 @@ export default function AdminUsers() {
     const hasNewPerms = ['perm_assignments','perm_algorithm','perm_requests','perm_users','perm_rooms'].some(k => u[k]);
     if (!hasNewPerms && u.can_admin) return <span className="text-blue-700 font-medium">⭐ גישה מלאה</span>;
     const list = [u.perm_assignments && 'שיבוץ', u.perm_algorithm && 'אלגוריתם', u.perm_requests && 'בקשות', u.perm_users && 'עובדים', u.perm_rooms && 'חדרים'].filter(Boolean);
-    return list.length === 5 ? <span className="text-blue-700 font-medium">⭐ גישה מלאה</span>
+    const guestLabel = u.perm_guest ? <span className="text-xs text-teal-700">👤 אורחים</span> : null;
+    const adminLabel = list.length === 5 ? <span className="text-blue-700 font-medium">⭐ גישה מלאה</span>
          : list.length ? <span className="text-xs text-gray-600">{list.join(', ')}</span>
          : null;
+    if (!adminLabel && !guestLabel) return null;
+    return <span className="flex gap-1 flex-wrap">{adminLabel}{guestLabel}</span>;
   };
 
   const activeFiltered = users
@@ -214,6 +217,18 @@ export default function AdminUsers() {
                       </span>
                     </label>
                   ))}
+                </div>
+                {/* Employee-level perm — does not grant admin access */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <label className="flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors w-fit
+                    ${form.perm_guest ? 'border-teal-300 bg-teal-50' : 'border-gray-200 hover:bg-gray-50'}">
+                    <input type="checkbox" className="mt-0.5" checked={!!form.perm_guest}
+                      onChange={e => setForm(p => ({ ...p, perm_guest: e.target.checked }))} />
+                    <span>
+                      <span className="text-sm font-medium block">👤 שיבוץ אורחים</span>
+                      <span className="text-xs text-gray-500">הרשאת עובד — הזמנת חדר לאורח חד-פעמי</span>
+                    </span>
+                  </label>
                 </div>
               </div>
               {editing && (

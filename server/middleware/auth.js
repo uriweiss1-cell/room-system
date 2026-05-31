@@ -55,4 +55,16 @@ function requirePermOrRole(perm, ...roles) {
   };
 }
 
-module.exports = { authenticate, requireAdmin, requirePerm, requirePermOrRole, JWT_SECRET };
+// Like requirePerm but passes if the user holds ANY of the listed perms (plus admin/legacy).
+function requirePermAny(...perms) {
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) return res.status(401).json({ error: 'נדרשת התחברות' });
+    if (u.role === 'admin') return next();
+    if (isLegacyAdmin(u)) return next();
+    if (perms.some(p => u[`perm_${p}`])) return next();
+    return res.status(403).json({ error: 'אין הרשאה לפעולה זו' });
+  };
+}
+
+module.exports = { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole, JWT_SECRET };

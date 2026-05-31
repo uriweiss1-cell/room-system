@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin, requirePerm, requirePermOrRole } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole } = require('../middleware/auth');
 const { createBackup } = require('./backups');
 
 const router = express.Router();
@@ -48,7 +48,8 @@ router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (r
       const et = r.assigned_end_time || r.end_time;
       return { id: r.id, user_id: r.user_id, user_name: user?.name, room_id: r.assigned_room_id, room_name: room?.name,
         specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
-        start_time: st, end_time: et, request_type: r.request_type, swap_reason: r.swap_reason };
+        start_time: st, end_time: et, request_type: r.request_type, swap_reason: r.swap_reason,
+        original_room_id: r.original_room_id || null };
     });
 
   // Also include guest one-time assignments from room_assignments
@@ -73,8 +74,8 @@ router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (r
   res.json({ oneTime: [...oneTime, ...guests], absences });
 });
 
-// Create a one-time guest assignment (admin only)
-router.post('/guest', requirePerm('assignments'), (req, res) => {
+// Create a one-time guest assignment (admin with assignments perm, or employee with guest perm)
+router.post('/guest', requirePermAny('assignments', 'guest'), (req, res) => {
   const { guest_name, room_id, specific_date, start_time, end_time } = req.body;
   if (!guest_name?.trim() || !room_id || !specific_date || !start_time || !end_time)
     return res.status(400).json({ error: 'יש למלא שם, חדר, תאריך ושעות' });

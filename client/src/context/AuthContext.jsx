@@ -37,6 +37,8 @@ export function AuthProvider({ children }) {
     requests:    isFullAdmin || isLegacyAdmin || !!user?.perm_requests,
     users:       isFullAdmin || isLegacyAdmin || !!user?.perm_users,
     rooms:       isFullAdmin || isLegacyAdmin || !!user?.perm_rooms,
+    // Employee-level perm — does NOT grant admin access
+    guest:       isFullAdmin || isLegacyAdmin || !!user?.perm_guest,
   };
   const isAdmin = isFullAdmin || isLegacyAdmin || Object.values(perms).some(Boolean);
   const isSecretary = user?.role === 'secretary';

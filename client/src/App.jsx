@@ -10,6 +10,7 @@ import OneTimeRequest from './pages/employee/OneTimeRequest';
 import Library from './pages/employee/Library';
 import MeetingRoom from './pages/employee/MeetingRoom';
 import Mamod from './pages/employee/Mamod';
+import GuestBooking from './pages/employee/GuestBooking';
 import AdminUsers from './pages/admin/Users';
 import AdminRooms from './pages/admin/Rooms';
 import AdminAssignments from './pages/admin/Assignments';
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="library"          element={<Library />} />
         <Route path="meeting-room"     element={<MeetingRoom />} />
         <Route path="mamod"            element={<Mamod />} />
+        <Route path="guest-booking"    element={<GuestBooking />} />
         {/* Secretary-only: read-only weekly grid */}
         <Route path="secretary/grid"   element={<Guard role="secretary"><AdminAssignments readOnly /></Guard>} />
         <Route path="admin/users"       element={<Guard perm="users"><AdminUsers /></Guard>} />

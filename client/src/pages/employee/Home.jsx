@@ -9,13 +9,17 @@ const EMPLOYEE_TILES = [
   { to: '/library',          icon: '📚',  label: 'ספרייה',         desc: 'הזמן את הספרייה',   color: '#a855f7', secretaryHide: false },
   { to: '/meeting-room',     icon: '🤝',  label: 'חדר ישיבות',    desc: 'הזמן חדר ישיבות',   color: '#14b8a6', secretaryHide: false },
   { to: '/mamod',            icon: '🏥',  label: 'ממד',            desc: 'הזמן את הממד',      color: '#f43f5e', secretaryHide: false },
+  { to: '/guest-booking',    icon: '👤',  label: 'שיבוץ אורח',    desc: 'הזמן חדר לאורח',    color: '#0ea5e9', secretaryHide: true, requirePerm: 'guest' },
 ];
 
 export default function Home() {
-  const { isSecretary } = useAuth();
+  const { isSecretary, perms } = useAuth();
   const navigate = useNavigate();
 
-  const tiles = EMPLOYEE_TILES.filter(t => !isSecretary || !t.secretaryHide);
+  const tiles = EMPLOYEE_TILES.filter(t =>
+    (!isSecretary || !t.secretaryHide) &&
+    (!t.requirePerm || perms[t.requirePerm])
+  );
 
   return (
     <div className="max-w-2xl mx-auto py-4">

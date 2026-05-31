@@ -1170,18 +1170,36 @@ export default function AdminAssignments({ readOnly = false }) {
                         !a.start_time ? true
                           : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
                       ));
+                    // Returns the one-time booking that freed this user from this room (swap/library/meeting/mamod)
+                    const getSwapEntry = (userId, roomId, slotStart, slotEnd) =>
+                      weeklyOneTime.oneTime.find(a =>
+                        a.user_id === userId &&
+                        a.original_room_id === roomId &&
+                        a.specific_date === date &&
+                        toMin(a.start_time) < toMin(slotEnd) && toMin(a.end_time) > toMin(slotStart)
+                      ) || null;
                     return (
                       <td key={dayIdx} className="border border-gray-300 px-1 py-1 align-top">
                         {/* Permanent assignments */}
                         {permSlots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
                           const isAbsent = slotFullyAbsent(a.user_id, a.start_time, a.end_time);
+                          const swapEntry = !isAbsent ? getSwapEntry(a.user_id, room.id, a.start_time, a.end_time) : null;
+                          const SWAP_ICONS = { library_request: '📚', meeting_request: '👥', mamod_request: '🏥', room_swap: '🔄' };
                           if (isAbsent) return (
                             <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
                               <div className="flex items-start justify-between gap-0.5">
                                 <div className="font-medium leading-tight flex-1 text-gray-400 italic line-through">{a.user_name}</div>
                               </div>
                               <div className="text-gray-400 leading-tight italic">🚫 נעדר/ת</div>
+                            </div>
+                          );
+                          if (swapEntry) return (
+                            <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
+                              <div className="font-medium leading-tight text-gray-400 italic line-through">{a.user_name}</div>
+                              <div className="text-gray-400 leading-tight italic text-xs">
+                                {SWAP_ICONS[swapEntry.request_type] || '🔄'} {swapEntry.start_time}–{swapEntry.end_time}
+                              </div>
                             </div>
                           );
                           return (
