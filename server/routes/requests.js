@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, nextId } = require('../database');
-const { authenticate, requireAdmin, requirePerm, requirePermOrRole } = require('../middleware/auth');
+const { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole } = require('../middleware/auth');
 const { sendAdminEmail, REQUEST_TYPE_LABELS, DAYS_HE } = require('../email');
 const { sendPushToUser } = require('../webpush');
 
@@ -676,7 +676,7 @@ router.get('/available-rooms-permanent', requirePerm('requests'), (req, res) => 
   res.json(allRooms);
 });
 
-router.get('/available-rooms', requirePerm('requests'), (req, res) => {
+router.get('/available-rooms', requirePermAny('requests', 'guest'), (req, res) => {
   const { date, start_time, end_time } = req.query;
   if (!date || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים' });
   const dayOfWeek = new Date(date).getDay();
