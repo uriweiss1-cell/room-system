@@ -100,7 +100,7 @@ router.post('/', (req, res) => {
   const { request_type, specific_date, date_to, day_of_week, start_time, end_time, notes, reduce_assignment_id, impersonate_user_id, target_room_type, force_conflict, swap_reason, original_room_id: swap_original_room_id } = req.body;
 
   // Admin can submit on behalf of another user
-  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const userId = ((req.user.role === 'admin' || req.user.can_admin || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
 
   // Absence with date range — create one record per day
   if (request_type === 'absence' && date_to && date_to > specific_date) {
@@ -327,7 +327,7 @@ router.post('/request-no-room', (req, res) => {
   if (is_swap && !swap_reason?.trim()) {
     return res.status(400).json({ error: 'יש להזין סיבה לבקשת החדר החלופי' });
   }
-  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const userId = ((req.user.role === 'admin' || req.user.can_admin || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
   const requester = db.get('users').find({ id: userId }).value();
 
   if (is_swap) {
@@ -395,7 +395,7 @@ router.post('/book-room', (req, res) => {
   if (is_swap && !swap_reason?.trim()) {
     return res.status(400).json({ error: 'יש להזין סיבה לבקשת חדר חלופי' });
   }
-  const userId = ((req.user.role === 'admin' || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
+  const userId = ((req.user.role === 'admin' || req.user.can_admin || req.user.perm_requests) && impersonate_user_id) ? +impersonate_user_id : req.user.id;
 
   // Verify the new room is still free (race-condition guard)
   const dayOfWeek = new Date(specific_date).getDay();
