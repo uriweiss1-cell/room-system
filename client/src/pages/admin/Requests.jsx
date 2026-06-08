@@ -518,6 +518,11 @@ export default function AdminRequests() {
                         ⚠️ לעובד כבר יש שיבוץ קבוע ביום זה: {req.existing_assignments.map(a => `${a.room_name} ${a.start_time}–${a.end_time}`).join(', ')}
                       </div>
                     )}
+                    {req.one_time_conflicts?.length > 0 && (
+                      <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1 mt-1">
+                        ⚠️ שיבוצים חד-פעמיים קיימים לאותו יום שבוע: {req.one_time_conflicts.map(c => `${c.user_name} (${c.specific_date} ${c.start_time}–${c.end_time})`).join(', ')}
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {(req.status === 'pending' || (req.status === 'assigned' && req.request_type === 'room_request')) && expandedId !== req.id && (

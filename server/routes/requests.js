@@ -49,8 +49,30 @@ function enrich(r) {
       });
   }
 
+  // For pending permanent_requests targeting a special room (library/meeting/mamod),
+  // find existing one-time bookings for that room on the same day-of-week with overlapping hours.
+  let one_time_conflicts = [];
+  if (r.request_type === 'permanent_request' && r.target_room_type && r.day_of_week != null && r.start_time) {
+    const TYPE_MAP = { library: 'library_request', meeting: 'meeting_request', mamod: 'mamod_request' };
+    const conflictType = TYPE_MAP[r.target_room_type];
+    if (conflictType) {
+      const specialRoom = db.get('rooms').find({ room_type: r.target_room_type, is_active: true }).value();
+      if (specialRoom) {
+        one_time_conflicts = db.get('one_time_requests')
+          .filter(x => x.request_type === conflictType && x.status === 'assigned' && x.assigned_room_id === specialRoom.id)
+          .value()
+          .filter(x => new Date(x.specific_date).getDay() === +r.day_of_week
+            && x.start_time && overlap(x.start_time, x.end_time, r.start_time, r.end_time))
+          .map(x => {
+            const u = db.get('users').find({ id: x.user_id }).value();
+            return { user_name: u?.name, specific_date: x.specific_date, start_time: x.start_time, end_time: x.end_time };
+          });
+      }
+    }
+  }
+
   const originalRoom = r.original_room_id ? db.get('rooms').find({ id: +r.original_room_id }).value() : null;
-  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, original_room_name: originalRoom?.name || null, existing_assignments, partial_siblings };
+  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, original_room_name: originalRoom?.name || null, existing_assignments, partial_siblings, one_time_conflicts };
 }
 
 router.get('/my', (req, res) => {
