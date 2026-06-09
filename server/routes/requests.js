@@ -667,7 +667,7 @@ router.get('/available-rooms-permanent', requirePerm('requests'), (req, res) => 
 
   const allRooms = db.get('rooms').filter({ is_active: true, room_type: 'regular' }).value().map(room => {
     const allInRoom = db.get('room_assignments')
-      .filter({ room_id: room.id, day_of_week: dow, assignment_type: 'permanent' })
+      .filter(a => a.room_id === room.id && +a.day_of_week === dow && a.assignment_type === 'permanent')
       .value();
     const busy = allInRoom.filter(b => overlap(start_time, end_time, b.start_time, b.end_time));
     const occupants = busy.map(b => {
@@ -714,7 +714,7 @@ router.get('/available-rooms', requirePermAny('requests', 'guest'), (req, res) =
     .filter(x => x.specific_date === date && x.status === 'assigned' && x.original_room_id && SWAP_TYPES_3.includes(x.request_type))
     .value();
   const permBusy = db.get('room_assignments')
-    .filter({ assignment_type: 'permanent', day_of_week: dayOfWeek })
+    .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayOfWeek)
     .value()
     .filter(a => !isAbsentAt(a.user_id, start_time, end_time))
     .filter(a => !swappedOutForDate.some(s => s.user_id === a.user_id && +s.original_room_id === a.room_id

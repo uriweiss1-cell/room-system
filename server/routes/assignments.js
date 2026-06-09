@@ -536,7 +536,7 @@ router.get('/audit', requirePerm('assignments'), (req, res) => {
 
   function effectiveDays(role, schedules) {
     const slots = schedules.flatMap(s => {
-      if (s.day_of_week !== 3) return [s];
+      if (+s.day_of_week !== 3) return [s];
       const keep = [];
       if (['supervisor','clinical_intern','educational_intern'].includes(role)) {
         if (toMinA(s.start_time) < toMinA('09:00')) keep.push({ ...s, end_time: '09:00' });
@@ -885,12 +885,12 @@ function generateAssignments() {
 
   const reserve = (roomId, day, start, end, userId, role, userName) => {
     grid[roomId].push({ day, start, end, userId, role, userName });
-    newAssignments.push({ user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end });
+    newAssignments.push({ user_id: userId, room_id: roomId, day_of_week: +day, start_time: start, end_time: end });
   };
 
   function effectiveSlots(role, slots) {
     return slots.flatMap(s => {
-      if (s.day_of_week !== 3) return [s];
+      if (+s.day_of_week !== 3) return [s];
       const psychRoles = ['supervisor', 'clinical_intern', 'educational_intern'];
       let freeStart = null, freeEnd = null;
       if (psychRoles.includes(role)) { freeStart = '09:00'; freeEnd = '13:00'; }
