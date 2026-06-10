@@ -793,12 +793,24 @@ function generateAssignments() {
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
-  const sorted = [...users].sort((a, b) => (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9));
 
   const getPreferredId = rawSlots => {
     const val = rawSlots.find(s => s.preferred_room_id)?.preferred_room_id;
     return val ? +val : null;
   };
+
+  // Sort: preference-holders (across all priorities) before flexible users (no preference),
+  // then by role priority within each group.
+  // This ensures that "I want room X" employees are served before "any room is fine" employees,
+  // even if the flexible employee has a higher-priority role.
+  const sorted = [...users].sort((a, b) => {
+    const rawA = userSched[a.id] ?? [];
+    const rawB = userSched[b.id] ?? [];
+    const flexA = (a.role === 'other' || !getPreferredId(rawA)) ? 1 : 0;
+    const flexB = (b.role === 'other' || !getPreferredId(rawB)) ? 1 : 0;
+    if (flexA !== flexB) return flexA - flexB;
+    return (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9);
+  });
 
   // ── Snapshot existing permanent assignments ───────────────────────────────
   const allExisting = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
@@ -834,6 +846,17 @@ function generateAssignments() {
     if (pid && cur && pid !== cur) wantToMoveIds.add(user.id);
   }
 
+  // flexibleIds: users with no explicit preferred_room_id (and not already wantToMove).
+  // These are "I need a room but don't care which" employees.
+  // They are processed AFTER all preference-holders and receive whatever rooms remain.
+  const flexibleIds = new Set();
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    if (wantToMoveIds.has(user.id)) continue;
+    if (user.role === 'other' || !getPreferredId(rawSlots)) flexibleIds.add(user.id);
+  }
+
   // Returns sub-slots of [start,end] on [day] NOT yet covered by any existing assignment.
   // e.g. schedule=14:00-17:00, existing=15:00-17:00 → returns [{14:00-15:00}]
   const uncoveredSubSlots = (userId, day, start, end, template) => {
@@ -861,7 +884,7 @@ function generateAssignments() {
     if (!grid[a.room_id]) return;
     // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
     // Manual (admin-added) assignments are always preserved, even for wantToMove users
-    if (a.user_id && wantToMoveIds.has(a.user_id) && !a.is_manual) return;
+    if (a.user_id && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -912,6 +935,7 @@ function generateAssignments() {
     const preferredId = user.role === 'other' ? null : getPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
     const isMoving = wantToMoveIds.has(user.id);
+    const isFlexible = flexibleIds.has(user.id); // no explicit preferred room
 
     // ── Art therapist day cap: first 2 unique work-days get priority ──────
     // Days 3+ are deferred to low-priority processing after the main loop,
@@ -926,8 +950,11 @@ function generateAssignments() {
       }
     }
 
-    if (isMoving) {
-      // ── wantToMove: re-assign this user to their preferred room ──────────
+    if (isMoving || isFlexible) {
+      // ── wantToMove / flexible: re-assign this user ────────────────────────
+      // wantToMove: re-assign to their explicitly preferred room.
+      // isFlexible: no preferred room — assign to any available room after
+      //             all preference-holders have been served (due to sort order).
       // Slots already covered by manual (admin-added) assignments are kept as-is.
       const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
       const slotsToAssign = slots.filter(s =>
@@ -1197,7 +1224,7 @@ function generateAssignments() {
   for (const { user, slots: extraSlots } of lowPriorityExtraSlots) {
     const rawSlotsExtra = userSched[user.id] ?? [];
     const preferredIdExtra = getPreferredId(rawSlotsExtra);
-    const isMovingExtra = wantToMoveIds.has(user.id);
+    const isMovingExtra = wantToMoveIds.has(user.id) || flexibleIds.has(user.id);
     const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
 
     // wantToMove: process extra slots (minus manually assigned ones)
@@ -1259,7 +1286,7 @@ function generateAssignments() {
   const staleIds = [];
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
-    if (wantToMoveIds.has(uid)) continue;
+    if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
     for (const a of existing) {
       if (a.is_manual) continue; // manual assignments are never auto-removed
       const stillNeeded = (userSched[uid] || []).some(s =>
@@ -1275,9 +1302,9 @@ function generateAssignments() {
   // ── Write changes ─────────────────────────────────────────────────────────
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
-  if (wantToMoveIds.size) {
+  if (wantToMoveIds.size || flexibleIds.size) {
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && wantToMoveIds.has(a.user_id) && !a.is_manual)
+      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
       .write();
   }
   newAssignments.forEach(a => {
@@ -1294,8 +1321,8 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      // For wantToMove users: existing assignments were cleared, but manual ones were kept
-      ...(wantToMoveIds.has(user.id)
+      // For wantToMove / flexible users: existing assignments were cleared, but manual ones were kept
+      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
         ? (existingByUser[user.id] || []).filter(a => a.is_manual)
         : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),

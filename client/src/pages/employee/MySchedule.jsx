@@ -222,6 +222,12 @@ export default function MySchedule() {
         {!editing ? (
           <div>
             <h3 className="font-semibold mb-3 text-gray-700">ימים ושעות בהן צריך חדר</h3>
+            {schedule.length > 0 && !schedule.some(s => s.preferred_room_id) && (
+              <div className="mb-3 bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm rounded-lg px-3 py-2 flex items-start gap-2">
+                <span className="mt-0.5">⚠️</span>
+                <span>לא בחרת חדר מועדף — בהרצת האלגוריתם תקבל עדיפות נמוכה יותר לחדר שלך. מומלץ לבחור חדר מועדף דרך "עריכת לוח הזמנים".</span>
+              </div>
+            )}
             {schedule.length === 0 ? (
               <p className="text-gray-400 text-sm">לא הוגדר לוח זמנים. לחץ על "עריכת לוח הזמנים" להגדרה.</p>
             ) : (
