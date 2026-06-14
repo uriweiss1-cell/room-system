@@ -60,7 +60,7 @@ export default function App() {
         <Route path="admin/rooms"       element={<Guard perm="rooms"><AdminRooms /></Guard>} />
         <Route path="admin/assignments" element={<Guard perm="assignments"><AdminAssignments /></Guard>} />
         <Route path="admin/requests"    element={<Guard perm="requests"><AdminRequests /></Guard>} />
-        <Route path="admin/frameworks"  element={<Guard perm="users"><FrameworkSearch /></Guard>} />
+        <Route path="admin/frameworks"  element={<FrameworkSearch />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
