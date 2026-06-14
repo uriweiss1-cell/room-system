@@ -79,6 +79,7 @@ export default function Layout() {
     perms?.rooms       && { to: '/admin/rooms',       label: 'חדרים',   color: '#b45309' },
     perms?.assignments && { to: '/admin/assignments', label: 'שיבוץ',   color: '#b45309' },
     perms?.requests    && { to: '/admin/requests',    color: '#b45309',  label: <span className="flex items-center gap-1">בקשות{pendingCount > 0 && <span className="bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center leading-none">{pendingCount}</span>}</span> },
+    perms?.users       && { to: '/admin/frameworks',  label: 'מסגרות',  color: '#1d4ed8' },
   ].filter(Boolean);
 
   const linkStyle = (color, isActive) => ({

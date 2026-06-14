@@ -15,6 +15,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminRooms from './pages/admin/Rooms';
 import AdminAssignments from './pages/admin/Assignments';
 import AdminRequests from './pages/admin/Requests';
+import FrameworkSearch from './pages/admin/FrameworkSearch';
 
 function Guard({ perm, role, children }) {
   const { user, loading, perms, isSecretary } = useAuth();
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="admin/rooms"       element={<Guard perm="rooms"><AdminRooms /></Guard>} />
         <Route path="admin/assignments" element={<Guard perm="assignments"><AdminAssignments /></Guard>} />
         <Route path="admin/requests"    element={<Guard perm="requests"><AdminRequests /></Guard>} />
+        <Route path="admin/frameworks"  element={<Guard perm="users"><FrameworkSearch /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
