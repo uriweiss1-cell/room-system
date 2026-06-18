@@ -57,7 +57,14 @@ export default function FrameworkSearch() {
                   <div className="font-medium text-gray-800">{f.name}</div>
                   <div className="text-gray-500 text-xs mb-1">{f.type === 'kinder' ? 'גן' : 'בית ספר'}</div>
                   {f.psychologists.length > 0
-                    ? <div className="text-blue-700">{f.psychologists.join(', ')}</div>
+                    ? <div className="space-y-0.5">
+                        {f.psychologists.map((p, j) => (
+                          <div key={j} className="flex items-center gap-2">
+                            <span className="text-blue-700">{p.name}</span>
+                            {p.phone && <span className="text-gray-500 text-xs">{p.phone}</span>}
+                          </div>
+                        ))}
+                      </div>
                     : <div className="text-gray-400 italic">לא מאויש</div>
                   }
                 </div>
