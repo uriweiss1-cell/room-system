@@ -52,11 +52,17 @@ async function main() {
   app.use(express.json());
 
   app.use('/api/auth', require('./routes/auth'));
-  // Temporary export endpoint — remove after data migration
+  // Temporary export/import endpoints — remove after data migration
   app.get('/api/export-db', (req, res) => {
     const { db } = require('./database');
     res.setHeader('Content-Disposition', 'attachment; filename="db.json"');
     res.json(db.getState());
+  });
+
+  app.post('/api/import-db', express.json({ limit: '50mb' }), (req, res) => {
+    const { db } = require('./database');
+    db.setState(req.body).write();
+    res.json({ ok: true });
   });
 
   app.use('/api/users', require('./routes/users'));
