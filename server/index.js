@@ -65,6 +65,23 @@ async function main() {
     res.json({ ok: true });
   });
 
+  // Chunked import — accepts base64 chunks, reassembles and applies on 'done'
+  const importChunks = {};
+  app.post('/api/import-db-chunk', express.json({ limit: '10mb' }), (req, res) => {
+    const { id, index, total, data, done } = req.body;
+    if (!importChunks[id]) importChunks[id] = {};
+    if (data) importChunks[id][index] = data;
+    if (done) {
+      const allChunks = Array.from({ length: total }, (_, i) => importChunks[id][i]).join('');
+      const parsed = JSON.parse(Buffer.from(allChunks, 'base64').toString('utf8'));
+      const { db } = require('./database');
+      db.setState(parsed).write();
+      delete importChunks[id];
+      return res.json({ ok: true });
+    }
+    res.json({ received: index });
+  });
+
   app.use('/api/users', require('./routes/users'));
   app.use('/api/rooms', require('./routes/rooms'));
   app.use('/api/schedules', require('./routes/schedules'));
