@@ -52,35 +52,6 @@ async function main() {
   app.use(express.json());
 
   app.use('/api/auth', require('./routes/auth'));
-  // Temporary export/import endpoints — remove after data migration
-  app.get('/api/export-db', (req, res) => {
-    const { db } = require('./database');
-    res.setHeader('Content-Disposition', 'attachment; filename="db.json"');
-    res.json(db.getState());
-  });
-
-  app.post('/api/import-db', express.json({ limit: '500mb' }), (req, res) => {
-    const { db } = require('./database');
-    db.setState(req.body).write();
-    res.json({ ok: true });
-  });
-
-  // Chunked import — accepts base64 chunks, reassembles and applies on 'done'
-  const importChunks = {};
-  app.post('/api/import-db-chunk', express.json({ limit: '10mb' }), (req, res) => {
-    const { id, index, total, data, done } = req.body;
-    if (!importChunks[id]) importChunks[id] = {};
-    if (data) importChunks[id][index] = data;
-    if (done) {
-      const allChunks = Array.from({ length: total }, (_, i) => importChunks[id][i]).join('');
-      const parsed = JSON.parse(Buffer.from(allChunks, 'base64').toString('utf8'));
-      const { db } = require('./database');
-      db.setState(parsed).write();
-      delete importChunks[id];
-      return res.json({ ok: true });
-    }
-    res.json({ received: index });
-  });
 
   app.use('/api/users', require('./routes/users'));
   app.use('/api/rooms', require('./routes/rooms'));
