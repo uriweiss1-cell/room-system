@@ -59,7 +59,7 @@ async function main() {
     res.json(db.getState());
   });
 
-  app.post('/api/import-db', express.json({ limit: '50mb' }), (req, res) => {
+  app.post('/api/import-db', express.json({ limit: '500mb' }), (req, res) => {
     const { db } = require('./database');
     db.setState(req.body).write();
     res.json({ ok: true });
