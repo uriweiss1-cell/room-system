@@ -52,6 +52,13 @@ async function main() {
   app.use(express.json());
 
   app.use('/api/auth', require('./routes/auth'));
+  // Temporary export endpoint — remove after data migration
+  app.get('/api/export-db', (req, res) => {
+    const { db } = require('./database');
+    res.setHeader('Content-Disposition', 'attachment; filename="db.json"');
+    res.json(db.getState());
+  });
+
   app.use('/api/users', require('./routes/users'));
   app.use('/api/rooms', require('./routes/rooms'));
   app.use('/api/schedules', require('./routes/schedules'));
