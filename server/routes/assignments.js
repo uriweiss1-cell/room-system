@@ -80,6 +80,38 @@ router.post('/guest', requirePermAny('assignments', 'guest'), (req, res) => {
   if (!guest_name?.trim() || !room_id || !specific_date || !start_time || !end_time)
     return res.status(400).json({ error: 'יש למלא שם, חדר, תאריך ושעות' });
 
+  const startMin = toMin(start_time);
+  const endMin = toMin(end_time);
+  const dow = new Date(specific_date).getDay();
+
+  // Server-side conflict check against room_assignments
+  const conflict = db.get('room_assignments').filter(a => {
+    if (+a.room_id !== +room_id) return false;
+    if (a.assignment_type === 'permanent')
+      return +a.day_of_week === dow && toMin(a.start_time) < endMin && toMin(a.end_time) > startMin;
+    if (a.assignment_type === 'one_time')
+      return a.specific_date === specific_date && toMin(a.start_time) < endMin && toMin(a.end_time) > startMin;
+    return false;
+  }).value()[0];
+  if (conflict) {
+    const name = conflict.guest_name || db.get('users').find({ id: conflict.user_id }).value()?.name || 'עובד';
+    return res.status(409).json({ error: `החדר תפוס ב-${conflict.start_time}–${conflict.end_time} (${name})` });
+  }
+
+  // Conflict check against approved one-time requests
+  const conflictReq = db.get('one_time_requests').filter(r => {
+    if (+r.assigned_room_id !== +room_id || r.specific_date !== specific_date || r.status !== 'assigned') return false;
+    const rs = toMin(r.assigned_start_time || r.start_time);
+    const re = toMin(r.assigned_end_time || r.end_time);
+    return rs < endMin && re > startMin;
+  }).value()[0];
+  if (conflictReq) {
+    const user = db.get('users').find({ id: conflictReq.user_id }).value();
+    const rs = conflictReq.assigned_start_time || conflictReq.start_time;
+    const re = conflictReq.assigned_end_time || conflictReq.end_time;
+    return res.status(409).json({ error: `החדר תפוס ב-${rs}–${re} (${user?.name || 'עובד'})` });
+  }
+
   const a = {
     id: nextId('room_assignments'),
     user_id: null,

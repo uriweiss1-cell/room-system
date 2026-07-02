@@ -282,9 +282,13 @@ export default function AdminAssignments({ readOnly = false }) {
     await api.delete(`/assignments/${id}`); load();
   };
 
-  const deleteOneTime = async (id, label) => {
+  const deleteOneTime = async (id, label, isGuest = false) => {
     if (!confirm(`למחוק את השיבוץ החד-פעמי: ${label}?`)) return;
-    await api.delete(`/requests/${id}`);
+    if (isGuest) {
+      await api.delete(`/assignments/${id}`);
+    } else {
+      await api.delete(`/requests/${id}`);
+    }
     loadWeeklyOneTime();
   };
 
@@ -1226,7 +1230,7 @@ export default function AdminAssignments({ readOnly = false }) {
                               <div className="flex items-start justify-between gap-0.5">
                                 <div className={`font-medium leading-tight flex-1 ${highlighted ? 'text-yellow-900' : 'text-orange-900'}`}>{typeLabel} {a.user_name}</div>
                                 {(!readOnly || ['library_request','meeting_request','mamod_request'].includes(a.request_type)) && (
-                                  <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
+                                  <button onClick={() => deleteOneTime(a.id, `${a.user_name} ${a.start_time}–${a.end_time}`, a.is_guest)} className="flex items-center justify-center w-4 h-4 bg-red-400 hover:bg-red-600 text-white rounded text-xs leading-none" title="מחק">×</button>
                                 )}
                               </div>
                               <div className="text-orange-700 leading-tight">{a.start_time}–{a.end_time}</div>
