@@ -255,7 +255,7 @@ router.get('/query', (req, res) => {
     });
 
   // Guest one-time room assignments for this specific date
-  const guests = db.get('room_assignments')
+  let guests = db.get('room_assignments')
     .filter(a => a.specific_date === date && a.assignment_type === 'one_time' && !a.user_id
       && toMin(a.start_time) <= toMin(time) && toMin(a.end_time) > toMin(time))
     .value().map(enrichAssignment);
@@ -264,6 +264,7 @@ router.get('/query', (req, res) => {
     const rf = roomFilter.toLowerCase();
     regular = regular.filter(a => a.room_name?.toLowerCase().includes(rf));
     oneTime = oneTime.filter(a => a.room_name?.toLowerCase().includes(rf));
+    guests = guests.filter(a => a.room_name?.toLowerCase().includes(rf));
   }
 
   res.json({ date, time, dayOfWeek, regular, oneTime: [...oneTime, ...guests] });
