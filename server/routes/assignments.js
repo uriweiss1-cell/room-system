@@ -92,11 +92,22 @@ router.post('/guest', requirePermAny('assignments', 'guest'), (req, res) => {
     !a.start_time ? true : (toMin(a.start_time) <= startMin && toMin(a.end_time) >= endMin)
   );
 
+  // Users who swapped out of their permanent room for this date/time
+  const SWAP_TYPES = ['room_swap', 'library_request', 'meeting_request', 'mamod_request'];
+  const swappedOut = db.get('one_time_requests')
+    .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.original_room_id && SWAP_TYPES.includes(x.request_type))
+    .value();
+  const isSwappedOut = (userId, roomId) => swappedOut.some(s =>
+    s.user_id === userId && +s.original_room_id === roomId
+    && s.start_time && toMin(s.start_time) < endMin && toMin(s.end_time) > startMin
+  );
+
   // Server-side conflict check against room_assignments
   const conflict = db.get('room_assignments').filter(a => {
     if (+a.room_id !== +room_id) return false;
     if (a.assignment_type === 'permanent') {
-      if (a.user_id && isAbsentAt(a.user_id)) return false; // פנוי כי בעליו נעדר
+      if (a.user_id && isAbsentAt(a.user_id)) return false;
+      if (a.user_id && isSwappedOut(a.user_id, a.room_id)) return false;
       return +a.day_of_week === dow && toMin(a.start_time) < endMin && toMin(a.end_time) > startMin;
     }
     if (a.assignment_type === 'one_time')

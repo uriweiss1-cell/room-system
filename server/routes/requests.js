@@ -441,9 +441,13 @@ router.post('/book-room', (req, res) => {
   const otBusy = db.get('one_time_requests')
     .filter(x => x.specific_date === specific_date && x.status === 'assigned' && x.assigned_room_id === +room_id)
     .value();
+  const guestBusy = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'one_time' && a.specific_date === specific_date && a.room_id === +room_id)
+    .value();
   const isRoomBusy = [
     ...permBusy.filter(b => overlap(start_time, end_time, b.start_time, b.end_time)),
     ...otBusy.filter(b => b.start_time && overlap(start_time, end_time, b.start_time, b.end_time)),
+    ...guestBusy.filter(b => overlap(start_time, end_time, b.start_time, b.end_time)),
   ].length > 0;
   if (isRoomBusy) {
     return res.status(409).json({ error: 'החדר שנבחר כבר תפוס בינתיים — חפש שוב' });
