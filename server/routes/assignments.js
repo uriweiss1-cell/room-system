@@ -84,11 +84,21 @@ router.post('/guest', requirePermAny('assignments', 'guest'), (req, res) => {
   const endMin = toMin(end_time);
   const dow = new Date(specific_date).getDay();
 
+  // Users absent for this date (full-day or covering the full requested slot)
+  const absencesForDate = db.get('one_time_requests')
+    .filter(r => r.specific_date === specific_date && r.request_type === 'absence' && r.status === 'assigned')
+    .value();
+  const isAbsentAt = userId => absencesForDate.filter(a => a.user_id === userId).some(a =>
+    !a.start_time ? true : (toMin(a.start_time) <= startMin && toMin(a.end_time) >= endMin)
+  );
+
   // Server-side conflict check against room_assignments
   const conflict = db.get('room_assignments').filter(a => {
     if (+a.room_id !== +room_id) return false;
-    if (a.assignment_type === 'permanent')
+    if (a.assignment_type === 'permanent') {
+      if (a.user_id && isAbsentAt(a.user_id)) return false; // פנוי כי בעליו נעדר
       return +a.day_of_week === dow && toMin(a.start_time) < endMin && toMin(a.end_time) > startMin;
+    }
     if (a.assignment_type === 'one_time')
       return a.specific_date === specific_date && toMin(a.start_time) < endMin && toMin(a.end_time) > startMin;
     return false;
