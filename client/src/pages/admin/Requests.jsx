@@ -132,9 +132,10 @@ function PermanentRoomPicker({ req, onSlotsChange, hideGapTracking = false }) {
               {withWindows.map(r =>
                 r.free_windows.map((w, i) => {
                   const alreadyPicked = selectedSlots.some(s => s.roomId === r.id && s.start === w.from && s.end === w.to);
+                  const isRegular = r.id === req.regular_room_id;
                   return (
-                    <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${alreadyPicked ? 'bg-green-100 border-green-500' : r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-200'}`}>
-                      <span className={`font-semibold ${alreadyPicked ? 'text-green-900' : 'text-blue-800'}`}>{r.name}</span>
+                    <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${alreadyPicked ? 'bg-green-100 border-green-500' : r.user_already_here?.length > 0 ? 'bg-orange-50 border-orange-300' : isRegular ? 'bg-blue-100 border-blue-400' : 'bg-blue-50 border-blue-200'}`}>
+                      <span className={`font-semibold ${alreadyPicked ? 'text-green-900' : 'text-blue-800'}`}>{r.name}{isRegular && !alreadyPicked && <span className="text-xs font-normal text-blue-600 mr-1"> ★ החדר הרגיל</span>}</span>
                       {r.user_already_here?.length > 0 && (
                         <span className="text-orange-700 font-medium">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</span>
                       )}
@@ -160,20 +161,24 @@ function PermanentRoomPicker({ req, onSlotsChange, hideGapTracking = false }) {
           )}
           {free.length > 0 && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
-              {free.map(r => {
-                const alreadyPicked = selectedSlots.some(s => s.roomId === r.id);
-                return (
-                  <button key={r.id}
-                    onClick={() => addSlot(r.id, r.name, adjStart, adjEnd)}
-                    disabled={alreadyPicked}
-                    className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${alreadyPicked ? 'bg-green-200 border-green-600 text-green-900 cursor-default' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
-                    {r.name}
-                    {r.user_already_here?.length > 0 && (
-                      <div className="text-xs font-normal text-orange-600 mt-0.5">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
-                    )}
-                  </button>
-                );
-              })}
+              {free
+                .sort((a, b) => (b.id === req.regular_room_id ? 1 : 0) - (a.id === req.regular_room_id ? 1 : 0))
+                .map(r => {
+                  const alreadyPicked = selectedSlots.some(s => s.roomId === r.id);
+                  const isRegular = r.id === req.regular_room_id;
+                  return (
+                    <button key={r.id}
+                      onClick={() => addSlot(r.id, r.name, adjStart, adjEnd)}
+                      disabled={alreadyPicked}
+                      className={`border-2 rounded-xl py-2 px-1 text-sm font-semibold transition-colors ${alreadyPicked ? 'bg-green-200 border-green-600 text-green-900 cursor-default' : isRegular ? 'bg-blue-50 hover:bg-blue-100 border-blue-400 text-blue-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
+                      {r.name}
+                      {isRegular && !alreadyPicked && <div className="text-xs font-normal text-blue-600 mt-0.5">★ החדר הרגיל</div>}
+                      {r.user_already_here?.length > 0 && (
+                        <div className="text-xs font-normal text-orange-600 mt-0.5">⚠️ כבר משובץ: {r.user_already_here.join(', ')}</div>
+                      )}
+                    </button>
+                  );
+                })}
             </div>
           )}
           {busy.length > 0 && (

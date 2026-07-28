@@ -76,8 +76,12 @@ function enrich(r) {
   // Regular room: the permanent assignment for this user on the day-of-week of the request
   let regular_room_id = null;
   let regular_room_name = null;
-  if (r.request_type === 'room_request' && r.specific_date && r.user_id) {
-    const dow = new Date(r.specific_date).getDay();
+  const needsRegularRoom = r.user_id && (
+    (r.request_type === 'room_request' && r.specific_date) ||
+    (r.request_type === 'permanent_request' && r.day_of_week != null)
+  );
+  if (needsRegularRoom) {
+    const dow = r.request_type === 'permanent_request' ? +r.day_of_week : new Date(r.specific_date).getDay();
     const permSlots = db.get('room_assignments')
       .filter(a => a.user_id === r.user_id && +a.day_of_week === dow && a.assignment_type === 'permanent')
       .value();
