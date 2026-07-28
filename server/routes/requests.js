@@ -72,7 +72,24 @@ function enrich(r) {
   }
 
   const originalRoom = r.original_room_id ? db.get('rooms').find({ id: +r.original_room_id }).value() : null;
-  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, original_room_name: originalRoom?.name || null, existing_assignments, partial_siblings, one_time_conflicts };
+
+  // Regular room: the permanent assignment for this user on the day-of-week of the request
+  let regular_room_id = null;
+  let regular_room_name = null;
+  if (r.request_type === 'room_request' && r.specific_date && r.user_id) {
+    const dow = new Date(r.specific_date).getDay();
+    const permSlots = db.get('room_assignments')
+      .filter(a => a.user_id === r.user_id && +a.day_of_week === dow && a.assignment_type === 'permanent')
+      .value();
+    if (permSlots.length > 0) {
+      const counts = {};
+      permSlots.forEach(a => { counts[a.room_id] = (counts[a.room_id] || 0) + 1; });
+      regular_room_id = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+      regular_room_name = db.get('rooms').find({ id: regular_room_id }).value()?.name || null;
+    }
+  }
+
+  return { ...r, user_name: user?.name, role: user?.role, room_name: room?.name || null, original_room_name: originalRoom?.name || null, existing_assignments, partial_siblings, one_time_conflicts, regular_room_id, regular_room_name };
 }
 
 router.get('/my', (req, res) => {

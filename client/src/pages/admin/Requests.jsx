@@ -312,8 +312,8 @@ function RoomPicker({ req, onAssigned, alreadyAssigned = [], onAdminMsgChange = 
             <div className="mb-3 space-y-1">
               {rooms.filter(r => !r.available && r.free_windows?.length > 0).map(r =>
                 r.free_windows.map((w, i) => (
-                  <div key={`${r.id}-${i}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm flex-wrap">
-                    <span className="font-semibold text-blue-800">{r.name}</span>
+                  <div key={`${r.id}-${i}`} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-wrap border ${r.id === req.regular_room_id ? 'bg-blue-100 border-blue-400' : 'bg-blue-50 border-blue-200'}`}>
+                    <span className="font-semibold text-blue-800">{r.name}{r.id === req.regular_room_id && <span className="text-xs font-normal text-blue-600 mr-1"> ★ החדר הרגיל</span>}</span>
                     <span className="text-blue-700">פנוי בין {w.from}–{w.to}</span>
                     <button className="btn btn-ghost text-xs py-0.5 px-2 border border-blue-300 text-blue-700 hover:bg-blue-100"
                       onClick={() => { setAdjStart(w.from); setAdjEnd(w.to); fetchRooms(w.from, w.to); }}>
@@ -329,12 +329,18 @@ function RoomPicker({ req, onAssigned, alreadyAssigned = [], onAdminMsgChange = 
           )}
           {rooms.filter(r => r.available).length > 0 && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
-              {rooms.filter(r => r.available).map(r => (
-                <button key={r.id} onClick={() => assign(r.id)} disabled={loading}
-                  className="bg-green-50 hover:bg-green-100 border-2 border-green-300 rounded-xl py-2 px-1 text-sm font-semibold text-green-800 transition-colors">
-                  {r.name}
-                </button>
-              ))}
+              {rooms.filter(r => r.available)
+                .sort((a, b) => (b.id === req.regular_room_id ? 1 : 0) - (a.id === req.regular_room_id ? 1 : 0))
+                .map(r => {
+                  const isRegular = r.id === req.regular_room_id;
+                  return (
+                    <button key={r.id} onClick={() => assign(r.id)} disabled={loading}
+                      className={`rounded-xl py-2 px-1 text-sm font-semibold transition-colors border-2 ${isRegular ? 'bg-blue-50 hover:bg-blue-100 border-blue-400 text-blue-900' : 'bg-green-50 hover:bg-green-100 border-green-300 text-green-800'}`}>
+                      {r.name}
+                      {isRegular && <div className="text-xs font-normal text-blue-600 mt-0.5">★ החדר הרגיל</div>}
+                    </button>
+                  );
+                })}
             </div>
           )}
         </>
