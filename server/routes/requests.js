@@ -77,13 +77,11 @@ function enrich(r) {
   let regular_room_id = null;
   let regular_room_name = null;
   const needsRegularRoom = r.user_id && (
-    (r.request_type === 'room_request' && r.specific_date) ||
-    (r.request_type === 'permanent_request' && r.day_of_week != null)
+    r.request_type === 'room_request' || r.request_type === 'permanent_request'
   );
   if (needsRegularRoom) {
-    const dow = r.request_type === 'permanent_request' ? +r.day_of_week : new Date(r.specific_date).getDay();
     const permSlots = db.get('room_assignments')
-      .filter(a => a.user_id === r.user_id && +a.day_of_week === dow && a.assignment_type === 'permanent')
+      .filter(a => a.user_id === r.user_id && a.assignment_type === 'permanent')
       .value();
     if (permSlots.length > 0) {
       const counts = {};
