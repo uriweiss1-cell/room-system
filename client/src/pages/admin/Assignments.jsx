@@ -1198,14 +1198,25 @@ export default function AdminAssignments({ readOnly = false }) {
                               <div className="text-gray-400 leading-tight italic">🚫 נעדר/ת</div>
                             </div>
                           );
-                          if (swapEntry) return (
-                            <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
-                              <div className="font-medium leading-tight text-gray-400 italic line-through">{a.user_name}</div>
-                              <div className="text-gray-400 leading-tight italic text-xs">
-                                {SWAP_ICONS[swapEntry.request_type] || '🔄'} {swapEntry.start_time}–{swapEntry.end_time}
+                          if (swapEntry) {
+                            const isFullSwap = toMin(swapEntry.start_time) <= toMin(a.start_time) && toMin(swapEntry.end_time) >= toMin(a.end_time);
+                            if (isFullSwap) return (
+                              <div key={a.id} className="border rounded px-1.5 py-0.5 mb-0.5 bg-gray-50 border-gray-300">
+                                <div className="font-medium leading-tight text-gray-400 italic line-through">{a.user_name}</div>
+                                <div className="text-gray-400 leading-tight italic text-xs">
+                                  {SWAP_ICONS[swapEntry.request_type] || '🔄'} {swapEntry.start_time}–{swapEntry.end_time}
+                                </div>
                               </div>
-                            </div>
-                          );
+                            );
+                            // Partial swap: employee is still in their room for most of the slot
+                            return (
+                              <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : 'bg-blue-50 border-blue-200'}`}>
+                                <div className={`font-medium leading-tight ${highlighted ? 'text-yellow-900' : 'text-blue-900'}`}>{a.user_name}</div>
+                                <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
+                                <div className="text-orange-600 leading-tight text-xs">{SWAP_ICONS[swapEntry.request_type] || '🔄'} {swapEntry.start_time}–{swapEntry.end_time}</div>
+                              </div>
+                            );
+                          }
                           return (
                             <div key={a.id} className={`border rounded px-1.5 py-0.5 mb-0.5 ${highlighted ? 'bg-yellow-100 border-yellow-400' : a.is_guest ? 'bg-teal-50 border-teal-300' : 'bg-blue-50 border-blue-200'}`}>
                               <div className="flex items-start justify-between gap-0.5">
