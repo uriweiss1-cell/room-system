@@ -43,6 +43,8 @@ export default function MySchedule() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [editingAbsence, setEditingAbsence] = useState(null); // absence record being edited
   const [absenceForm, setAbsenceForm] = useState({ full_day: false, start_time: '', end_time: '' });
+  const [splittingIdx, setSplittingIdx] = useState(null);
+  const [splitForm, setSplitForm] = useState({ break_start: '10:00', break_end: '11:00' });
 
   const load = () => Promise.all([
     api.get('/schedules/my'),
@@ -117,6 +119,30 @@ export default function MySchedule() {
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
+  const openSplit = (i) => {
+    const s = slots[i];
+    setSplitForm({ break_start: s.start_time, break_end: s.end_time });
+    setSplittingIdx(i);
+  };
+
+  const confirmSplit = () => {
+    const slot = slots[splittingIdx];
+    const { break_start, break_end } = splitForm;
+    if (break_start <= slot.start_time || break_end >= slot.end_time || break_end <= break_start) {
+      setMsg('שגיאה: שעות ההפסקה אינן תקינות');
+      return;
+    }
+    const newSlots = [
+      ...slots.slice(0, splittingIdx),
+      { ...slot, end_time: break_start },
+      { ...slot, id: undefined, start_time: break_end },
+      ...slots.slice(splittingIdx + 1),
+    ];
+    setSlots(newSlots);
+    setSplittingIdx(null);
+    setMsg('');
+  };
+
   const save = async () => {
     try {
       await api.put('/schedules/my', { schedules: slots.map(s => ({ ...s, preferred_room_id: s.preferred_room_id || null })) });
@@ -149,6 +175,38 @@ export default function MySchedule() {
 
   return (
     <div className="space-y-5">
+      {/* Split slot modal */}
+      {splittingIdx !== null && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSplittingIdx(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg">פיצול שעות להפסקה</h3>
+            <div className="text-sm text-gray-600">
+              יום {DAYS[slots[splittingIdx]?.day_of_week]} · {slots[splittingIdx]?.start_time}–{slots[splittingIdx]?.end_time}
+            </div>
+            <p className="text-sm text-gray-500">הזן את שעות ההפסקה (הדרכה / יציאה). השיבוץ יפוצל אוטומטית לשני חלקים.</p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="label">הפסקה מ</label>
+                <input type="time" className="input w-full" value={splitForm.break_start}
+                  onChange={e => setSplitForm(p => ({ ...p, break_start: e.target.value }))} />
+              </div>
+              <div className="flex-1">
+                <label className="label">עד</label>
+                <input type="time" className="input w-full" value={splitForm.break_end}
+                  onChange={e => setSplitForm(p => ({ ...p, break_end: e.target.value }))} />
+              </div>
+            </div>
+            <div className="text-xs text-gray-400">
+              תוצאה: {slots[splittingIdx]?.start_time}–{splitForm.break_start} ו-{splitForm.break_end}–{slots[splittingIdx]?.end_time}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="btn btn-ghost" onClick={() => setSplittingIdx(null)}>ביטול</button>
+              <button className="btn btn-primary" onClick={confirmSplit}>פצל</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit assignment times modal */}
       {editingAssignment && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingAssignment(null)}>
@@ -272,6 +330,7 @@ export default function MySchedule() {
                       {rooms.map(r => <option key={r.id} value={r.id}>{r.name}{r.has_camera ? ' 🎥' : ''}</option>)}
                     </select>
                   </div>
+                  <button className="btn btn-ghost px-2 py-2 text-gray-500 hover:text-blue-600" title="פצל לפי הפסקה" onClick={() => openSplit(i)}>✂</button>
                   <button className="btn btn-danger px-2 py-2" onClick={() => removeSlot(i)}>✕</button>
                 </div>
               ))}
