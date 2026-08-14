@@ -47,6 +47,7 @@ export default function AdminAssignments({ readOnly = false }) {
   const [editForm, setEditForm] = useState({ start_time: '', end_time: '', room_id: '' });
   const [weekOffset, setWeekOffset] = useState(0);
   const [weeklyOneTime, setWeeklyOneTime] = useState({ oneTime: [], absences: [] });
+  const [absenceNoteId, setAbsenceNoteId] = useState(null);
   const [backups, setBackups] = useState([]);
   const [showBackups, setShowBackups] = useState(false);
   const [backupMsg, setBackupMsg] = useState('');
@@ -1131,6 +1132,43 @@ export default function AdminAssignments({ readOnly = false }) {
             <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w + 1)}>שבוע הבא ▶</button>
             {weekOffset !== 0 && <button className="btn btn-ghost px-2 py-1 text-xs text-blue-600" onClick={() => setWeekOffset(0)}>חזור להיום</button>}
           </div>
+          {/* Absence bar */}
+          {weeklyOneTime.absences.length > 0 && (() => {
+            const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i));
+            const daysWithAbsences = byDay.map((abs, i) => abs.length > 0 ? { day: i, abs } : null).filter(Boolean);
+            return (
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1 items-start">
+                <span className="font-semibold text-red-700 shrink-0">🚫 נעדרים השבוע:</span>
+                {daysWithAbsences.map(({ day, abs }) => (
+                  <span key={day} className="text-gray-700">
+                    <span className="font-medium text-gray-500 ml-1">{DAYS[day]}:</span>
+                    {abs.map((a, i) => (
+                      <span key={a.id} className="relative inline-block">
+                        {i > 0 && <span className="text-gray-400">, </span>}
+                        {a.notes ? (
+                          <>
+                            <button
+                              className="font-bold text-red-700 underline decoration-dotted hover:text-red-900 mx-0.5"
+                              onClick={() => setAbsenceNoteId(absenceNoteId === a.id ? null : a.id)}>
+                              {a.user_name}
+                            </button>
+                            {absenceNoteId === a.id && (
+                              <span className="absolute right-0 top-6 z-20 bg-white border border-red-300 rounded-lg shadow-lg px-3 py-2 text-xs text-gray-700 w-52 whitespace-pre-wrap">
+                                <span className="font-semibold block mb-1">סיבת היעדרות:</span>
+                                {a.notes}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="mx-0.5">{a.user_name}</span>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
           {/* Legend */}
           <div className="flex gap-3 mb-2 text-xs flex-wrap">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-300 inline-block"></span>שיבוץ קבוע</span>
