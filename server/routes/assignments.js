@@ -67,7 +67,7 @@ router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (r
     .filter(r => r.request_type === 'absence')
     .map(r => {
       const user = db.get('users').find({ id: r.user_id }).value();
-      return { id: r.id, user_id: r.user_id, user_name: user?.name,
+      return { id: r.id, user_id: r.user_id, user_name: user?.name, role: user?.role,
         specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
         start_time: r.start_time, end_time: r.end_time, notes: r.notes || null };
     });

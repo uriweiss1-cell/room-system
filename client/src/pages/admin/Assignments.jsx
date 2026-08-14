@@ -1134,7 +1134,7 @@ export default function AdminAssignments({ readOnly = false }) {
           </div>
           {/* Absence bar */}
           {weeklyOneTime.absences.length > 0 && (() => {
-            const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i));
+            const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i && a.role !== 'art_therapist'));
             const daysWithAbsences = byDay.map((abs, i) => abs.length > 0 ? { day: i, abs } : null).filter(Boolean);
             return (
               <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1 items-start">
