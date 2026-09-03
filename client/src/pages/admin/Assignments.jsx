@@ -1134,12 +1134,15 @@ export default function AdminAssignments({ readOnly = false }) {
           </div>
           {/* Missing schedules panel */}
           {(() => {
-            const EXCLUDED_ROLES = ['art_therapist', 'secretary', 'admin'];
+            const EXCLUDED_ROLES = ['secretary', 'admin'];
             const missingSchedule = users.filter(u =>
               !EXCLUDED_ROLES.includes(u.role) &&
               !schedules.some(s => s.user_id === u.id)
             );
-            if (!isPanelVisible('missingSchedules', missingSchedule.length)) return null;
+            if (missingSchedule.length === 0) return null;
+            if (!isPanelVisible('missingSchedules', missingSchedule.length)) return (
+              <button className="mb-2 text-xs text-amber-700 hover:underline" onClick={() => undismissPanel('missingSchedules')}>↩ הצג עובדים ללא לוח זמנים ({missingSchedule.length})</button>
+            );
             return (
               <div className="mb-3 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-sm">
                 <div className="flex items-center justify-between mb-1">
