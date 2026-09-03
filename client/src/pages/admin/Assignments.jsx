@@ -1132,6 +1132,28 @@ export default function AdminAssignments({ readOnly = false }) {
             <button className="btn btn-ghost px-2 py-1 text-sm" onClick={() => setWeekOffset(w => w + 1)}>שבוע הבא ▶</button>
             {weekOffset !== 0 && <button className="btn btn-ghost px-2 py-1 text-xs text-blue-600" onClick={() => setWeekOffset(0)}>חזור להיום</button>}
           </div>
+          {/* Missing schedules panel */}
+          {(() => {
+            const EXCLUDED_ROLES = ['art_therapist', 'secretary', 'admin'];
+            const missingSchedule = users.filter(u =>
+              !EXCLUDED_ROLES.includes(u.role) &&
+              !schedules.some(s => s.user_id === u.id)
+            );
+            if (!isPanelVisible('missingSchedules', missingSchedule.length)) return null;
+            return (
+              <div className="mb-3 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-amber-800">📋 עובדים שטרם מילאו לוח זמנים ({missingSchedule.length}):</span>
+                  <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('missingSchedules', missingSchedule.length)}>×</button>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-gray-700">
+                  {missingSchedule.map(u => (
+                    <span key={u.id} className="whitespace-nowrap">{u.name}</span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {/* Absence bar */}
           {weeklyOneTime.absences.length > 0 && (() => {
             const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i && a.role !== 'art_therapist'));
