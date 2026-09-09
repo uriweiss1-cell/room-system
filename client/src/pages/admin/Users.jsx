@@ -167,7 +167,14 @@ export default function AdminUsers() {
           <h2 className="text-xl font-bold">ניהול עובדים</h2>
           <div className="flex gap-2 flex-wrap">
             <input className="input w-44" placeholder="חיפוש..." value={search} onChange={e => setSearch(e.target.value)} />
-            <button className="btn btn-ghost text-sm" onClick={() => { const a = document.createElement('a'); a.href = '/api/users/work-days-report'; a.download = 'work-days.docx'; a.click(); }}>⬇ ימי עבודה (Word)</button>
+            <button className="btn btn-ghost text-sm" onClick={async () => {
+              const token = localStorage.getItem('token');
+              const res = await fetch('/api/users/work-days-report', { headers: { Authorization: `Bearer ${token}` } });
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = 'work-days.docx'; a.click();
+              URL.revokeObjectURL(url);
+            }}>⬇ ימי עבודה (Word)</button>
             <button className="btn btn-primary" onClick={openAdd}>+ עובד חדש</button>
           </div>
         </div>
