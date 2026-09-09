@@ -848,10 +848,15 @@ function generateAssignments() {
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
 
-  const getPreferredId = rawSlots => {
-    const val = rawSlots.find(s => s.preferred_room_id)?.preferred_room_id;
-    return val ? +val : null;
+  // Modal preferred: most common preferred_room_id across a user's slots.
+  // Used for fixed-room roles (art_therapist, clinical_intern) that need ONE room for all days.
+  const getModalPreferredId = rawSlots => {
+    const counts = {};
+    rawSlots.forEach(s => { if (s.preferred_room_id) counts[+s.preferred_room_id] = (counts[+s.preferred_room_id] || 0) + 1; });
+    const entries = Object.entries(counts);
+    return entries.length ? +entries.sort((a, b) => b[1] - a[1])[0][0] : null;
   };
+  const hasAnyPreferred = rawSlots => rawSlots.some(s => s.preferred_room_id);
 
   // Sort: preference-holders (across all priorities) before flexible users (no preference),
   // then by role priority within each group.
@@ -860,8 +865,8 @@ function generateAssignments() {
   const sorted = [...users].sort((a, b) => {
     const rawA = userSched[a.id] ?? [];
     const rawB = userSched[b.id] ?? [];
-    const flexA = (a.role === 'other' || !getPreferredId(rawA)) ? 1 : 0;
-    const flexB = (b.role === 'other' || !getPreferredId(rawB)) ? 1 : 0;
+    const flexA = (a.role === 'other' || !hasAnyPreferred(rawA)) ? 1 : 0;
+    const flexB = (b.role === 'other' || !hasAnyPreferred(rawB)) ? 1 : 0;
     if (flexA !== flexB) return flexA - flexB;
     return (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9);
   });
@@ -875,12 +880,19 @@ function generateAssignments() {
     (existingByUser[a.user_id] = existingByUser[a.user_id] || []).push(a);
   });
 
-  // Current room = most-used room per processable user
+  // Current room = most-used room per processable user (overall)
   const currentRooms = {};
   Object.entries(existingByUser).forEach(([uid, list]) => {
     const counts = {};
     list.forEach(a => { counts[a.room_id] = (counts[a.room_id] || 0) + 1; });
     currentRooms[+uid] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  });
+
+  // Current room per user per day (for per-slot preferred comparison)
+  const currentRoomsByDay = {};
+  Object.entries(existingByUser).forEach(([uid, list]) => {
+    currentRoomsByDay[+uid] = {};
+    list.forEach(a => { if (!currentRoomsByDay[+uid][a.day_of_week]) currentRoomsByDay[+uid][a.day_of_week] = a.room_id; });
   });
 
   // ── Categorise users ──────────────────────────────────────────────────────
@@ -891,13 +903,24 @@ function generateAssignments() {
   //               Existing assignments are kept as-is.
   //               Only schedule slots with NO existing assignment are processed
   //               (these are "extend" for existing users, or all slots for new ones).
+  // wantToMove: user has at least one slot where preferred_room_id differs from the
+  // current assignment on that specific day (or from the overall current room).
+  // New employees (no current assignments) are NOT wantToMove — they go through the
+  // stay/new path where per-slot preferred guides each day's assignment.
   const wantToMoveIds = new Set();
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
-    const pid = getPreferredId(rawSlots);
     const cur = currentRooms[user.id];
-    if (pid && cur && pid !== cur) wantToMoveIds.add(user.id);
+    if (!cur) continue; // new employee — handle via stay/new path
+    const userDayRooms = currentRoomsByDay[user.id] || {};
+    const anySlotWantsMove = rawSlots.some(s => {
+      const pid = s.preferred_room_id ? +s.preferred_room_id : null;
+      if (!pid) return false;
+      const dayRoom = userDayRooms[s.day_of_week] || cur;
+      return pid !== dayRoom;
+    });
+    if (anySlotWantsMove) wantToMoveIds.add(user.id);
   }
 
   // flexibleIds: users with no explicit preferred_room_id (and not already wantToMove).
@@ -908,7 +931,7 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     if (wantToMoveIds.has(user.id)) continue;
-    if (user.role === 'other' || !getPreferredId(rawSlots)) flexibleIds.add(user.id);
+    if (user.role === 'other' || !hasAnyPreferred(rawSlots)) flexibleIds.add(user.id);
   }
 
   // Returns sub-slots of [start,end] on [day] NOT yet covered by any existing assignment.
@@ -985,8 +1008,9 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allEffSlots = effectiveSlots(user.role, rawSlots);
-    // 'other' role: no preferred room — assign any available room at lowest priority
-    const preferredId = user.role === 'other' ? null : getPreferredId(rawSlots);
+    // Modal preferred: for fixed-room roles (art_therapist, clinical_intern) that need ONE
+    // consistent room for all days. For other roles, per-slot preferred is used below.
+    const preferredId = user.role === 'other' ? null : getModalPreferredId(rawSlots);
     const currentRoomId = currentRooms[user.id];
     const isMoving = wantToMoveIds.has(user.id);
     const isFlexible = flexibleIds.has(user.id); // no explicit preferred room
@@ -1137,96 +1161,105 @@ function generateAssignments() {
 
       } else {
         // ── psychiatrist, supervisor, educational_intern ──────────────────────
-        // Try preferred room for all slots → try any room for all slots →
-        // fall back to per-slot (these roles tolerate different rooms per day).
-        let chosenRoom = null;
-
-        if (pr && slotsToAssign.every(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))) {
-          chosenRoom = pr;
+        // Per-slot preferred: each slot uses its own preferred_room_id.
+        // Slots sharing the same preferred room are grouped and assigned together
+        // (so a user with the same preferred on all days still gets one consistent room).
+        const prefGroups = {};
+        for (const s of slotsToAssign) {
+          const gid = s.preferred_room_id ? +s.preferred_room_id : 'none';
+          (prefGroups[gid] = prefGroups[gid] || { pid: gid === 'none' ? null : +gid, slots: [] }).slots.push(s);
         }
 
-        // Preferred partially available → per-slot (assign to preferred where free)
-        const preferredPartiallyAvail = pr &&
-          slotsToAssign.some(s => isAvail(preferredId, s.day_of_week, s.start_time, s.end_time));
+        const unassigned = [];
+        for (const { pid: groupPid, slots: groupSlots } of Object.values(prefGroups)) {
+          const groupPr = groupPid ? regularRooms.find(r => r.id === groupPid) : null;
+          let chosenRoom = null;
 
-        if (!chosenRoom && !preferredPartiallyAvail) {
-          for (const room of regularRooms) {
-            if (slotsToAssign.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
+          // Try preferred room for all slots in this group
+          if (groupPr && groupSlots.every(s => isAvail(groupPid, s.day_of_week, s.start_time, s.end_time)))
+            chosenRoom = groupPr;
+
+          const preferredPartiallyAvail = groupPr &&
+            groupSlots.some(s => isAvail(groupPid, s.day_of_week, s.start_time, s.end_time));
+
+          // If preferred not even partially available: try one room for the whole group
+          if (!chosenRoom && !preferredPartiallyAvail) {
+            for (const room of regularRooms) {
+              if (groupSlots.every(s => isAvail(room.id, s.day_of_week, s.start_time, s.end_time))) { chosenRoom = room; break; }
+            }
           }
-        }
 
-        // Move conflict: preferred room occupied (at least partially)
-        if (pr && (!chosenRoom || chosenRoom.id !== preferredId)) {
-          const blockersMap = new Map();
-          slotsToAssign.forEach(s => {
-            (grid[preferredId] || [])
-              .filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end) && a.userId)
-              .forEach(b => {
-                const key = `${b.userId}-${b.day}`;
-                if (!blockersMap.has(key))
-                  blockersMap.set(key, { userId: b.userId, userName: b.userName, day: b.day, start: b.start, end: b.end });
-              });
-          });
-          const allBlockers = [...blockersMap.values()];
-          if (allBlockers.length) {
-            // Compute partial split options: preferred room where free + assigned room for blocked parts
-            const partialOptions = [];
-            if (chosenRoom && chosenRoom.id !== preferredId) {
-              for (const s of slotsToAssign) {
-                const startM = toMin(s.start_time), endM = toMin(s.end_time);
-                const occ = (grid[preferredId] || [])
-                  .filter(a => a.day === s.day_of_week)
-                  .map(a => ({ start: a.start, end: a.end }));
-                const freeInPref = freeBlocksInRange(startM, endM, occ).filter(b => b.dur > 0);
-                if (freeInPref.length > 0) {
-                  const blockedParts = occ
-                    .map(o => ({ s: toMin(o.start), e: toMin(o.end) }))
-                    .filter(o => o.s < endM && o.e > startM)
-                    .map(o => ({ s: Math.max(o.s, startM), e: Math.min(o.e, endM) }))
-                    .sort((a, b) => a.s - b.s)
-                    .map(o => ({ roomId: chosenRoom.id, roomName: chosenRoom.name, start: minToTime(o.s), end: minToTime(o.e) }));
-                  const freeParts = freeInPref.map(b => ({ roomId: preferredId, roomName: pr.name, start: b.start, end: b.end }));
-                  const parts = [...freeParts, ...blockedParts].sort((a, b) => toMin(a.start) - toMin(b.start));
-                  if (parts.length > 1) partialOptions.push({ day: s.day_of_week, parts });
+          // Preference conflict: wanted room is blocked (at least partially)
+          if (groupPr && (!chosenRoom || chosenRoom.id !== groupPid)) {
+            const blockersMap = new Map();
+            groupSlots.forEach(s => {
+              (grid[groupPid] || [])
+                .filter(a => a.day === s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end) && a.userId)
+                .forEach(b => {
+                  const key = `${b.userId}-${b.day}`;
+                  if (!blockersMap.has(key))
+                    blockersMap.set(key, { userId: b.userId, userName: b.userName, day: b.day, start: b.start, end: b.end });
+                });
+            });
+            const allBlockers = [...blockersMap.values()];
+            if (allBlockers.length) {
+              const partialOptions = [];
+              if (chosenRoom && chosenRoom.id !== groupPid) {
+                for (const s of groupSlots) {
+                  const startM = toMin(s.start_time), endM = toMin(s.end_time);
+                  const occ = (grid[groupPid] || []).filter(a => a.day === s.day_of_week).map(a => ({ start: a.start, end: a.end }));
+                  const freeInPref = freeBlocksInRange(startM, endM, occ).filter(b => b.dur > 0);
+                  if (freeInPref.length > 0) {
+                    const blockedParts = occ
+                      .map(o => ({ s: toMin(o.start), e: toMin(o.end) }))
+                      .filter(o => o.s < endM && o.e > startM)
+                      .map(o => ({ s: Math.max(o.s, startM), e: Math.min(o.e, endM) }))
+                      .sort((a, b) => a.s - b.s)
+                      .map(o => ({ roomId: chosenRoom.id, roomName: chosenRoom.name, start: minToTime(o.s), end: minToTime(o.e) }));
+                    const freeParts = freeInPref.map(b => ({ roomId: groupPid, roomName: groupPr.name, start: b.start, end: b.end }));
+                    const parts = [...freeParts, ...blockedParts].sort((a, b) => toMin(a.start) - toMin(b.start));
+                    if (parts.length > 1) partialOptions.push({ day: s.day_of_week, parts });
+                  }
                 }
               }
+              preferenceConflicts.push({
+                userId: user.id, userName: user.name, role: user.role,
+                wantedRoomId: groupPid, wantedRoomName: groupPr.name,
+                assignedRoomId: chosenRoom?.id || null,
+                assignedRoomName: chosenRoom?.name || null,
+                takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
+                blockers: allBlockers,
+                slots: groupSlots.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
+                partialOptions,
+              });
             }
-            preferenceConflicts.push({
-              userId: user.id, userName: user.name, role: user.role,
-              wantedRoomId: preferredId, wantedRoomName: pr?.name,
-              assignedRoomId: chosenRoom?.id || null,
-              assignedRoomName: chosenRoom?.name || null,
-              takenByUserId: allBlockers[0].userId, takenByUserName: allBlockers[0].userName,
-              blockers: allBlockers,
-              slots: slotsToAssign.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })),
-              partialOptions,
-            });
           }
-        }
 
-        if (chosenRoom) {
-          slotsToAssign.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
-        } else {
-          // Per-slot: preferred where free → any
-          const unassigned = [];
-          for (const s of slotsToAssign) {
-            let slotRoom = null;
-            if (preferredId && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time))
-              slotRoom = regularRooms.find(r => r.id === preferredId) || null;
-            if (!slotRoom)
-              slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
-            if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-            else unassigned.push(s);
+          if (chosenRoom) {
+            groupSlots.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
+          } else {
+            // Per-slot: preferred where free → any
+            for (const s of groupSlots) {
+              let slotRoom = null;
+              if (groupPid && isAvail(groupPid, s.day_of_week, s.start_time, s.end_time))
+                slotRoom = groupPr || null;
+              if (!slotRoom)
+                slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
+              if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+              else unassigned.push(s);
+            }
           }
-          if (unassigned.length) conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: unassigned });
         }
+        if (unassigned.length) conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: unassigned });
       } // end role branch
 
       const gotRooms = newAssignments.filter(a => a.user_id === user.id).map(a => a.room_id);
+      const modalPid = getModalPreferredId(rawSlots);
+      const modalPrName = modalPid ? regularRooms.find(r => r.id === modalPid)?.name : null;
       assignmentTrace.push({
         userId: user.id, userName: user.name, role: user.role,
-        wanted: pr?.name, wantedType: 'move_request',
-        result: gotRooms.includes(preferredId) ? 'got_wanted' : (gotRooms.length ? 'got_other' : 'unassigned'),
+        wanted: modalPrName, wantedType: 'move_request',
+        result: (modalPid && gotRooms.includes(modalPid)) ? 'got_wanted' : (gotRooms.length ? 'got_other' : 'unassigned'),
         gotRoom: rooms.find(r => r.id === gotRooms[0])?.name || null,
       });
 
@@ -1240,11 +1273,13 @@ function generateAssignments() {
       }
       if (!toProcess.length) continue; // fully covered — keep as-is
 
-      const targetRoomId = preferredId || currentRoomId;
       for (const s of toProcess) {
         // Is this an extension of an existing day, or a brand-new day for this user?
         const hasExistingOnDay = (existingByUser[user.id] || []).some(a => a.day_of_week === s.day_of_week);
         let slotRoom = null;
+        // Per-slot: use this slot's preferred room if set, else fall back to the current room for this day
+        const slotPreferred = s.preferred_room_id ? +s.preferred_room_id : null;
+        const targetRoomId = slotPreferred || (currentRoomsByDay[user.id]?.[s.day_of_week]) || currentRoomId;
         // Always try preferred/current room first
         if (targetRoomId && isAvail(targetRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
@@ -1277,7 +1312,6 @@ function generateAssignments() {
   // No fixed-room requirement, no conflict raised if no room is found.
   for (const { user, slots: extraSlots } of lowPriorityExtraSlots) {
     const rawSlotsExtra = userSched[user.id] ?? [];
-    const preferredIdExtra = getPreferredId(rawSlotsExtra);
     const isMovingExtra = wantToMoveIds.has(user.id) || flexibleIds.has(user.id);
     const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
 
@@ -1288,9 +1322,10 @@ function generateAssignments() {
       : extraSlots.flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s));
 
     for (const s of slotsToProcess) {
+      const slotPrefExtra = s.preferred_room_id ? +s.preferred_room_id : null;
       let slotRoom = null;
-      if (preferredIdExtra && isAvail(preferredIdExtra, s.day_of_week, s.start_time, s.end_time))
-        slotRoom = regularRooms.find(r => r.id === preferredIdExtra) || null;
+      if (slotPrefExtra && isAvail(slotPrefExtra, s.day_of_week, s.start_time, s.end_time))
+        slotRoom = regularRooms.find(r => r.id === slotPrefExtra) || null;
       // Prefer art-therapy-suitable rooms for art_therapist extra days
       if (!slotRoom)
         slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
@@ -1492,41 +1527,44 @@ function generateAssignments() {
   }
   const guestConflicts = [...guestConflictsMap.values()];
 
-  // ── Room wish mismatches: users whose current room ≠ preferred room ──────
+  // ── Room wish mismatches: assignments where current room ≠ per-slot preferred ──
   // These are informational — admin decides whether to act on them.
   const roomWishMismatches = [];
   const seenMismatch = new Set();
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
-    const pid = getPreferredId(rawSlots);
-    if (!pid) continue;
-    const preferredRoom = rooms.find(r => r.id === pid);
-    if (!preferredRoom) continue;
-    const mismatchedAssignments = db.get('room_assignments')
-      .filter({ user_id: user.id, assignment_type: 'permanent' })
-      .value()
-      .filter(a => a.room_id !== pid);
-    for (const a of mismatchedAssignments) {
-      const key = `${user.id}-${a.room_id}-${a.day_of_week}-${a.start_time}`;
-      if (seenMismatch.has(key)) continue;
-      seenMismatch.add(key);
-      const currentRoom = rooms.find(r => r.id === a.room_id);
-      const preferredConflicts = db.get('room_assignments')
-        .filter({ room_id: pid, day_of_week: a.day_of_week, assignment_type: 'permanent' })
+    for (const slot of rawSlots) {
+      const pid = slot.preferred_room_id ? +slot.preferred_room_id : null;
+      if (!pid) continue;
+      const preferredRoom = rooms.find(r => r.id === pid);
+      if (!preferredRoom) continue;
+      // Only check assignments on this slot's specific day
+      const mismatchedAssignments = db.get('room_assignments')
+        .filter({ user_id: user.id, assignment_type: 'permanent', day_of_week: slot.day_of_week })
         .value()
-        .filter(b => b.user_id !== user.id && overlap(a.start_time, a.end_time, b.start_time, b.end_time));
-      const blockedBy = preferredConflicts.map(b => db.get('users').find({ id: b.user_id }).value()?.name || '?');
-      roomWishMismatches.push({
-        userId: user.id, userName: user.name,
-        assignmentId: a.id,
-        preferredRoomId: pid,
-        dayName: DAYS_HE[a.day_of_week], start: a.start_time, end: a.end_time,
-        currentRoomName: currentRoom?.name || '?',
-        preferredRoomName: preferredRoom.name,
-        canMove: blockedBy.length === 0,
-        blockedBy,
-      });
+        .filter(a => a.room_id !== pid && overlap(a.start_time, a.end_time, slot.start_time, slot.end_time));
+      for (const a of mismatchedAssignments) {
+        const key = `${user.id}-${a.room_id}-${a.day_of_week}-${a.start_time}`;
+        if (seenMismatch.has(key)) continue;
+        seenMismatch.add(key);
+        const currentRoom = rooms.find(r => r.id === a.room_id);
+        const preferredConflicts = db.get('room_assignments')
+          .filter({ room_id: pid, day_of_week: a.day_of_week, assignment_type: 'permanent' })
+          .value()
+          .filter(b => b.user_id !== user.id && overlap(a.start_time, a.end_time, b.start_time, b.end_time));
+        const blockedBy = preferredConflicts.map(b => db.get('users').find({ id: b.user_id }).value()?.name || '?');
+        roomWishMismatches.push({
+          userId: user.id, userName: user.name,
+          assignmentId: a.id,
+          preferredRoomId: pid,
+          dayName: DAYS_HE[a.day_of_week], start: a.start_time, end: a.end_time,
+          currentRoomName: currentRoom?.name || '?',
+          preferredRoomName: preferredRoom.name,
+          canMove: blockedBy.length === 0,
+          blockedBy,
+        });
+      }
     }
   }
 

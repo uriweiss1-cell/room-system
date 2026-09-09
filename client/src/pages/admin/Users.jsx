@@ -46,7 +46,7 @@ const PERM_LABELS = [
 const COORDINATOR_PRESET = { perm_assignments: true, perm_algorithm: false, perm_requests: true, perm_users: false, perm_rooms: false };
 const FULL_ADMIN_PRESET  = { perm_assignments: true, perm_algorithm: true,  perm_requests: true, perm_users: true,  perm_rooms: true  };
 const allPermsOn = form => Object.keys(emptyPerms).every(k => !!form[k]);
-const emptySlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00' };
+const emptySlot = { day_of_week: 0, start_time: '08:00', end_time: '17:00', preferred_room_id: '' };
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'];
 
 export default function AdminUsers() {
@@ -61,7 +61,6 @@ export default function AdminUsers() {
   // Schedule panel state
   const [schedulePanel, setSchedulePanel] = useState(null); // { userId, userName }
   const [scheduleSlots, setScheduleSlots] = useState([]);
-  const [preferredRoom, setPreferredRoom] = useState('');
   const [scheduleMsg, setScheduleMsg] = useState('');
 
   useEffect(() => { load(); }, []);
@@ -114,11 +113,13 @@ export default function AdminUsers() {
       const r = await api.get(`/schedules/user/${u.id}`);
       const data = r.data;
       if (data.length > 0) {
-        const pid = data.find(s => s.preferred_room_id)?.preferred_room_id;
-        setPreferredRoom(pid != null ? String(pid) : '');
-        setScheduleSlots(data.map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time })));
+        setScheduleSlots(data.map(s => ({
+          day_of_week: s.day_of_week,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          preferred_room_id: s.preferred_room_id != null ? String(s.preferred_room_id) : '',
+        })));
       } else {
-        setPreferredRoom('');
         setScheduleSlots([{ ...emptySlot }]);
       }
     } catch (e) { setScheduleMsg('שגיאה בטעינת לוח הזמנים'); }
@@ -129,7 +130,7 @@ export default function AdminUsers() {
     try {
       const schedules = scheduleSlots.map(s => ({
         ...s,
-        preferred_room_id: preferredRoom ? +preferredRoom : null,
+        preferred_room_id: s.preferred_room_id ? +s.preferred_room_id : null,
       }));
       await api.put(`/schedules/user/${schedulePanel.userId}`, { schedules });
       setScheduleMsg('✓ לוח הזמנים עודכן בהצלחה');
@@ -347,16 +348,7 @@ export default function AdminUsers() {
             </div>
           )}
 
-          {/* Preferred room — single selection applies to all slots */}
-          <div className="mb-5">
-            <label className="label font-semibold">חדר מועדף (ישמש כעדיפות באלגוריתם השיבוץ)</label>
-            <select className="select w-52" value={preferredRoom} onChange={e => setPreferredRoom(e.target.value)}>
-              <option value="">ללא העדפה</option>
-              {rooms.map(r => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
-            </select>
-          </div>
-
-          {/* Time slots */}
+          {/* Time slots — each with its own preferred room */}
           <div className="mb-4">
             <label className="label font-semibold mb-2 block">ימי ושעות נוכחות</label>
             <div className="space-y-2">
@@ -375,6 +367,13 @@ export default function AdminUsers() {
                   <div>
                     <label className="label">עד שעה</label>
                     <input type="time" className="input w-28" value={s.end_time} onChange={e => updateSlot(i, 'end_time', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">חדר מועדף</label>
+                    <select className="select w-32" value={s.preferred_room_id || ''} onChange={e => updateSlot(i, 'preferred_room_id', e.target.value)}>
+                      <option value="">ללא</option>
+                      {rooms.map(r => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
+                    </select>
                   </div>
                   <button className="btn btn-danger px-2 py-1.5 text-sm mt-1" onClick={() => removeSlot(i)}>✕</button>
                 </div>
