@@ -23,11 +23,14 @@ router.get('/work-days-report', requirePerm('users'), async (req, res) => {
   const users = db.get('users').filter(u => u.is_active !== false && u.role !== 'art_therapist').value();
   const schedules = db.get('regular_schedules').value();
 
+  const WEDNESDAY = 3;
+
   const rows = users
     .map(u => {
-      const days = [...new Set(
-        schedules.filter(s => s.user_id === u.id).map(s => s.day_of_week)
-      )].sort((a, b) => a - b);
+      const scheduleDays = schedules.filter(s => s.user_id === u.id).map(s => s.day_of_week);
+      const allDays = new Set(scheduleDays);
+      if (u.name !== 'אן') allDays.add(WEDNESDAY);
+      const days = [...allDays].sort((a, b) => a - b);
       return { name: u.name, days };
     })
     .filter(r => r.days.length > 0)
