@@ -17,6 +17,58 @@ router.get('/list/active', (req, res) => {
   res.json(db.get('users').filter(u => u.is_active && u.role !== 'admin').map(u => ({ id: u.id, name: u.name, role: u.role })).value());
 });
 
+const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+
+router.get('/work-days-report', requirePerm('users'), async (req, res) => {
+  const users = db.get('users').filter(u => u.is_active !== false && u.role !== 'art_therapist').value();
+  const schedules = db.get('regular_schedules').value();
+
+  const rows = users
+    .map(u => {
+      const days = [...new Set(
+        schedules.filter(s => s.user_id === u.id).map(s => s.day_of_week)
+      )].sort((a, b) => a - b);
+      return { name: u.name, days };
+    })
+    .filter(r => r.days.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+
+  const today = new Date().toLocaleDateString('he-IL', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({
+          text: 'ימי עבודה — עובדים פעילים',
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.RIGHT,
+          bidirectional: true,
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: `עודכן: ${today}`, color: '888888', size: 20 })],
+          alignment: AlignmentType.RIGHT,
+          bidirectional: true,
+        }),
+        new Paragraph({ text: '' }),
+        ...rows.map(r => new Paragraph({
+          children: [
+            new TextRun({ text: `${r.name}: `, bold: true, rightToLeft: true }),
+            new TextRun({ text: r.days.map(d => DAYS_HE[d]).join(', '), rightToLeft: true }),
+          ],
+          alignment: AlignmentType.RIGHT,
+          bidirectional: true,
+        })),
+      ],
+    }],
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="work-days.docx"');
+  res.send(buffer);
+});
+
 router.get('/:id', requirePerm('users'), (req, res) => {
   const u = db.get('users').find({ id: +req.params.id }).value();
   if (!u) return res.status(404).json({ error: 'משתמש לא נמצא' });
@@ -82,58 +134,6 @@ router.post('/:id/reset-pin', requirePerm('users'), (req, res) => {
   const update = (pin && pin !== '') ? { pin_hash: bcrypt.hashSync(String(pin), 10) } : { pin_hash: null };
   db.get('users').find({ id: +req.params.id }).assign(update).write();
   res.json({ ok: true });
-});
-
-const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
-
-router.get('/work-days-report', requirePerm('users'), async (req, res) => {
-  const users = db.get('users').filter(u => u.is_active !== false && u.role !== 'art_therapist').value();
-  const schedules = db.get('regular_schedules').value();
-
-  const rows = users
-    .map(u => {
-      const days = [...new Set(
-        schedules.filter(s => s.user_id === u.id).map(s => s.day_of_week)
-      )].sort((a, b) => a - b);
-      return { name: u.name, days };
-    })
-    .filter(r => r.days.length > 0)
-    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
-
-  const today = new Date().toLocaleDateString('he-IL', { year: 'numeric', month: 'long', day: 'numeric' });
-
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: [
-        new Paragraph({
-          text: 'ימי עבודה — עובדים פעילים',
-          heading: HeadingLevel.HEADING_1,
-          alignment: AlignmentType.RIGHT,
-          bidirectional: true,
-        }),
-        new Paragraph({
-          children: [new TextRun({ text: `עודכן: ${today}`, color: '888888', size: 20 })],
-          alignment: AlignmentType.RIGHT,
-          bidirectional: true,
-        }),
-        new Paragraph({ text: '' }),
-        ...rows.map(r => new Paragraph({
-          children: [
-            new TextRun({ text: `${r.name}: `, bold: true, rightToLeft: true }),
-            new TextRun({ text: r.days.map(d => DAYS_HE[d]).join(', '), rightToLeft: true }),
-          ],
-          alignment: AlignmentType.RIGHT,
-          bidirectional: true,
-        })),
-      ],
-    }],
-  });
-
-  const buffer = await Packer.toBuffer(doc);
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  res.setHeader('Content-Disposition', 'attachment; filename="work-days.docx"');
-  res.send(buffer);
 });
 
 module.exports = router;
