@@ -1582,6 +1582,61 @@ function generateAssignments() {
     }
   }
 
+  // ── Multi-room suggestions & multi-unassigned warnings ───────────────────
+  const multiRoomSuggestions = [];
+  const multiUnassignedWarnings = [];
+
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+
+    const allAssigned = [
+      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
+        : (existingByUser[user.id] || [])),
+      ...newAssignments.filter(a => a.user_id === user.id),
+    ];
+
+    // Multi-room: user ended up in 2+ rooms without intentionally requesting different rooms
+    const roomsUsed = [...new Set(allAssigned.map(a => a.room_id))];
+    if (roomsUsed.length >= 2) {
+      const preferredIds = new Set(rawSlots.filter(s => s.preferred_room_id).map(s => +s.preferred_room_id));
+      const intentionallyDifferent = preferredIds.size > 1;
+      if (!intentionallyDifferent) {
+        // Find rooms free for ALL of this user's assigned slots (ignoring the user's own blocks)
+        const candidateRooms = regularRooms.filter(room =>
+          allAssigned.every(a =>
+            !(grid[room.id] || []).some(g =>
+              g.userId !== user.id && g.day === a.day_of_week && overlap(a.start_time, a.end_time, g.start, g.end)
+            )
+          )
+        ).map(r => ({ id: r.id, name: r.name }));
+
+        multiRoomSuggestions.push({
+          userId: user.id,
+          userName: user.name,
+          currentRooms: roomsUsed.map(rid => rooms.find(r => r.id === rid)?.name).filter(Boolean),
+          candidateRooms,
+        });
+      }
+    }
+
+    // Multi-unassigned: 2+ effective days without any assignment
+    const effSlots = effectiveSlots(user.role, rawSlots);
+    const unassignedEffDays = [...new Set(
+      effSlots
+        .filter(s => !allAssigned.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
+        .map(s => s.day_of_week)
+    )].sort((a, b) => a - b);
+    if (unassignedEffDays.length >= 2) {
+      multiUnassignedWarnings.push({
+        userId: user.id,
+        userName: user.name,
+        unassignedDays: unassignedEffDays.map(d => DAYS_HE[d]),
+      });
+    }
+  }
+
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
@@ -1593,6 +1648,8 @@ function generateAssignments() {
     userStats,
     guestConflicts,
     roomWishMismatches,
+    multiRoomSuggestions,
+    multiUnassignedWarnings,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length

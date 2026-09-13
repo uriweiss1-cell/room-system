@@ -1103,6 +1103,51 @@ export default function AdminAssignments({ readOnly = false }) {
             {!isPanelVisible('wishMismatches', genResult.roomWishMismatches?.length) && (genResult.roomWishMismatches?.length || 0) > 0 && (
               <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('wishMismatches')}>↩ הצג עובדים לא בחדר המבוקש ({genResult.roomWishMismatches.length})</button>
             )}
+
+            {/* Multi-room suggestions */}
+            {isPanelVisible('multiRoom', genResult.multiRoomSuggestions?.length) && (genResult.multiRoomSuggestions?.length || 0) > 0 && (
+              <div className="mt-4 border border-yellow-300 rounded-xl p-3 bg-yellow-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-semibold text-yellow-800">🔀 עובדים המשובצים ביותר מחדר אחד ({genResult.multiRoomSuggestions.length})</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('multiRoom', genResult.multiRoomSuggestions.length)}>×</button>
+                </div>
+                <div className="space-y-1">
+                  {genResult.multiRoomSuggestions.map((s, i) => (
+                    <div key={i} className="text-xs bg-white border border-yellow-200 rounded-lg px-3 py-2">
+                      <span className="font-medium">{s.userName}</span>
+                      <span className="text-gray-500 mr-2">שובץ ל: {s.currentRooms.join(', ')}</span>
+                      {s.candidateRooms.length > 0
+                        ? <span className="text-green-700">· לאיחוד לחדר אחד ניתן להעביר ל: {s.candidateRooms.map(r => r.name).join(', ')}</span>
+                        : <span className="text-red-600">· לא נמצא חדר פנוי בכל ימיו לאיחוד</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!isPanelVisible('multiRoom', genResult.multiRoomSuggestions?.length) && (genResult.multiRoomSuggestions?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('multiRoom')}>↩ הצג עובדים המשובצים ביותר מחדר ({genResult.multiRoomSuggestions.length})</button>
+            )}
+
+            {/* Multi-unassigned warnings */}
+            {isPanelVisible('multiUnassigned', genResult.multiUnassignedWarnings?.length) && (genResult.multiUnassignedWarnings?.length || 0) > 0 && (
+              <div className="mt-4 border border-red-300 rounded-xl p-3 bg-red-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-semibold text-red-800">❌ עובדים עם 2 ימים ומעלה ללא שיבוץ ({genResult.multiUnassignedWarnings.length})</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('multiUnassigned', genResult.multiUnassignedWarnings.length)}>×</button>
+                </div>
+                <div className="space-y-1">
+                  {genResult.multiUnassignedWarnings.map((w, i) => (
+                    <div key={i} className="text-xs bg-white border border-red-200 rounded-lg px-3 py-2">
+                      <span className="font-medium">{w.userName}</span>
+                      <span className="text-gray-600 mr-2">— ימים ללא שיבוץ: {w.unassignedDays.join(', ')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!isPanelVisible('multiUnassigned', genResult.multiUnassignedWarnings?.length) && (genResult.multiUnassignedWarnings?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-blue-600 hover:underline" onClick={() => undismissPanel('multiUnassigned')}>↩ הצג עובדים ללא שיבוץ ב-2 ימים+ ({genResult.multiUnassignedWarnings.length})</button>
+            )}
           </div>
         )}
 
