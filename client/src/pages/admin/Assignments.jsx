@@ -26,6 +26,8 @@ export default function AdminAssignments({ readOnly = false }) {
   const [viewMode, setViewMode] = useState('grid'); // grid | day | employee
   const [selectedDay, setSelectedDay] = useState(0);
   const [search, setSearch] = useState('');
+  const [alertSearch, setAlertSearch] = useState('');
+  const alertFilter = name => !alertSearch.trim() || (name || '').toLowerCase().includes(alertSearch.trim().toLowerCase());
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ user_id: '', room_id: '', day_of_week: 0, start_time: '08:00', end_time: '17:00' });
   const [msg, setMsg] = useState('');
@@ -591,7 +593,16 @@ export default function AdminAssignments({ readOnly = false }) {
 
         {!readOnly && genResult && perms?.algorithm && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
-            <p className="font-semibold">{genResult.message}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-semibold flex-1">{genResult.message}</p>
+              <input
+                type="text"
+                placeholder="חפש עובד בהתרעות..."
+                value={alertSearch}
+                onChange={e => setAlertSearch(e.target.value)}
+                className="input input-sm w-44 text-sm border border-gray-300 rounded px-2 py-1"
+              />
+            </div>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}
             {genResult.applyError && <p className="text-red-700 text-sm mt-1 font-medium">{genResult.applyError}</p>}
             {isPanelVisible('suggestions', genResult.suggestions?.length) && (
@@ -600,7 +611,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <p className="text-sm font-semibold text-yellow-800">הצעות לפתרון התנגשויות:</p>
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('suggestions', genResult.suggestions.length)}>×</button>
                 </div>
-                {genResult.suggestions.map((s, i) => (
+                {genResult.suggestions.filter(s => alertFilter(s.userName)).map((s, i) => (
                   <div key={i} className="bg-white border border-yellow-200 rounded-xl p-3">
                     <p className="font-semibold text-gray-800 mb-2">{s.userName}</p>
                     {(() => {
@@ -681,7 +692,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <p className="text-sm font-semibold text-red-700">🔴 חדרים שנדרשו על ידי יותר מעובד אחד — יש להכריע ידנית:</p>
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('contested', genResult.preferenceConflicts.filter(pc => pc.type === 'contested').length)}>×</button>
                 </div>
-                {genResult.preferenceConflicts.filter(pc => pc.type === 'contested').map((pc, i) => {
+                {genResult.preferenceConflicts.filter(pc => pc.type === 'contested' && alertFilter(pc.userName)).map((pc, i) => {
                   const [resolving2, setResolving2] = [null, () => {}]; // local stub — handled via assignConflict below
                   return (
                     <div key={i} className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-2">
@@ -750,7 +761,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <p className="text-sm font-semibold text-orange-700">⚠️ חדר מועדף תפוס — עובדים שרצו חדר ספציפי אך שובצו לאחר:</p>
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('preference', genResult.preferenceConflicts.filter(pc => !pc.type).length)}>×</button>
                 </div>
-                {genResult.preferenceConflicts.filter(pc => !pc.type).map((pc, i) => {
+                {genResult.preferenceConflicts.filter(pc => !pc.type && alertFilter(pc.userName)).map((pc, i) => {
                   const stats = genResult.userStats?.[pc.userId];
                   const blockers = pc.blockers || (pc.takenByUserId ? [{ userId: pc.takenByUserId, userName: pc.takenByUserName }] : []);
                   const room = rooms.find(r => r.name === pc.wantedRoomName);
@@ -901,7 +912,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <p className="text-sm font-semibold text-red-700">🔒 אי-עמידה בדרישת חדר קבוע לפי תפקיד ({genResult.roleConstraintConflicts.length})</p>
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('roleConstraint', genResult.roleConstraintConflicts.length)}>×</button>
                 </div>
-                {genResult.roleConstraintConflicts.map((rc, i) => {
+                {genResult.roleConstraintConflicts.filter(rc => alertFilter(rc.userName)).map((rc, i) => {
                   const roleLabel = rc.role === 'art_therapist' ? 'מטפל/ת באמנות' : rc.role === 'clinical_intern' ? 'מתמחה קליני' : rc.role;
                   const constraintMsg = rc.constraintType === 'min_fixed_days'
                     ? `לא ניתן למצוא חדר קבוע לפחות ל-${rc.requiredFixedDays} ימים`
@@ -1048,7 +1059,7 @@ export default function AdminAssignments({ readOnly = false }) {
                     <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('guestConflicts', futureConflicts.length)}>×</button>
                   </div>
                   <div className="space-y-1">
-                    {futureConflicts.map((gc, i) => (
+                    {futureConflicts.filter(gc => alertFilter(gc.permUserName) || alertFilter(gc.guestName)).map((gc, i) => (
                       <div key={i} className="text-xs bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
                         <span className="font-medium">{gc.permUserName}</span> משובץ קבוע ב<span className="font-medium">{gc.roomName}</span> כל יום {gc.dayName} ({gc.permStart}–{gc.permEnd})
                         {' — '}אך <span className="font-medium">{gc.guestName}</span> {gc.type === 'guest' ? 'שובץ כאורח' : 'קיבל אישור'} לאותו חדר בתאריך <span className="font-medium">{gc.date}</span> ({gc.guestStart}–{gc.guestEnd})
@@ -1067,7 +1078,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('wishMismatches', genResult.roomWishMismatches.length)}>×</button>
                 </div>
                 <div className="space-y-1">
-                  {genResult.roomWishMismatches.map((m, i) => (
+                  {genResult.roomWishMismatches.filter(m => alertFilter(m.userName)).map((m, i) => (
                     <div key={i} className={`text-xs rounded-lg px-3 py-2 flex flex-wrap gap-x-3 items-start ${m.canMove ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
                       <span className="font-medium">{m.userName}</span>
                       <span className="text-gray-500">יום {m.dayName} {m.start}–{m.end}</span>
@@ -1112,7 +1123,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('multiRoom', genResult.multiRoomSuggestions.length)}>×</button>
                 </div>
                 <div className="space-y-1">
-                  {genResult.multiRoomSuggestions.map((s, i) => (
+                  {genResult.multiRoomSuggestions.filter(s => alertFilter(s.userName)).map((s, i) => (
                     <div key={i} className="text-xs bg-white border border-yellow-200 rounded-lg px-3 py-2">
                       <span className="font-medium">{s.userName}</span>
                       <span className="text-gray-500 mr-2">שובץ ל: {s.currentRooms.join(', ')}</span>
@@ -1136,7 +1147,7 @@ export default function AdminAssignments({ readOnly = false }) {
                   <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('multiUnassigned', genResult.multiUnassignedWarnings.length)}>×</button>
                 </div>
                 <div className="space-y-1">
-                  {genResult.multiUnassignedWarnings.map((w, i) => (
+                  {genResult.multiUnassignedWarnings.filter(w => alertFilter(w.userName)).map((w, i) => (
                     <div key={i} className="text-xs bg-white border border-red-200 rounded-lg px-3 py-2">
                       <span className="font-medium">{w.userName}</span>
                       <span className="text-gray-600 mr-2">— ימים ללא שיבוץ: {w.unassignedDays.join(', ')}</span>
