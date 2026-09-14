@@ -211,7 +211,18 @@ export default function AdminAssignments({ readOnly = false }) {
       setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
       load();
     } catch (e) {
-      setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+      if (e.response?.status === 409 && e.response?.data?.conflict) {
+        const { message } = e.response.data;
+        if (confirm(`${message}\nלשבץ בכל זאת?`)) {
+          try {
+            await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end, replace_overlap: true, force: true });
+            setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
+            load();
+          } catch (e2) { setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e2.response?.data?.error || e2.message) })); }
+        }
+      } else {
+        setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+      }
     }
   };
 
@@ -309,7 +320,19 @@ export default function AdminAssignments({ readOnly = false }) {
       // preventing accidental double-booking when adding manually
       await api.post('/assignments', { ...addForm, replace_overlap: true });
       setShowAdd(false); load(); setMsg('שיבוץ נוסף');
-    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+    } catch (e) {
+      if (e.response?.status === 409 && e.response?.data?.conflict) {
+        const { message } = e.response.data;
+        if (confirm(`${message}\nלשבץ בכל זאת?`)) {
+          try {
+            await api.post('/assignments', { ...addForm, replace_overlap: true, force: true });
+            setShowAdd(false); load(); setMsg('שיבוץ נוסף');
+          } catch (e2) { setMsg('שגיאה: ' + (e2.response?.data?.error || e2.message)); }
+        }
+      } else {
+        setMsg('שגיאה: ' + (e.response?.data?.error || e.message));
+      }
+    }
   };
 
   const searchGuestRooms = async () => {

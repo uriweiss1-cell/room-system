@@ -345,8 +345,27 @@ router.get('/locate', (req, res) => {
 });
 
 router.post('/', requirePerm('assignments'), (req, res) => {
-  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap } = req.body;
+  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap, force } = req.body;
   const aType = assignment_type ?? 'permanent';
+
+  // Conflict check: warn if another user is already assigned to this room at this time
+  if (aType === 'permanent' && user_id && !force) {
+    const conflict = db.get('room_assignments').filter(a =>
+      +a.room_id === +room_id &&
+      +a.day_of_week === +day_of_week &&
+      a.assignment_type === 'permanent' &&
+      a.user_id && +a.user_id !== +user_id &&
+      overlap(a.start_time, a.end_time, start_time, end_time)
+    ).value()[0];
+    if (conflict) {
+      const cu = db.get('users').find({ id: conflict.user_id }).value();
+      return res.status(409).json({
+        conflict: true,
+        conflictingUser: cu?.name || 'עובד אחר',
+        message: `${cu?.name || 'עובד אחר'} כבר משובץ/ת לחדר זה ב-${conflict.start_time}–${conflict.end_time}`,
+      });
+    }
+  }
 
   // If replace_overlap is set, remove existing overlapping permanent assignments for this user/day
   if (replace_overlap && user_id && aType === 'permanent') {
