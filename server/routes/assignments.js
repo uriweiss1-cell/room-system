@@ -385,15 +385,16 @@ router.post('/', requirePerm('assignments'), (req, res) => {
   };
   db.get('room_assignments').push(a).write();
 
-  // For permanent manual assignments to a real user: also create a matching
-  // regular_schedule entry if none exists for that day/time, so the assignment
-  // survives the algorithm's cleanup pass and the employee's work-days are updated.
+  // For permanent manual assignments to a real user: ensure a matching regular_schedule
+  // entry exists, and update ALL schedule entries for that user/day to use the manually
+  // assigned room as preferred — this prevents the algorithm from classifying the user
+  // as wantToMove on the next run (which would otherwise clear their non-manual assignments).
   if (aType === 'permanent' && user_id) {
-    const existingSched = db.get('regular_schedules')
+    const hasOverlap = db.get('regular_schedules')
       .filter({ user_id: +user_id, day_of_week: +day_of_week })
       .value()
       .some(s => overlap(s.start_time, s.end_time, start_time, end_time));
-    if (!existingSched) {
+    if (!hasOverlap) {
       db.get('regular_schedules').push({
         id: nextId('regular_schedules'),
         user_id: +user_id,
@@ -404,6 +405,15 @@ router.post('/', requirePerm('assignments'), (req, res) => {
         created_at: new Date().toISOString(),
       }).write();
     }
+    // Align all schedule entries for this user/day to the manually assigned room
+    db.get('regular_schedules')
+      .filter({ user_id: +user_id, day_of_week: +day_of_week })
+      .value()
+      .forEach(s => {
+        if (+s.preferred_room_id !== +room_id) {
+          db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: +room_id }).write();
+        }
+      });
   }
 
   res.json({ id: a.id });
@@ -563,9 +573,23 @@ router.post('/assign-contested', requirePerm('algorithm'), (req, res) => {
         day_of_week: slot.day_of_week,
         start_time: slot.start_time, end_time: slot.end_time,
         assignment_type: 'permanent', specific_date: null,
+        is_manual: true,
         created_at: new Date().toISOString(),
       }).write();
     }
+    // Update preferred_room_id for all schedule entries on the assigned days
+    // so the algorithm won't re-classify this user as wantToMove on the next run
+    const assignedDays = [...new Set(slots.map(s => s.day_of_week))];
+    assignedDays.forEach(day => {
+      db.get('regular_schedules')
+        .filter({ user_id: +userId, day_of_week: day })
+        .value()
+        .forEach(s => {
+          if (+s.preferred_room_id !== +roomId) {
+            db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: +roomId }).write();
+          }
+        });
+    });
   }
   const room = db.get('rooms').find({ id: +roomId }).value();
   const names = assignments.map(({ userId }) => db.get('users').find({ id: +userId }).value()?.name).filter(Boolean).join(', ');
