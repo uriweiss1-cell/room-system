@@ -1657,20 +1657,70 @@ function generateAssignments() {
       }
     }
 
-    // Multi-unassigned: 2+ effective days without any assignment
+    // Multi-unassigned: 2+ effective days without any assignment (only if user has at least one assignment)
     const effSlots = effectiveSlots(user.role, rawSlots);
     const unassignedEffDays = [...new Set(
       effSlots
         .filter(s => !allAssigned.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
         .map(s => s.day_of_week)
     )].sort((a, b) => a - b);
-    if (unassignedEffDays.length >= 2) {
+    if (allAssigned.length > 0 && unassignedEffDays.length >= 2) {
       multiUnassignedWarnings.push({
         userId: user.id,
         userName: user.name,
         unassignedDays: unassignedEffDays.map(d => DAYS_HE[d]),
       });
     }
+  }
+
+  // Completely unassigned: users with schedule slots but 0 assignments at all
+  const allFinalAssignments = [
+    ...allExisting,
+    ...newAssignments,
+  ];
+  const completelyUnassigned = [];
+  for (const user of sorted) {
+    const rawSlots = userSched[user.id] ?? [];
+    if (!rawSlots.length) continue;
+    const allAssigned = [
+      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
+        : (existingByUser[user.id] || [])),
+      ...newAssignments.filter(a => a.user_id === user.id),
+    ];
+    if (allAssigned.length > 0) continue;
+
+    const effSlots = effectiveSlots(user.role, rawSlots);
+    const requestedDays = [...new Set(effSlots.map(s => s.day_of_week))].sort((a, b) => a - b);
+
+    const daysInfo = requestedDays.map(day => {
+      const daySlots = effSlots.filter(s => s.day_of_week === day);
+      const requestedSlots = daySlots.map(s => `${s.start_time}–${s.end_time}`);
+
+      // Find employees who have full coverage on this day (all their scheduled hours are assigned)
+      const assignedOnDay = allFinalAssignments.filter(a =>
+        a.day_of_week === day && a.assignment_type === 'permanent' && a.user_id !== user.id
+      );
+      const employeeIdsOnDay = [...new Set(assignedOnDay.map(a => a.user_id))].filter(Boolean);
+
+      const fullyCoveredEmployees = employeeIdsOnDay.map(uid => {
+        const empSched = (userSched[uid] ?? []).filter(s => s.day_of_week === day);
+        const empAssigned = assignedOnDay.filter(a => a.user_id === uid);
+        if (!empSched.length) return null;
+        const fullyAssigned = empSched.every(s =>
+          empAssigned.some(a => a.start_time <= s.start_time && a.end_time >= s.end_time)
+        );
+        if (!fullyAssigned) return null;
+        const empUser = users.find(u => u.id === uid);
+        const empRooms = [...new Set(empAssigned.map(a => rooms.find(r => r.id === a.room_id)?.name).filter(Boolean))];
+        const times = empAssigned.map(a => `${a.start_time}–${a.end_time}`).join(', ');
+        return { id: uid, name: empUser?.name, rooms: empRooms, times };
+      }).filter(Boolean);
+
+      return { day, dayName: DAYS_HE[day], requestedSlots, fullyCoveredEmployees };
+    });
+
+    completelyUnassigned.push({ userId: user.id, userName: user.name, daysInfo });
   }
 
   return {
@@ -1686,6 +1736,7 @@ function generateAssignments() {
     roomWishMismatches,
     multiRoomSuggestions,
     multiUnassignedWarnings,
+    completelyUnassigned,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length

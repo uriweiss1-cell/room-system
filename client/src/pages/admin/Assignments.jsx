@@ -628,6 +628,53 @@ export default function AdminAssignments({ readOnly = false }) {
             </div>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}
             {genResult.applyError && <p className="text-red-700 text-sm mt-1 font-medium">{genResult.applyError}</p>}
+
+            {/* Completely unassigned — highest priority, shown first */}
+            {isPanelVisible('completelyUnassigned', genResult.completelyUnassigned?.length) && (genResult.completelyUnassigned?.length || 0) > 0 && (
+              <div className="mt-4 border-2 border-red-500 rounded-xl p-4 bg-red-50">
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="font-bold text-red-900 text-base">🚨 עובדים שלא שובצו כלל ({genResult.completelyUnassigned.length}) — טעון טיפול</p>
+                  <button className="mr-auto text-gray-400 hover:text-gray-700 text-xl leading-none" title="סגור" onClick={() => dismissPanel('completelyUnassigned', genResult.completelyUnassigned.length)}>×</button>
+                </div>
+                <div className="space-y-3">
+                  {genResult.completelyUnassigned.filter(u => alertFilter(u.userName)).map((u, i) => (
+                    <div key={i} className="bg-white border border-red-300 rounded-lg p-3 space-y-2">
+                      <p className="font-bold text-red-800 text-sm">{u.userName}</p>
+                      <div className="space-y-2">
+                        {u.daysInfo.map((d, j) => (
+                          <div key={j} className="text-xs border border-red-100 rounded p-2 bg-red-50">
+                            <div className="flex flex-wrap gap-1 items-baseline mb-1">
+                              <span className="font-semibold text-red-700">יום {d.dayName}:</span>
+                              <span className="text-gray-600">שעות מבוקשות — {d.requestedSlots.join(', ')}</span>
+                            </div>
+                            {d.fullyCoveredEmployees.length > 0 ? (
+                              <div>
+                                <p className="text-gray-500 mb-1">עובדים עם חדר מלא ביום זה (מועמדים לפיצול / העברה):</p>
+                                <div className="space-y-0.5">
+                                  {d.fullyCoveredEmployees.map((e, k) => (
+                                    <div key={k} className="bg-white border border-gray-200 rounded px-2 py-1 flex flex-wrap gap-2">
+                                      <span className="font-medium">{e.name}</span>
+                                      <span className="text-gray-500">— {e.rooms.join(', ')}</span>
+                                      <span className="text-gray-400">({e.times})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-orange-700">אין עובד עם כיסוי מלא ביום זה — כל החדרים מחולקים בין עובדים חלקיים</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!isPanelVisible('completelyUnassigned', genResult.completelyUnassigned?.length) && (genResult.completelyUnassigned?.length || 0) > 0 && (
+              <button className="mt-2 text-xs text-red-700 font-semibold hover:underline" onClick={() => undismissPanel('completelyUnassigned')}>↩ הצג עובדים שלא שובצו כלל ({genResult.completelyUnassigned.length})</button>
+            )}
+
             {isPanelVisible('suggestions', genResult.suggestions?.length) && (
               <div className="mt-4 space-y-4">
                 <div className="flex items-center gap-2">
