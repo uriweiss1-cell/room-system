@@ -1695,7 +1695,14 @@ function generateAssignments() {
 
     const daysInfo = requestedDays.map(day => {
       const daySlots = effSlots.filter(s => s.day_of_week === day);
-      const requestedSlots = daySlots.map(s => `${s.start_time}–${s.end_time}`);
+      const requestedSlots = daySlots.map(s => ({ start: s.start_time, end: s.end_time }));
+
+      // Rooms that are fully free for all requested slots on this day
+      const availableRooms = regularRooms.filter(room =>
+        daySlots.every(s =>
+          !grid[room.id]?.some(g => g.day === day && overlap(s.start_time, s.end_time, g.start, g.end))
+        )
+      ).map(r => ({ id: r.id, name: r.name }));
 
       // Find employees who have full coverage on this day (all their scheduled hours are assigned)
       const assignedOnDay = allFinalAssignments.filter(a =>
@@ -1717,7 +1724,7 @@ function generateAssignments() {
         return { id: uid, name: empUser?.name, rooms: empRooms, times };
       }).filter(Boolean);
 
-      return { day, dayName: DAYS_HE[day], requestedSlots, fullyCoveredEmployees };
+      return { day, dayName: DAYS_HE[day], requestedSlots, availableRooms, fullyCoveredEmployees };
     });
 
     completelyUnassigned.push({ userId: user.id, userName: user.name, daysInfo });

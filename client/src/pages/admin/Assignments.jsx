@@ -645,11 +645,42 @@ export default function AdminAssignments({ readOnly = false }) {
                           <div key={j} className="text-xs border border-red-100 rounded p-2 bg-red-50">
                             <div className="flex flex-wrap gap-1 items-baseline mb-1">
                               <span className="font-semibold text-red-700">יום {d.dayName}:</span>
-                              <span className="text-gray-600">שעות מבוקשות — {d.requestedSlots.join(', ')}</span>
+                              <span className="text-gray-600">שעות מבוקשות — {d.requestedSlots.map(s => `${s.start}–${s.end}`).join(', ')}</span>
                             </div>
+                            {d.availableRooms?.length > 0 && (
+                              <div className="mb-2">
+                                <p className="text-green-700 font-medium mb-1">חדרים פנויים — בחר לשיבוץ ישיר:</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {d.availableRooms.map((room, k) => (
+                                    <button key={k}
+                                      className="btn text-xs bg-green-100 border border-green-400 text-green-800 hover:bg-green-200 px-2 py-1 rounded"
+                                      onClick={async () => {
+                                        if (!confirm(`לשבץ את ${u.userName} לחדר ${room.name} ביום ${d.dayName}?`)) return;
+                                        try {
+                                          for (const slot of d.requestedSlots) {
+                                            await api.post('/assignments', { user_id: u.userId, room_id: room.id, day_of_week: d.day, start_time: slot.start, end_time: slot.end, replace_overlap: true });
+                                          }
+                                          setGenResult(prev => ({
+                                            ...prev,
+                                            applyMsg: `${u.userName} שובץ לחדר ${room.name} ביום ${d.dayName}`,
+                                            completelyUnassigned: (prev.completelyUnassigned || []).map(emp =>
+                                              emp.userId !== u.userId ? emp : { ...emp, daysInfo: emp.daysInfo.filter(di => di.day !== d.day) }
+                                            ).filter(emp => emp.daysInfo.length > 0),
+                                          }));
+                                          load();
+                                        } catch (e) {
+                                          setGenResult(prev => ({ ...prev, applyError: 'שגיאה: ' + (e.response?.data?.error || e.message) }));
+                                        }
+                                      }}>
+                                      {room.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {d.fullyCoveredEmployees.length > 0 ? (
                               <div>
-                                <p className="text-gray-500 mb-1">עובדים עם חדר מלא ביום זה (מועמדים לפיצול / העברה):</p>
+                                <p className="text-gray-500 mb-1">{d.availableRooms?.length > 0 ? 'עובדים עם חדר מלא (מועמדים לפיצול / העברה):' : 'אין חדר פנוי — עובדים עם חדר מלא ביום זה (מועמדים לפיצול / העברה):'}</p>
                                 <div className="space-y-0.5">
                                   {d.fullyCoveredEmployees.map((e, k) => (
                                     <div key={k} className="bg-white border border-gray-200 rounded px-2 py-1 flex flex-wrap gap-2">
@@ -660,8 +691,8 @@ export default function AdminAssignments({ readOnly = false }) {
                                   ))}
                                 </div>
                               </div>
-                            ) : (
-                              <p className="text-orange-700">אין עובד עם כיסוי מלא ביום זה — כל החדרים מחולקים בין עובדים חלקיים</p>
+                            ) : !d.availableRooms?.length && (
+                              <p className="text-orange-700">אין חדר פנוי וכל החדרים מחולקים — יש לבצע פיצול ידני</p>
                             )}
                           </div>
                         ))}
