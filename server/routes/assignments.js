@@ -745,7 +745,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
 
   const push = a => db.get('room_assignments').push({
     id: nextId('room_assignments'), ...a,
-    assignment_type: 'permanent', specific_date: null, created_at: new Date().toISOString(),
+    assignment_type: 'permanent', specific_date: null, is_manual: true, created_at: new Date().toISOString(),
   }).write();
 
   // After applying a suggestion, sync the regular_schedule so the algorithm
@@ -755,21 +755,14 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
     const uid = +userId; const rid = +roomId; const d = +day;
 
     if (updatePreferred) {
-      // Only update preferred_room_id if the user has no existing explicit preference
-      // that differs from the resolved room. This prevents conflict resolutions from
-      // silently overwriting a preference the user or admin deliberately set.
-      const allScheds = db.get('regular_schedules').filter(s => s.user_id === uid).value();
-      const hasConflictingPref = allScheds.some(s => s.preferred_room_id && +s.preferred_room_id !== rid);
-
-      if (!hasConflictingPref) {
-        // Safe to set preferred_room_id to the resolved room across all schedule entries
-        allScheds.forEach(s => {
-          db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
+      // Update preferred_room_id for all schedule entries on this specific day
+      // so the algorithm won't re-classify this user as wantToMove on the next run.
+      db.get('regular_schedules').filter(s => s.user_id === uid && s.day_of_week === d).value()
+        .forEach(s => {
+          if (+s.preferred_room_id !== rid) {
+            db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: rid }).write();
+          }
         });
-      }
-      // If user already has a different explicit preference, leave it alone.
-      // They may re-trigger wantToMove on the next run, which is correct behavior —
-      // the admin can update the preference separately if needed.
     }
 
     // If no schedule entry exists yet for this day, create one
