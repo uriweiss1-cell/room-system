@@ -66,7 +66,7 @@ export default function Login() {
   const selectEmployee = (u) => {
     setSelected(u);
     setPin(''); setPinConfirm(''); setError(''); setSetPinStep(1);
-    setStep(u.has_pin ? 'pin' : 'setpin');
+    setStep('pin');
   };
 
   const submitPin = async () => {
@@ -78,8 +78,13 @@ export default function Login() {
       navigate('/my-schedule');
       window.location.reload();
     } catch (err) {
-      setError(err.response?.data?.error || 'שגיאה');
-      setPin('');
+      if (err.response?.data?.needsSetPin) {
+        setStep('setpin');
+        setPin(''); setSetPinStep(1);
+      } else {
+        setError(err.response?.data?.error || 'שגיאה');
+        setPin('');
+      }
     } finally { setLoading(false); }
   };
 
