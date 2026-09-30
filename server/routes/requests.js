@@ -584,6 +584,17 @@ router.post('/:id/confirm', (req, res) => {
   const { room_id } = req.body;
   const r = db.get('one_time_requests').find({ id: +req.params.id, user_id: req.user.id }).value();
   if (!r) return res.status(404).json({ error: 'בקשה לא נמצאה' });
+  // Check the chosen room is actually free at this date/time
+  const conflict = db.get('one_time_requests').find(x =>
+    x.id !== r.id &&
+    x.assigned_room_id === +room_id &&
+    x.specific_date === r.specific_date &&
+    x.status === 'assigned' &&
+    x.start_time && r.start_time &&
+    toMin(x.start_time) < toMin(r.end_time) &&
+    toMin(x.end_time) > toMin(r.start_time)
+  ).value();
+  if (conflict) return res.status(409).json({ error: 'החדר תפוס בשעות אלו' });
   db.get('one_time_requests').find({ id: +req.params.id }).assign({ assigned_room_id: +room_id, status: 'assigned' }).write();
   const room = db.get('rooms').find({ id: +room_id }).value();
   res.json({ message: `הוקצה לך ${room?.name ?? 'חדר'}` });
@@ -591,6 +602,7 @@ router.post('/:id/confirm', (req, res) => {
 
 router.get('/library-schedule', (req, res) => {
   const { from, to } = req.query;
+  if (!from || !to || isNaN(new Date(from)) || isNaN(new Date(to))) return res.status(400).json({ error: 'חסרים פרמטרים: from, to' });
   const libraryRooms = db.get('rooms').filter({ room_type: 'library', is_active: true }).value();
   if (libraryRooms.length === 0) return res.json({});
 
@@ -617,7 +629,7 @@ router.get('/library-schedule', (req, res) => {
         const u = db.get('users').find({ id: x.user_id }).value();
         return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
       });
-    const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+    const all = [...otBookings, ...permBookings].filter(x => x.start_time).sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
     result[date] = all;
   });
   res.json(result);
@@ -625,6 +637,7 @@ router.get('/library-schedule', (req, res) => {
 
 router.get('/meeting-schedule', (req, res) => {
   const { from, to } = req.query;
+  if (!from || !to || isNaN(new Date(from)) || isNaN(new Date(to))) return res.status(400).json({ error: 'חסרים פרמטרים: from, to' });
   const meetingRooms = db.get('rooms').filter({ room_type: 'meeting', is_active: true }).value();
   if (meetingRooms.length === 0) return res.json({});
   const meetingIds = meetingRooms.map(r => r.id);
@@ -647,7 +660,7 @@ router.get('/meeting-schedule', (req, res) => {
         const u = db.get('users').find({ id: x.user_id }).value();
         return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
       });
-    const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+    const all = [...otBookings, ...permBookings].filter(x => x.start_time).sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
     result[date] = all;
   });
   res.json(result);
@@ -655,6 +668,7 @@ router.get('/meeting-schedule', (req, res) => {
 
 router.get('/mamod-schedule', (req, res) => {
   const { from, to } = req.query;
+  if (!from || !to || isNaN(new Date(from)) || isNaN(new Date(to))) return res.status(400).json({ error: 'חסרים פרמטרים: from, to' });
   const mamodRooms = db.get('rooms').filter({ room_type: 'mamod', is_active: true }).value();
   if (mamodRooms.length === 0) return res.json({});
   const mamodIds = mamodRooms.map(r => r.id);
@@ -677,7 +691,7 @@ router.get('/mamod-schedule', (req, res) => {
         const u = db.get('users').find({ id: x.user_id }).value();
         return { user_name: u?.name, start_time: x.start_time, end_time: x.end_time, type: 'permanent', notes: x.notes || null };
       });
-    const all = [...otBookings, ...permBookings].sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
+    const all = [...otBookings, ...permBookings].filter(x => x.start_time).sort((a, b) => toMin(a.start_time) - toMin(b.start_time));
     result[date] = all;
   });
   res.json(result);
@@ -876,8 +890,14 @@ router.delete('/:id', requirePermOrRole('requests', 'secretary'), (req, res) => 
       ).write();
     }
   }
-  db.get('one_time_requests').find({ id: +req.params.id }).assign({ status: 'rejected' }).write();
-  res.json({ message: 'הבקשה נדחתה' });
+  const parentId = +req.params.id;
+  // Remove sibling partial-slot records first, then the parent
+  const siblingIds = db.get('one_time_requests')
+    .filter(r => r.parent_request_id === parentId)
+    .map('id').value();
+  if (siblingIds.length) db.get('one_time_requests').remove(r => siblingIds.includes(r.id)).write();
+  db.get('one_time_requests').remove({ id: parentId }).write();
+  res.json({ message: 'הבקשה נמחקה' });
 });
 
 router.put('/:id', requirePerm('requests'), (req, res) => {

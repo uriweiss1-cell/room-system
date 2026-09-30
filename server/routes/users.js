@@ -86,7 +86,7 @@ router.post('/', requirePerm('users'), (req, res) => {
   if (db.get('users').find({ email: resolvedEmail }).value()) {
     return res.status(400).json({ error: 'כתובת האימייל כבר קיימת' });
   }
-  const tempPw = password || 'changeme123';
+  const tempPw = password || require('crypto').randomBytes(8).toString('base64url');
   // Admin perms (determine can_admin)
   const adminPerms = { perm_assignments: !!perm_assignments, perm_algorithm: !!perm_algorithm, perm_requests: !!perm_requests, perm_users: !!perm_users, perm_rooms: !!perm_rooms };
   const can_admin = Object.values(adminPerms).some(Boolean);
