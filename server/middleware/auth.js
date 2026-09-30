@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../database');
 
+if (!process.env.JWT_SECRET && process.env.PORT) {
+  console.error('[FATAL] JWT_SECRET environment variable is not set. Refusing to start in production with a known default secret.');
+  process.exit(1);
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'room-system-secret-2024';
 
 function authenticate(req, res, next) {
