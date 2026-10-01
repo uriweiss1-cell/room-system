@@ -35,7 +35,7 @@ export default function Mamod() {
   const [impersonateUserId, setImpersonateUserId] = useState('');
 
   useEffect(() => {
-    if (isAdmin) api.get('/users').then(r => setUsers(r.data.filter(u => !u.is_admin))).catch(() => {});
+    if (isAdmin) api.get('/users').then(r => setUsers(r.data.filter(u => !u.is_admin && (u.is_active || u.id === 176)))).catch(() => {});
   }, [isAdmin]);
 
   const dates = weekDates(weekOffset);
