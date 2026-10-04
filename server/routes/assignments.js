@@ -899,6 +899,10 @@ function generateAssignments() {
   const schedules = db.get('regular_schedules').value();
   const regularRooms = rooms.filter(r => r.room_type === 'regular' || r.room_type === 'committee');
 
+  // Log all room types so we can see which rooms are included/excluded
+  console.log('[ROOMS] regularRooms count:', regularRooms.length, '| All active rooms:',
+    rooms.map(r => `${r.name}(${r.room_type})`).join(', '));
+
   // Remove stale assignments for inactive/deleted users so they don't block rooms
   const activeIds = new Set(users.map(u => u.id));
   db.get('room_assignments')
