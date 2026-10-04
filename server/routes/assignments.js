@@ -31,6 +31,54 @@ router.get('/all', requirePermOrRole('assignments', 'secretary'), (req, res) => 
   res.json(list);
 });
 
+// Diagnostic: show raw DB state for a user and for Sunday assignments
+router.get('/diag', requireAdmin, (req, res) => {
+  const userName = req.query.user || '';
+  const dayFilter = req.query.day !== undefined ? +req.query.day : null;
+
+  const users = db.get('users').value();
+  const rooms = db.get('rooms').value();
+  const enrichUser = id => { const u = users.find(u => u.id === id); return u ? `${u.name}(id=${u.id},active=${u.is_active})` : `id=${id}`; };
+  const enrichRoom = id => { const r = rooms.find(r => r.id === id); return r ? `${r.name}(id=${r.id})` : `id=${id}`; };
+  const DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי'];
+
+  const matchedUsers = userName
+    ? users.filter(u => u.name.includes(userName))
+    : [];
+
+  const result = {};
+
+  // Per-user data
+  for (const u of matchedUsers) {
+    const schedules = db.get('regular_schedules').filter({ user_id: u.id }).value();
+    const assignments = db.get('room_assignments').filter(a => a.user_id === u.id && a.assignment_type === 'permanent').value();
+    result[u.name] = {
+      user: { id: u.id, role: u.role, is_active: u.is_active },
+      schedules: schedules.map(s => ({ id: s.id, day: DAYS[s.day_of_week] || s.day_of_week, start: s.start_time, end: s.end_time, preferred_room: enrichRoom(s.preferred_room_id) })),
+      assignments: assignments.map(a => ({ id: a.id, room: enrichRoom(a.room_id), day: DAYS[a.day_of_week] || a.day_of_week, start: a.start_time, end: a.end_time, is_manual: a.is_manual })),
+    };
+  }
+
+  // All Sunday (day=0) permanent assignments, or filtered by day
+  if (dayFilter !== null) {
+    const dayAssignments = db.get('room_assignments')
+      .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayFilter)
+      .value();
+    result[`_day_${DAYS[dayFilter]||dayFilter}_assignments`] = dayAssignments.map(a => ({
+      id: a.id,
+      room: enrichRoom(a.room_id),
+      user: a.user_id ? enrichUser(a.user_id) : 'guest',
+      start: a.start_time,
+      end: a.end_time,
+      is_manual: a.is_manual,
+      day_raw: a.day_of_week,
+      day_type: typeof a.day_of_week,
+    }));
+  }
+
+  res.json(result);
+});
+
 // Weekly one-time assignments + absences for the grid
 router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (req, res) => {
   const { from, to } = req.query;
@@ -495,10 +543,6 @@ router.delete('/clear/permanent', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requirePerm('assignments'), (req, res) => {
-  // Admin delete: removes only the room_assignment, keeps regular_schedule intact.
-  // The employee stays in the "needs assignment" pool — the algorithm will reassign
-  // them on the next run.
-  // (Employee self-delete via DELETE /my/:id removes both assignment AND schedule.)
   db.get('room_assignments').remove({ id: +req.params.id }).write();
   res.json({ message: 'השיבוץ נמחק' });
 });
@@ -938,6 +982,48 @@ function generateAssignments() {
       }).join(', ')
     );
     db.get('room_assignments').remove(a => orphanedIds.has(a.id)).write();
+  }
+
+  // Deduplicate permanent assignments: when a user has multiple assignments for the same
+  // day+time-slot (e.g. old room persisted after algorithm moved them to a new room),
+  // keep only the most recent assignment (highest id) per user per day per time-slot.
+  {
+    const allPerms = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+    const toRemoveDupes = [];
+    // Group by userId + day
+    const byUserDay = {};
+    allPerms.forEach(a => {
+      if (!a.user_id) return;
+      const key = `${a.user_id}_${a.day_of_week}`;
+      (byUserDay[key] = byUserDay[key] || []).push(a);
+    });
+    Object.values(byUserDay).forEach(group => {
+      if (group.length <= 1) return;
+      // For each pair that overlaps in time, remove the older one (lower id)
+      const sorted = [...group].sort((a, b) => b.id - a.id); // newest first
+      const kept = [];
+      for (const a of sorted) {
+        const conflictsWithKept = kept.some(k => overlap(a.start_time, a.end_time, k.start_time, k.end_time));
+        if (conflictsWithKept) {
+          toRemoveDupes.push(a.id);
+        } else {
+          kept.push(a);
+        }
+      }
+    });
+    if (toRemoveDupes.length) {
+      console.log(`[CLEANUP-DUPE] Removing ${toRemoveDupes.length} duplicate assignments (older room replaced by newer):`,
+        toRemoveDupes.map(id => {
+          const a = allPerms.find(x => x.id === id);
+          if (!a) return id;
+          const u = db.get('users').find({ id: a.user_id }).value();
+          const r = db.get('rooms').find({ id: a.room_id }).value();
+          return `${u?.name||a.user_id} ${['ראשון','שני','שלישי','רביעי','חמישי'][a.day_of_week]||a.day_of_week} ${r?.name||a.room_id}`;
+        }).join(', ')
+      );
+      const dupeSet = new Set(toRemoveDupes);
+      db.get('room_assignments').remove(a => dupeSet.has(a.id)).write();
+    }
   }
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
@@ -1584,8 +1670,10 @@ function generateAssignments() {
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size) {
+    // Remove ALL old assignments (including is_manual) for wantToMove users on their move-days.
+    // Setting preferred_room_id is an explicit admin authorization that supersedes any prior manual placement.
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && !a.is_manual && a.user_id &&
+      .remove(a => a.assignment_type === 'permanent' && a.user_id &&
         (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week)))
       .write();
   }
