@@ -1080,8 +1080,9 @@ function generateAssignments() {
     rooms.filter(r => ART_THERAPY_ROOM_NUMBERS.some(n => r.name === `חדר ${n}`)).map(r => r.id)
   );
 
-  const room28 = rooms.find(r => r.name === 'חדר 28');
+  const room28 = rooms.find(r => r.name?.includes('28'));
   const debugRoomId = room28?.id;
+  console.log(`[R28-SEARCH] rooms with "28" in name: ${rooms.filter(r=>r.name?.includes('28')).map(r=>`"${r.name}"(id=${r.id})`).join(', ')||'NONE'} | room28=${room28?.name||'NOT FOUND'}`);
 
   // Log initial grid state for room 28
   if (debugRoomId) {
@@ -1450,7 +1451,7 @@ function generateAssignments() {
             return blockers.length ? `${r.name}: ${blockers.map(b=>`${b.userName||'?'} ${b.start}-${b.end}`).join(', ')}` : null;
           }).filter(Boolean);
           console.log(`[CONFLICT] ${user.name} (${user.role}) ${DAYS_LOG[+s.day_of_week]} ${s.start_time}-${s.end_time} | blocked rooms: ${blockedBy.length} | free rooms: ${regularRooms.filter(r=>!(grid[r.id]||[]).some(a=>a.day===+s.day_of_week&&overlap(s.start_time,s.end_time,a.start,a.end))).map(r=>r.name).join(', ')||'NONE'}`);
-          if (blockedBy.length <= 20) blockedBy.forEach(b => console.log(`  ${b}`));
+          blockedBy.slice(0, 5).forEach(b => console.log(`  ${b}`));
           conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
         }
       }
