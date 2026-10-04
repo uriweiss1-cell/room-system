@@ -1028,15 +1028,30 @@ function generateAssignments() {
     return gaps.map(g => ({ ...template, start_time: g.start_time, end_time: g.end_time }));
   };
 
+  // ── Pre-compute stale IDs before grid seeding ────────────────────────────
+  // Stale = assignment for a day no longer in this user's schedule.
+  // Must be computed here so stale entries are excluded from the grid and don't
+  // block other users' room allocation during the algorithm run.
+  const staleIds = new Set();
+  for (const [uidStr, existing] of Object.entries(existingByUser)) {
+    const uid = +uidStr;
+    for (const a of existing) {
+      if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
+      const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
+      if (!hasDayInSchedule) staleIds.add(a.id);
+    }
+  }
+
   // ── Build room grid ───────────────────────────────────────────────────────
   // Seed the grid with ALL existing permanent assignments EXCEPT wantToMove users
-  // (their slots will be cleared and re-written at the end).
+  // (their slots will be cleared and re-written at the end) and stale assignments
+  // (their day was removed from the schedule; they will be deleted in the write step).
   const grid = {};
   rooms.forEach(r => (grid[r.id] = []));
   allExisting.forEach(a => {
     if (!grid[a.room_id]) return;
-    // Exclude from grid seeding only move-days for wantToMove users and all days for flexible users.
-    // Stay-days for wantToMove users (preferred == current) are seeded normally so they hold the room.
+    if (staleIds.has(a.id)) return; // stale: day no longer in schedule
+    // Exclude move-days for wantToMove users (cleared & rewritten at end).
     if (a.user_id && !a.is_manual &&
         (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week))) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
@@ -1484,19 +1499,9 @@ function generateAssignments() {
   // any existing assignment that no longer overlaps with ANY schedule slot
   // on that day should be released automatically.
   // Applies only to stay/extend users — wantToMove users are handled below.
-  const staleIds = [];
-  for (const [uidStr, existing] of Object.entries(existingByUser)) {
-    const uid = +uidStr;
-    for (const a of existing) {
-      // wantToMove days are cleared & rewritten in the write step — skip them here
-      if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
-      // Delete assignment if employee has no schedule entry at all for that day
-      const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
-      if (!hasDayInSchedule) staleIds.push(a.id);
-    }
-  }
-  if (staleIds.length) {
-    db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
+  // staleIds was computed before grid seeding; delete from DB now.
+  if (staleIds.size) {
+    db.get('room_assignments').remove(a => staleIds.has(a.id)).write();
   }
 
   // ── Write changes ─────────────────────────────────────────────────────────
