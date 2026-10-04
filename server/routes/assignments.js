@@ -2004,6 +2004,24 @@ function generateAssignments() {
     completelyUnassigned.push({ userId: user.id, userName: user.name, daysInfo });
   }
 
+  // Diagnostic: what did the algorithm assign per day (and who has conflicts per day)
+  const newAssignmentsByDay = {};
+  for (const a of newAssignments) {
+    const d = a.day_of_week;
+    if (!newAssignmentsByDay[d]) newAssignmentsByDay[d] = [];
+    const u = users.find(x => x.id === a.user_id);
+    const r = rooms.find(x => x.id === a.room_id);
+    newAssignmentsByDay[d].push({ user: u?.name, role: u?.role, room: r?.name, start: a.start_time, end: a.end_time });
+  }
+  const conflictsByDay = {};
+  for (const c of conflicts) {
+    for (const s of c.slots) {
+      const d = s.day_of_week;
+      if (!conflictsByDay[d]) conflictsByDay[d] = [];
+      conflictsByDay[d].push({ user: c.userName, role: c.role, start: s.start_time, end: s.end_time });
+    }
+  }
+
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
@@ -2018,6 +2036,8 @@ function generateAssignments() {
     multiRoomSuggestions,
     multiUnassignedWarnings,
     completelyUnassigned,
+    newAssignmentsByDay,
+    conflictsByDay,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length
