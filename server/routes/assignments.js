@@ -1,5 +1,5 @@
 const express = require('express');
-const { db, nextId } = require('../database');
+const { db, nextId, syncToMongo } = require('../database');
 const { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole } = require('../middleware/auth');
 const { createBackup } = require('./backups');
 
@@ -832,9 +832,17 @@ router.get('/audit', requirePerm('assignments'), (req, res) => {
   res.json({ violations, okCount, totalChecked: okCount + violations.length });
 });
 
-router.post('/generate', requirePerm('algorithm'), (req, res) => {
-  try { createBackup('before-generate'); res.json(generateAssignments()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+router.post('/generate', requirePerm('algorithm'), async (req, res) => {
+  try {
+    createBackup('before-generate');
+    const result = generateAssignments();
+    // Verify DB write succeeded before syncing
+    const dbSundayCount = db.get('room_assignments')
+      .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === 0).value().length;
+    result._dbSundayCountAfterWrite = dbSundayCount;
+    await syncToMongo(); // ensure data survives Railway restarts
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
@@ -1367,10 +1375,22 @@ function generateAssignments() {
             const fixedSet = new Set(bestFreeDays);
             slotsToAssign.filter(s => fixedSet.has(s.day_of_week))
               .forEach(s => reserve(bestRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
-            for (const s of slotsToAssign.filter(s => !fixedSet.has(s.day_of_week))) {
-              const anyRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
-              if (anyRoom) reserve(anyRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-              else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
+            // Group remaining slots by day — find ONE room per day before falling back to per-slot.
+            // Without this, two slots on the same day can land in different rooms (wastes capacity).
+            const remainingByDay = {};
+            slotsToAssign.filter(s => !fixedSet.has(s.day_of_week))
+              .forEach(s => (remainingByDay[s.day_of_week] = remainingByDay[s.day_of_week] || []).push(s));
+            for (const [dayStr, daySlots] of Object.entries(remainingByDay)) {
+              const dayRoom = regularRooms.find(r => daySlots.every(s => isAvail(r.id, +dayStr, s.start_time, s.end_time)));
+              if (dayRoom) {
+                daySlots.forEach(s => reserve(dayRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
+              } else {
+                for (const s of daySlots) {
+                  const anyRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
+                  if (anyRoom) reserve(anyRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+                  else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
+                }
+              }
             }
           } else {
             // Cannot guarantee 2 fixed days → alert admin
