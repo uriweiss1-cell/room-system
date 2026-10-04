@@ -1404,10 +1404,9 @@ function generateAssignments() {
         // Always try preferred/current room first
         if (targetRoomId && isAvail(targetRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
-        // For new days (no existing assignment on this day): fall back to any free room
-        // For hour extensions (user already has a room on this day): don't move to a different room —
-        // show a conflict instead so the admin is aware and can decide.
-        if (!slotRoom && !hasExistingOnDay) {
+        // Fall back to any free room when target is unavailable — both for new days
+        // and for hour extensions (user already has another assignment on this day).
+        if (!slotRoom) {
           // art_therapist: prefer art-therapy-suitable rooms
           if (user.role === 'art_therapist') {
             slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
@@ -1425,8 +1424,6 @@ function generateAssignments() {
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
         else {
           conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
-          const freeRooms = regularRooms.filter(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)).map(r => r.name);
-          console.log(`[CONFLICT] ${user.name} day=${s.day_of_week} ${s.start_time}-${s.end_time} hasExisting=${hasExistingOnDay} target=${targetRoomId} freeRooms=${JSON.stringify(freeRooms)}`);
         }
       }
     }
