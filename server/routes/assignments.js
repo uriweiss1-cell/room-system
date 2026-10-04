@@ -373,6 +373,26 @@ router.post('/', requirePerm('assignments'), (req, res) => {
     }
   }
 
+  // Self-overlap check: block if this user already has an assignment in a DIFFERENT room
+  // on the same day at overlapping hours. Admin can override with force:true or replace_overlap.
+  if (aType === 'permanent' && user_id && !force && !replace_overlap) {
+    const selfConflict = db.get('room_assignments').filter(a =>
+      +a.user_id === +user_id &&
+      +a.day_of_week === +day_of_week &&
+      a.assignment_type === 'permanent' &&
+      +a.room_id !== +room_id &&
+      overlap(a.start_time, a.end_time, start_time, end_time)
+    ).value()[0];
+    if (selfConflict) {
+      const conflictRoom = db.get('rooms').find({ id: selfConflict.room_id }).value();
+      const u = db.get('users').find({ id: +user_id }).value();
+      return res.status(409).json({
+        self_conflict: true,
+        message: `${u?.name || 'העובד'} כבר משובץ/ת בחדר ${conflictRoom?.name || selfConflict.room_id} ב-${selfConflict.start_time}–${selfConflict.end_time} באותו יום`,
+      });
+    }
+  }
+
   // If replace_overlap is set, remove existing overlapping permanent assignments for this user/day
   if (replace_overlap && user_id && aType === 'permanent') {
     db.get('room_assignments')
