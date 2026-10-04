@@ -898,9 +898,6 @@ function generateAssignments() {
   const rooms = db.get('rooms').filter({ is_active: true }).value();
   const schedules = db.get('regular_schedules').value();
   const regularRooms = rooms.filter(r => r.room_type === 'regular' || r.room_type === 'committee');
-  console.log('[DEBUG-ROOMS] regularRooms:', regularRooms.map(r => `${r.name}(${r.room_type})`).join(', '));
-  const nonRegular = rooms.filter(r => r.room_type !== 'regular' && r.room_type !== 'committee');
-  if (nonRegular.length) console.log('[DEBUG-ROOMS] excluded rooms:', nonRegular.map(r => `${r.name}(${r.room_type})`).join(', '));
 
   // Remove stale assignments for inactive/deleted users so they don't block rooms
   const activeIds = new Set(users.map(u => u.id));
@@ -1169,7 +1166,6 @@ function generateAssignments() {
         }
 
         if (chosenRoom) {
-          console.log(`[MOVE-ART] ${user.name} → ${chosenRoom.name} for days ${slotsToAssign.map(s=>s.day_of_week)}`);
           // Perfect: same room for all required days
           slotsToAssign.forEach(s => reserve(chosenRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
           // Warn if art_therapist was assigned a non-suitable room
@@ -1217,15 +1213,12 @@ function generateAssignments() {
 
         } else {
           // art_therapist: no single fixed room available for priority days → alert admin
-          console.log(`[MOVE-ART-FAIL] ${user.name} no single room for days ${JSON.stringify(slotsToAssign.map(s=>({day:s.day_of_week,start:s.start_time,end:s.end_time})))}. Trying per-slot fallback.`);
           roleConstraintConflicts.push(buildRoleConstraintConflict(user, slotsToAssign, 'fixed_room_required', null));
           // Best-effort fallback: per-slot (prefer art-therapy rooms)
           for (const s of slotsToAssign) {
             let slotRoom = (pr && isAvail(preferredId, s.day_of_week, s.start_time, s.end_time)) ? pr : null;
             if (!slotRoom) slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
             if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
-            const freeDbg = regularRooms.filter(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)).map(r => r.name);
-            console.log(`[MOVE-ART-SLOT] ${user.name} day=${s.day_of_week} ${s.start_time}-${s.end_time} → ${slotRoom?.name||'NONE'} freeRooms=${JSON.stringify(freeDbg)}`);
             if (slotRoom) {
               reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
               if (!artTherapyRoomIds.has(slotRoom.id)) {
@@ -1380,9 +1373,7 @@ function generateAssignments() {
           const targetRoomId = slotPreferred || (currentRoomsByDay[user.id]?.[sub.day_of_week]) || currentRoomId;
           if (targetRoomId && isAvail(targetRoomId, sub.day_of_week, sub.start_time, sub.end_time))
             slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
-          const freeRoomsDbg = regularRooms.filter(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)).map(r => r.name);
-          console.log(`[STAY-SLOT] ${user.name} day=${sub.day_of_week} ${sub.start_time}-${sub.end_time} hasExisting=${hasExistingOnDay} target=${targetRoomId} slotRoom=${slotRoom?.name||null} freeRooms=${JSON.stringify(freeRoomsDbg)}`);
-          if (!slotRoom && !hasExistingOnDay) {
+          if (!slotRoom) {
             if (user.role === 'art_therapist') {
               slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
             }
