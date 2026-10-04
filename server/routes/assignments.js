@@ -912,6 +912,33 @@ function generateAssignments() {
   const userSched = {};
   schedules.forEach(s => { (userSched[s.user_id] = userSched[s.user_id] || []).push(s); });
   const usersWithSchedules = new Set(schedules.map(s => s.user_id));
+
+  // Remove permanent assignments for active users who no longer have a schedule entry for that day.
+  // This covers users whose day was removed from their schedule but whose room assignment was never deleted
+  // (e.g. user's Sunday was removed from their schedule but their old Sunday room assignment remained in the DB).
+  const scheduledDays = {}; // userId -> Set<day_of_week>
+  schedules.forEach(s => {
+    if (!scheduledDays[s.user_id]) scheduledDays[s.user_id] = new Set();
+    scheduledDays[s.user_id].add(+s.day_of_week);
+  });
+  const orphanedAssignments = db.get('room_assignments')
+    .filter(a => a.assignment_type === 'permanent' && a.user_id && activeIds.has(a.user_id))
+    .value()
+    .filter(a => {
+      const days = scheduledDays[a.user_id];
+      return !days || !days.has(+a.day_of_week);
+    });
+  if (orphanedAssignments.length) {
+    const orphanedIds = new Set(orphanedAssignments.map(a => a.id));
+    console.log(`[CLEANUP] Removing ${orphanedAssignments.length} orphaned assignments (day no longer in schedule):`,
+      orphanedAssignments.map(a => {
+        const u = db.get('users').find({ id: a.user_id }).value();
+        const r = db.get('rooms').find({ id: a.room_id }).value();
+        return `${u?.name||a.user_id} ${['ראשון','שני','שלישי','רביעי','חמישי'][a.day_of_week]||a.day_of_week} ${r?.name||a.room_id}`;
+      }).join(', ')
+    );
+    db.get('room_assignments').remove(a => orphanedIds.has(a.id)).write();
+  }
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
@@ -1042,7 +1069,7 @@ function generateAssignments() {
     for (const a of existing) {
       if (a.is_manual) continue; // manual assignments are admin-placed — never auto-cleaned
       if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
-      const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
+      const hasDayInSchedule = (userSched[uid] || []).some(s => +s.day_of_week === +a.day_of_week);
       if (!hasDayInSchedule) staleIds.add(a.id);
     }
   }
