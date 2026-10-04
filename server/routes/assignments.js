@@ -59,7 +59,7 @@ router.get('/diag', requireAdmin, (req, res) => {
     };
   }
 
-  // All Sunday (day=0) permanent assignments, or filtered by day
+  // All permanent assignments for a given day
   if (dayFilter !== null) {
     const dayAssignments = db.get('room_assignments')
       .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayFilter)
@@ -74,6 +74,32 @@ router.get('/diag', requireAdmin, (req, res) => {
       day_raw: a.day_of_week,
       day_type: typeof a.day_of_week,
     }));
+
+    // Users who have this day in schedule but NO assignment for this day
+    // These are exactly who the algorithm will process (assign or re-assign)
+    const allSchedules = db.get('regular_schedules').value();
+    const allAssignments = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+    const usersWithDaySchedule = allSchedules.filter(s => +s.day_of_week === dayFilter);
+    const usersWithDayAssignment = new Set(
+      allAssignments.filter(a => +a.day_of_week === dayFilter && a.user_id).map(a => a.user_id)
+    );
+    const unassignedOnDay = [];
+    const seen = new Set();
+    for (const s of usersWithDaySchedule) {
+      if (seen.has(s.user_id)) continue;
+      seen.add(s.user_id);
+      if (!usersWithDayAssignment.has(s.user_id)) {
+        const u = users.find(u => u.id === s.user_id);
+        if (u && u.is_active) {
+          const slotsForDay = allSchedules.filter(x => x.user_id === s.user_id && +x.day_of_week === dayFilter);
+          unassignedOnDay.push({
+            user: `${u.name}(id=${u.id},role=${u.role})`,
+            slots: slotsForDay.map(x => ({ start: x.start_time, end: x.end_time, preferred_room: enrichRoom(x.preferred_room_id) })),
+          });
+        }
+      }
+    }
+    result[`_unassigned_on_${DAYS[dayFilter]||dayFilter}`] = unassignedOnDay;
   }
 
   res.json(result);
