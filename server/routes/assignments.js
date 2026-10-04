@@ -1118,6 +1118,24 @@ function generateAssignments() {
     r28grid.forEach(e => console.log(`  day=${e.day}(type=${typeof e.day}) ${e.start}-${e.end} ${e.userName||'?'}`));
   }
 
+  // Dump full grid occupancy for all rooms on problematic days (0=Sun, 2=Tue, 3=Wed)
+  {
+    const DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי'];
+    for (const debugDay of [0, 2, 3]) {
+      const occupied = regularRooms
+        .map(r => ({ room: r, entries: (grid[r.id] || []).filter(e => +e.day === debugDay) }))
+        .filter(x => x.entries.length > 0);
+      if (occupied.length > 0) {
+        console.log(`[GRID-DAY${debugDay}] ${DAYS_HE[debugDay]}: ${occupied.length}/${regularRooms.length} rooms occupied`);
+        occupied.forEach(x => x.entries.forEach(e =>
+          console.log(`  ${x.room.name}: ${e.userName||'ללא משתמש'} ${e.start}-${e.end}`)
+        ));
+      } else {
+        console.log(`[GRID-DAY${debugDay}] ${DAYS_HE[debugDay]}: כל החדרים פנויים`);
+      }
+    }
+  }
+
   const reserve = (roomId, day, start, end, userId, role, userName) => {
     grid[roomId].push({ day, start, end, userId, role, userName });
     newAssignments.push({ user_id: userId, room_id: roomId, day_of_week: +day, start_time: start, end_time: end });
