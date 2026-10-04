@@ -959,19 +959,24 @@ function generateAssignments() {
   // New employees (no current assignments) are NOT wantToMove — they go through the
   // stay/new path where per-slot preferred guides each day's assignment.
   const wantToMoveIds = new Set();
+  const wantToMoveDays = {}; // userId -> Set<day_of_week> where preferred != current
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const cur = currentRooms[user.id];
     if (!cur) continue; // new employee — handle via stay/new path
     const userDayRooms = currentRoomsByDay[user.id] || {};
-    const anySlotWantsMove = rawSlots.some(s => {
+    const moveDays = new Set();
+    rawSlots.forEach(s => {
       const pid = s.preferred_room_id ? +s.preferred_room_id : null;
-      if (!pid) return false;
+      if (!pid) return;
       const dayRoom = userDayRooms[s.day_of_week] || cur;
-      return pid !== dayRoom;
+      if (pid !== dayRoom) moveDays.add(s.day_of_week);
     });
-    if (anySlotWantsMove) wantToMoveIds.add(user.id);
+    if (moveDays.size > 0) {
+      wantToMoveIds.add(user.id);
+      wantToMoveDays[user.id] = moveDays;
+    }
   }
 
   // flexibleIds: users with no explicit preferred_room_id (and not already wantToMove).
@@ -1010,9 +1015,10 @@ function generateAssignments() {
   rooms.forEach(r => (grid[r.id] = []));
   allExisting.forEach(a => {
     if (!grid[a.room_id]) return;
-    // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
-    // Manual (admin-added) assignments are always preserved, even for wantToMove users
-    if (a.user_id && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual) return;
+    // Exclude from grid seeding only move-days for wantToMove users and all days for flexible users.
+    // Stay-days for wantToMove users (preferred == current) are seeded normally so they hold the room.
+    if (a.user_id && !a.is_manual &&
+        (flexibleIds.has(a.user_id) || (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week)))) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -1085,13 +1091,20 @@ function generateAssignments() {
       // isFlexible: no preferred room — assign to any available room after
       //             all preference-holders have been served (due to sort order).
       // Slots already covered by manual (admin-added) assignments are kept as-is.
+      // Split move-days from stay-days for wantToMove users.
+      // Stay-days (preferred == current) keep their existing assignments and only process gaps.
+      const moveDaySet = isMoving && !isFlexible ? wantToMoveDays[user.id] : null;
+      const slotsForMove = moveDaySet ? slots.filter(s => moveDaySet.has(s.day_of_week)) : slots;
+      const slotsForStay = moveDaySet ? slots.filter(s => !moveDaySet.has(s.day_of_week)) : [];
+
       const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
-      const slotsToAssign = slots.filter(s =>
+      const slotsToAssign = slotsForMove.filter(s =>
         !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time))
       );
 
-      if (!slotsToAssign.length) continue; // all slots covered by manual assignments
+      if (!slotsToAssign.length && !slotsForStay.length) continue;
 
+      if (slotsToAssign.length) {
       const pr = regularRooms.find(r => r.id === preferredId);
 
       if (user.role === 'art_therapist' || user.role === 'clinical_intern') {
@@ -1313,6 +1326,27 @@ function generateAssignments() {
         result: (modalPid && gotRooms.includes(modalPid)) ? 'got_wanted' : (gotRooms.length ? 'got_other' : 'unassigned'),
         gotRoom: rooms.find(r => r.id === gotRooms[0])?.name || null,
       });
+      } // end if (slotsToAssign.length)
+
+      // Stay-days for wantToMove users: existing assignment holds the room; only process uncovered gaps.
+      for (const s of slotsForStay) {
+        for (const sub of uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s)) {
+          const hasExistingOnDay = (existingByUser[user.id] || []).some(a => a.day_of_week === sub.day_of_week);
+          let slotRoom = null;
+          const slotPreferred = sub.preferred_room_id ? +sub.preferred_room_id : null;
+          const targetRoomId = slotPreferred || (currentRoomsByDay[user.id]?.[sub.day_of_week]) || currentRoomId;
+          if (targetRoomId && isAvail(targetRoomId, sub.day_of_week, sub.start_time, sub.end_time))
+            slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
+          if (!slotRoom && !hasExistingOnDay) {
+            if (user.role === 'art_therapist') {
+              slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
+            }
+            if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
+          }
+          if (slotRoom) reserve(slotRoom.id, sub.day_of_week, sub.start_time, sub.end_time, user.id, user.role, user.name);
+          else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [sub] });
+        }
+      }
 
     } else {
       // ── Stay / extend / new: process sub-slots not yet covered ────────────
@@ -1366,13 +1400,20 @@ function generateAssignments() {
     const isMovingExtra = wantToMoveIds.has(user.id) || flexibleIds.has(user.id);
     const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
 
-    // wantToMove: process extra slots (minus manually assigned ones)
+    // wantToMove: process extra slots only on move-days; stay extra-days use uncoveredSubSlots
     // stay: only process uncovered sub-slots on extra days
     const slotsToProcess = isMovingExtra
-      ? extraSlots.filter(s => !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
+      ? extraSlots
+          .filter(s => flexibleIds.has(user.id) || wantToMoveDays[user.id]?.has(s.day_of_week))
+          .filter(s => !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
       : extraSlots.flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s));
+    const stayExtraToProcess = (isMovingExtra && !flexibleIds.has(user.id))
+      ? extraSlots.filter(s => !wantToMoveDays[user.id]?.has(s.day_of_week))
+          .flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s))
+      : [];
+    const allExtraToProcess = [...slotsToProcess, ...stayExtraToProcess];
 
-    for (const s of slotsToProcess) {
+    for (const s of allExtraToProcess) {
       const slotPrefExtra = s.preferred_room_id ? +s.preferred_room_id : null;
       let slotRoom = null;
       if (slotPrefExtra && isAvail(slotPrefExtra, s.day_of_week, s.start_time, s.end_time))
@@ -1426,9 +1467,14 @@ function generateAssignments() {
   const staleIds = [];
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
-    if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
+    if (flexibleIds.has(uid)) continue; // flexible users: fully cleared & rewritten
     for (const a of existing) {
-      if (a.is_manual) continue; // manual assignments are never auto-removed
+      // wantToMove days are cleared & rewritten in the write step — skip them here
+      if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
+      // Remove even manual assignments if the employee has no schedule at all on this day
+      const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
+      if (!hasDayInSchedule) { staleIds.push(a.id); continue; }
+      if (a.is_manual) continue; // manual with at least one scheduled day: preserve
       const stillNeeded = (userSched[uid] || []).some(s =>
         s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
       );
@@ -1444,7 +1490,9 @@ function generateAssignments() {
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size || flexibleIds.size) {
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
+      .remove(a => a.assignment_type === 'permanent' && !a.is_manual && a.user_id &&
+        (flexibleIds.has(a.user_id) ||
+         (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week))))
       .write();
   }
   const now = new Date().toISOString();
@@ -1463,10 +1511,12 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      // For wantToMove / flexible users: existing assignments were cleared, but manual ones were kept
-      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
+      // Flexible: fully cleared, keep only manual. wantToMove: keep manual + stay-days. Stay: keep all.
+      ...(flexibleIds.has(user.id)
         ? (existingByUser[user.id] || []).filter(a => a.is_manual)
-        : (existingByUser[user.id] || [])),
+        : wantToMoveIds.has(user.id)
+          ? (existingByUser[user.id] || []).filter(a => a.is_manual || !wantToMoveDays[user.id]?.has(a.day_of_week))
+          : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),
     ];
     const assignedRooms = [...new Set(allAssigned.map(a => a.room_id))]
