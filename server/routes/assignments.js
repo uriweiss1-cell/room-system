@@ -1066,13 +1066,6 @@ function generateAssignments() {
   const isAvail = (roomId, day, start, end) =>
     !grid[roomId]?.some(a => a.day === day && overlap(start, end, a.start, a.end));
 
-  // Log initial grid state for room 28
-  if (debugRoomId) {
-    const r28grid = (grid[debugRoomId] || []);
-    console.log(`[R28-INIT] grid after seeding: ${r28grid.length} entries`);
-    r28grid.forEach(e => console.log(`  day=${e.day}(type=${typeof e.day}) ${e.start}-${e.end} ${e.userName||'?'}`));
-  }
-
   const newAssignments = [];
   const conflicts = [];
   const preferenceConflicts = [];
@@ -1089,6 +1082,13 @@ function generateAssignments() {
 
   const room28 = rooms.find(r => r.name === 'חדר 28');
   const debugRoomId = room28?.id;
+
+  // Log initial grid state for room 28
+  if (debugRoomId) {
+    const r28grid = (grid[debugRoomId] || []);
+    console.log(`[R28-INIT] grid after seeding: ${r28grid.length} entries`);
+    r28grid.forEach(e => console.log(`  day=${e.day}(type=${typeof e.day}) ${e.start}-${e.end} ${e.userName||'?'}`));
+  }
 
   const reserve = (roomId, day, start, end, userId, role, userName) => {
     grid[roomId].push({ day, start, end, userId, role, userName });
