@@ -1471,13 +1471,9 @@ function generateAssignments() {
     for (const a of existing) {
       // wantToMove days are cleared & rewritten in the write step — skip them here
       if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
-      // Remove assignment if there is no overlapping schedule slot — applies to all assignments,
-      // including manual ones. Manual assignments are protected from *overwriting* by the algorithm
-      // (grid seeding + write step), but should still be cleaned up when no longer schedule-backed.
-      const stillNeeded = (userSched[uid] || []).some(s =>
-        s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
-      );
-      if (!stillNeeded) staleIds.push(a.id);
+      // Delete assignment if employee has no schedule entry at all for that day
+      const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
+      if (!hasDayInSchedule) staleIds.push(a.id);
     }
   }
   if (staleIds.length) {
