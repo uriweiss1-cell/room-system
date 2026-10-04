@@ -1380,7 +1380,12 @@ function generateAssignments() {
             if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
           }
           if (slotRoom) reserve(slotRoom.id, sub.day_of_week, sub.start_time, sub.end_time, user.id, user.role, user.name);
-          else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [sub] });
+          else {
+            const DAYS_LOG2 = ['ראשון','שני','שלישי','רביעי','חמישי'];
+            const freeR2 = regularRooms.filter(r=>!(grid[r.id]||[]).some(a=>a.day===+sub.day_of_week&&overlap(sub.start_time,sub.end_time,a.start,a.end))).map(r=>r.name).join(', ')||'NONE';
+            console.log(`[CONFLICT-STAY] ${user.name} (${user.role}) ${DAYS_LOG2[+sub.day_of_week]} ${sub.start_time}-${sub.end_time} | free rooms: ${freeR2}`);
+            conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [sub] });
+          }
         }
       }
 
@@ -1423,6 +1428,14 @@ function generateAssignments() {
         }
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
         else {
+          // Log every room that blocked this slot — for debugging
+          const DAYS_LOG = ['ראשון','שני','שלישי','רביעי','חמישי'];
+          const blockedBy = regularRooms.map(r => {
+            const blockers = (grid[r.id] || []).filter(a => a.day === +s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end));
+            return blockers.length ? `${r.name}: ${blockers.map(b=>`${b.userName||'?'} ${b.start}-${b.end}`).join(', ')}` : null;
+          }).filter(Boolean);
+          console.log(`[CONFLICT] ${user.name} (${user.role}) ${DAYS_LOG[+s.day_of_week]} ${s.start_time}-${s.end_time} | blocked rooms: ${blockedBy.length} | free rooms: ${regularRooms.filter(r=>!(grid[r.id]||[]).some(a=>a.day===+s.day_of_week&&overlap(s.start_time,s.end_time,a.start,a.end))).map(r=>r.name).join(', ')||'NONE'}`);
+          if (blockedBy.length <= 20) blockedBy.forEach(b => console.log(`  ${b}`));
           conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
         }
       }
