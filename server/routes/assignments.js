@@ -1036,6 +1036,7 @@ function generateAssignments() {
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
     for (const a of existing) {
+      if (a.is_manual) continue; // manual assignments are admin-placed — never auto-cleaned
       if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
       const hasDayInSchedule = (userSched[uid] || []).some(s => s.day_of_week === a.day_of_week);
       if (!hasDayInSchedule) staleIds.add(a.id);
@@ -1422,7 +1423,11 @@ function generateAssignments() {
           }
         }
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-        else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
+        else {
+          conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
+          const freeRooms = regularRooms.filter(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)).map(r => r.name);
+          console.log(`[CONFLICT] ${user.name} day=${s.day_of_week} ${s.start_time}-${s.end_time} hasExisting=${hasExistingOnDay} target=${targetRoomId} freeRooms=${JSON.stringify(freeRooms)}`);
+        }
       }
     }
   }
