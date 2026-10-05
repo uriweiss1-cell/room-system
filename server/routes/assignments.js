@@ -1440,15 +1440,13 @@ function generateAssignments() {
       .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
       .write();
   }
-  const now = new Date().toISOString();
   newAssignments.forEach(a => {
     db.get('room_assignments').push({
       id: nextId('room_assignments'), ...a,
       assignment_type: 'permanent', specific_date: null,
-      created_at: now,
-    });
+      created_at: new Date().toISOString(),
+    }).write();
   });
-  if (newAssignments.length) db.write();
 
   // ── userStats ─────────────────────────────────────────────────────────────
   const userStats = {};
