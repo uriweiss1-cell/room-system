@@ -658,9 +658,6 @@ export default function AdminAssignments({ readOnly = false }) {
             </div>
             {genResult.applyMsg && <p className="text-green-700 text-sm mt-1 font-medium">✅ {genResult.applyMsg}</p>}
             {genResult.applyError && <p className="text-red-700 text-sm mt-1 font-medium">{genResult.applyError}</p>}
-            {genResult._dbSundayCountAfterWrite !== undefined && (
-              <p className="text-xs text-gray-500 mt-1">אימות DB: {genResult._dbSundayCountAfterWrite} שיבוצי ראשון בDB מיד אחרי הכתיבה</p>
-            )}
 
             {/* Completely unassigned — highest priority, shown first */}
             {isPanelVisible('completelyUnassigned', genResult.completelyUnassigned?.length) && (genResult.completelyUnassigned?.length || 0) > 0 && (

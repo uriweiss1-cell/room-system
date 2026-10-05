@@ -106,20 +106,4 @@ function nextId(table) {
   return id;
 }
 
-// Force-sync current DB state to MongoDB and wait for confirmation.
-// Call this after important writes (algorithm, bulk imports) to ensure
-// Railway restarts don't lose data due to the async CloudAdapter sync.
-async function syncToMongo() {
-  if (!mongoCollection || !_db) return;
-  try {
-    await mongoCollection.replaceOne(
-      { _id: 'db' },
-      { _id: 'db', data: _db.getState() },
-      { upsert: true }
-    );
-  } catch (e) {
-    console.error('syncToMongo error:', e.message);
-  }
-}
-
-module.exports = { get db() { return _db; }, nextId, initDB, dbPath, syncToMongo };
+module.exports = { get db() { return _db; }, nextId, initDB, dbPath };

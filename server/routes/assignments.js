@@ -1,5 +1,5 @@
 const express = require('express');
-const { db, nextId, syncToMongo } = require('../database');
+const { db, nextId } = require('../database');
 const { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole } = require('../middleware/auth');
 const { createBackup } = require('./backups');
 
@@ -29,80 +29,6 @@ router.get('/my', (req, res) => {
 router.get('/all', requirePermOrRole('assignments', 'secretary'), (req, res) => {
   const list = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
   res.json(list);
-});
-
-// Diagnostic: show raw DB state for a user and for Sunday assignments
-router.get('/diag', requireAdmin, (req, res) => {
-  const userName = req.query.user || '';
-  const dayFilter = req.query.day !== undefined ? +req.query.day : null;
-
-  const users = db.get('users').value();
-  const rooms = db.get('rooms').value();
-  const enrichUser = id => { const u = users.find(u => u.id === id); return u ? `${u.name}(id=${u.id},active=${u.is_active})` : `id=${id}`; };
-  const enrichRoom = id => { const r = rooms.find(r => r.id === id); return r ? `${r.name}(id=${r.id})` : `id=${id}`; };
-  const DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי'];
-
-  const matchedUsers = userName
-    ? users.filter(u => u.name.includes(userName))
-    : [];
-
-  const result = {};
-
-  // Per-user data
-  for (const u of matchedUsers) {
-    const schedules = db.get('regular_schedules').filter({ user_id: u.id }).value();
-    const assignments = db.get('room_assignments').filter(a => a.user_id === u.id && a.assignment_type === 'permanent').value();
-    result[u.name] = {
-      user: { id: u.id, role: u.role, is_active: u.is_active },
-      schedules: schedules.map(s => ({ id: s.id, day: DAYS[s.day_of_week] || s.day_of_week, start: s.start_time, end: s.end_time, preferred_room: enrichRoom(s.preferred_room_id) })),
-      assignments: assignments.map(a => ({ id: a.id, room: enrichRoom(a.room_id), day: DAYS[a.day_of_week] || a.day_of_week, start: a.start_time, end: a.end_time, is_manual: a.is_manual })),
-    };
-  }
-
-  // All permanent assignments for a given day
-  if (dayFilter !== null) {
-    const dayAssignments = db.get('room_assignments')
-      .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === dayFilter)
-      .value();
-    result[`_day_${DAYS[dayFilter]||dayFilter}_assignments`] = dayAssignments.map(a => ({
-      id: a.id,
-      room: enrichRoom(a.room_id),
-      user: a.user_id ? enrichUser(a.user_id) : 'guest',
-      start: a.start_time,
-      end: a.end_time,
-      is_manual: a.is_manual,
-      day_raw: a.day_of_week,
-      day_type: typeof a.day_of_week,
-    }));
-
-    // Users who have this day in schedule but NO assignment for this day
-    // These are exactly who the algorithm will process (assign or re-assign)
-    const allSchedules = db.get('regular_schedules').value();
-    const allAssignments = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
-    const usersWithDaySchedule = allSchedules.filter(s => +s.day_of_week === dayFilter);
-    const usersWithDayAssignment = new Set(
-      allAssignments.filter(a => +a.day_of_week === dayFilter && a.user_id).map(a => a.user_id)
-    );
-    const unassignedOnDay = [];
-    const seen = new Set();
-    for (const s of usersWithDaySchedule) {
-      if (seen.has(s.user_id)) continue;
-      seen.add(s.user_id);
-      if (!usersWithDayAssignment.has(s.user_id)) {
-        const u = users.find(u => u.id === s.user_id);
-        if (u && u.is_active) {
-          const slotsForDay = allSchedules.filter(x => x.user_id === s.user_id && +x.day_of_week === dayFilter);
-          unassignedOnDay.push({
-            user: `${u.name}(id=${u.id},role=${u.role})`,
-            slots: slotsForDay.map(x => ({ start: x.start_time, end: x.end_time, preferred_room: enrichRoom(x.preferred_room_id) })),
-          });
-        }
-      }
-    }
-    result[`_unassigned_on_${DAYS[dayFilter]||dayFilter}`] = unassignedOnDay;
-  }
-
-  res.json(result);
 });
 
 // Weekly one-time assignments + absences for the grid
@@ -447,26 +373,6 @@ router.post('/', requirePerm('assignments'), (req, res) => {
     }
   }
 
-  // Self-overlap check: block if this user already has an assignment in a DIFFERENT room
-  // on the same day at overlapping hours. Admin can override with force:true or replace_overlap.
-  if (aType === 'permanent' && user_id && !force && !replace_overlap) {
-    const selfConflict = db.get('room_assignments').filter(a =>
-      +a.user_id === +user_id &&
-      +a.day_of_week === +day_of_week &&
-      a.assignment_type === 'permanent' &&
-      +a.room_id !== +room_id &&
-      overlap(a.start_time, a.end_time, start_time, end_time)
-    ).value()[0];
-    if (selfConflict) {
-      const conflictRoom = db.get('rooms').find({ id: selfConflict.room_id }).value();
-      const u = db.get('users').find({ id: +user_id }).value();
-      return res.status(409).json({
-        self_conflict: true,
-        message: `${u?.name || 'העובד'} כבר משובץ/ת בחדר ${conflictRoom?.name || selfConflict.room_id} ב-${selfConflict.start_time}–${selfConflict.end_time} באותו יום`,
-      });
-    }
-  }
-
   // If replace_overlap is set, remove existing overlapping permanent assignments for this user/day
   if (replace_overlap && user_id && aType === 'permanent') {
     db.get('room_assignments')
@@ -569,6 +475,10 @@ router.delete('/clear/permanent', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requirePerm('assignments'), (req, res) => {
+  // Admin delete: removes only the room_assignment, keeps regular_schedule intact.
+  // The employee stays in the "needs assignment" pool — the algorithm will reassign
+  // them on the next run.
+  // (Employee self-delete via DELETE /my/:id removes both assignment AND schedule.)
   db.get('room_assignments').remove({ id: +req.params.id }).write();
   res.json({ message: 'השיבוץ נמחק' });
 });
@@ -832,17 +742,9 @@ router.get('/audit', requirePerm('assignments'), (req, res) => {
   res.json({ violations, okCount, totalChecked: okCount + violations.length });
 });
 
-router.post('/generate', requirePerm('algorithm'), async (req, res) => {
-  try {
-    createBackup('before-generate');
-    const result = generateAssignments();
-    // Verify DB write succeeded before syncing
-    const dbSundayCount = db.get('room_assignments')
-      .filter(a => a.assignment_type === 'permanent' && +a.day_of_week === 0).value().length;
-    result._dbSundayCountAfterWrite = dbSundayCount;
-    await syncToMongo(); // ensure data survives Railway restarts
-    res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+router.post('/generate', requirePerm('algorithm'), (req, res) => {
+  try { createBackup('before-generate'); res.json(generateAssignments()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
@@ -977,10 +879,6 @@ function generateAssignments() {
   const schedules = db.get('regular_schedules').value();
   const regularRooms = rooms.filter(r => r.room_type === 'regular' || r.room_type === 'committee');
 
-  // Log all room types so we can see which rooms are included/excluded
-  console.log('[ROOMS] regularRooms count:', regularRooms.length, '| All active rooms:',
-    rooms.map(r => `${r.name}(${r.room_type})`).join(', '));
-
   // Remove stale assignments for inactive/deleted users so they don't block rooms
   const activeIds = new Set(users.map(u => u.id));
   db.get('room_assignments')
@@ -990,75 +888,6 @@ function generateAssignments() {
   const userSched = {};
   schedules.forEach(s => { (userSched[s.user_id] = userSched[s.user_id] || []).push(s); });
   const usersWithSchedules = new Set(schedules.map(s => s.user_id));
-
-  // Remove permanent assignments for active users who no longer have a schedule entry for that day.
-  // This covers users whose day was removed from their schedule but whose room assignment was never deleted
-  // (e.g. user's Sunday was removed from their schedule but their old Sunday room assignment remained in the DB).
-  const scheduledDays = {}; // userId -> Set<day_of_week>
-  schedules.forEach(s => {
-    if (!scheduledDays[s.user_id]) scheduledDays[s.user_id] = new Set();
-    scheduledDays[s.user_id].add(+s.day_of_week);
-  });
-  const orphanedAssignments = db.get('room_assignments')
-    .filter(a => a.assignment_type === 'permanent' && a.user_id && activeIds.has(a.user_id))
-    .value()
-    .filter(a => {
-      const days = scheduledDays[a.user_id];
-      return !days || !days.has(+a.day_of_week);
-    });
-  if (orphanedAssignments.length) {
-    const orphanedIds = new Set(orphanedAssignments.map(a => a.id));
-    console.log(`[CLEANUP] Removing ${orphanedAssignments.length} orphaned assignments (day no longer in schedule):`,
-      orphanedAssignments.map(a => {
-        const u = db.get('users').find({ id: a.user_id }).value();
-        const r = db.get('rooms').find({ id: a.room_id }).value();
-        return `${u?.name||a.user_id} ${['ראשון','שני','שלישי','רביעי','חמישי'][a.day_of_week]||a.day_of_week} ${r?.name||a.room_id}`;
-      }).join(', ')
-    );
-    db.get('room_assignments').remove(a => orphanedIds.has(a.id)).write();
-  }
-
-  // Deduplicate permanent assignments: when a user has multiple assignments for the same
-  // day+time-slot (e.g. old room persisted after algorithm moved them to a new room),
-  // keep only the most recent assignment (highest id) per user per day per time-slot.
-  {
-    const allPerms = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
-    const toRemoveDupes = [];
-    // Group by userId + day
-    const byUserDay = {};
-    allPerms.forEach(a => {
-      if (!a.user_id) return;
-      const key = `${a.user_id}_${a.day_of_week}`;
-      (byUserDay[key] = byUserDay[key] || []).push(a);
-    });
-    Object.values(byUserDay).forEach(group => {
-      if (group.length <= 1) return;
-      // For each pair that overlaps in time, remove the older one (lower id)
-      const sorted = [...group].sort((a, b) => b.id - a.id); // newest first
-      const kept = [];
-      for (const a of sorted) {
-        const conflictsWithKept = kept.some(k => overlap(a.start_time, a.end_time, k.start_time, k.end_time));
-        if (conflictsWithKept) {
-          toRemoveDupes.push(a.id);
-        } else {
-          kept.push(a);
-        }
-      }
-    });
-    if (toRemoveDupes.length) {
-      console.log(`[CLEANUP-DUPE] Removing ${toRemoveDupes.length} duplicate assignments (older room replaced by newer):`,
-        toRemoveDupes.map(id => {
-          const a = allPerms.find(x => x.id === id);
-          if (!a) return id;
-          const u = db.get('users').find({ id: a.user_id }).value();
-          const r = db.get('rooms').find({ id: a.room_id }).value();
-          return `${u?.name||a.user_id} ${['ראשון','שני','שלישי','רביעי','חמישי'][a.day_of_week]||a.day_of_week} ${r?.name||a.room_id}`;
-        }).join(', ')
-      );
-      const dupeSet = new Set(toRemoveDupes);
-      db.get('room_assignments').remove(a => dupeSet.has(a.id)).write();
-    }
-  }
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
@@ -1130,24 +959,19 @@ function generateAssignments() {
   // New employees (no current assignments) are NOT wantToMove — they go through the
   // stay/new path where per-slot preferred guides each day's assignment.
   const wantToMoveIds = new Set();
-  const wantToMoveDays = {}; // userId -> Set<day_of_week> where preferred != current
   for (const user of sorted) {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const cur = currentRooms[user.id];
     if (!cur) continue; // new employee — handle via stay/new path
     const userDayRooms = currentRoomsByDay[user.id] || {};
-    const moveDays = new Set();
-    rawSlots.forEach(s => {
+    const anySlotWantsMove = rawSlots.some(s => {
       const pid = s.preferred_room_id ? +s.preferred_room_id : null;
-      if (!pid) return;
+      if (!pid) return false;
       const dayRoom = userDayRooms[s.day_of_week] || cur;
-      if (pid !== dayRoom) moveDays.add(s.day_of_week);
+      return pid !== dayRoom;
     });
-    if (moveDays.size > 0) {
-      wantToMoveIds.add(user.id);
-      wantToMoveDays[user.id] = moveDays;
-    }
+    if (anySlotWantsMove) wantToMoveIds.add(user.id);
   }
 
   // flexibleIds: users with no explicit preferred_room_id (and not already wantToMove).
@@ -1179,33 +1003,16 @@ function generateAssignments() {
     return gaps.map(g => ({ ...template, start_time: g.start_time, end_time: g.end_time }));
   };
 
-  // ── Pre-compute stale IDs before grid seeding ────────────────────────────
-  // Stale = assignment for a day no longer in this user's schedule.
-  // Must be computed here so stale entries are excluded from the grid and don't
-  // block other users' room allocation during the algorithm run.
-  const staleIds = new Set();
-  for (const [uidStr, existing] of Object.entries(existingByUser)) {
-    const uid = +uidStr;
-    for (const a of existing) {
-      if (a.is_manual) continue; // manual assignments are admin-placed — never auto-cleaned
-      if (wantToMoveIds.has(uid) && wantToMoveDays[uid]?.has(a.day_of_week)) continue;
-      const hasDayInSchedule = (userSched[uid] || []).some(s => +s.day_of_week === +a.day_of_week);
-      if (!hasDayInSchedule) staleIds.add(a.id);
-    }
-  }
-
   // ── Build room grid ───────────────────────────────────────────────────────
   // Seed the grid with ALL existing permanent assignments EXCEPT wantToMove users
-  // (their slots will be cleared and re-written at the end) and stale assignments
-  // (their day was removed from the schedule; they will be deleted in the write step).
+  // (their slots will be cleared and re-written at the end).
   const grid = {};
   rooms.forEach(r => (grid[r.id] = []));
   allExisting.forEach(a => {
     if (!grid[a.room_id]) return;
-    if (staleIds.has(a.id)) return; // stale: day no longer in schedule
-    // Exclude move-days for wantToMove users (cleared & rewritten at end).
-    if (a.user_id && !a.is_manual &&
-        (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week))) return;
+    // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
+    // Manual (admin-added) assignments are always preserved, even for wantToMove users
+    if (a.user_id && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -1227,39 +1034,9 @@ function generateAssignments() {
     rooms.filter(r => ART_THERAPY_ROOM_NUMBERS.some(n => r.name === `חדר ${n}`)).map(r => r.id)
   );
 
-  const room28 = rooms.find(r => r.name?.includes('28'));
-  const debugRoomId = room28?.id;
-  console.log(`[R28-SEARCH] rooms with "28" in name: ${rooms.filter(r=>r.name?.includes('28')).map(r=>`"${r.name}"(id=${r.id})`).join(', ')||'NONE'} | room28=${room28?.name||'NOT FOUND'}`);
-
-  // Log initial grid state for room 28
-  if (debugRoomId) {
-    const r28grid = (grid[debugRoomId] || []);
-    console.log(`[R28-INIT] grid after seeding: ${r28grid.length} entries`);
-    r28grid.forEach(e => console.log(`  day=${e.day}(type=${typeof e.day}) ${e.start}-${e.end} ${e.userName||'?'}`));
-  }
-
-  // Dump full grid occupancy for all rooms on problematic days (0=Sun, 2=Tue, 3=Wed)
-  {
-    const DAYS_HE = ['ראשון','שני','שלישי','רביעי','חמישי'];
-    for (const debugDay of [0, 2, 3]) {
-      const occupied = regularRooms
-        .map(r => ({ room: r, entries: (grid[r.id] || []).filter(e => +e.day === debugDay) }))
-        .filter(x => x.entries.length > 0);
-      if (occupied.length > 0) {
-        console.log(`[GRID-DAY${debugDay}] ${DAYS_HE[debugDay]}: ${occupied.length}/${regularRooms.length} rooms occupied`);
-        occupied.forEach(x => x.entries.forEach(e =>
-          console.log(`  ${x.room.name}: ${e.userName||'ללא משתמש'} ${e.start}-${e.end}`)
-        ));
-      } else {
-        console.log(`[GRID-DAY${debugDay}] ${DAYS_HE[debugDay]}: כל החדרים פנויים`);
-      }
-    }
-  }
-
   const reserve = (roomId, day, start, end, userId, role, userName) => {
     grid[roomId].push({ day, start, end, userId, role, userName });
     newAssignments.push({ user_id: userId, room_id: roomId, day_of_week: +day, start_time: start, end_time: end });
-    if (roomId === debugRoomId) console.log(`[R28] reserved by ${userName} (${role}) day=${day} ${start}-${end}`);
   };
 
   function effectiveSlots(role, slots) {
@@ -1302,26 +1079,19 @@ function generateAssignments() {
       }
     }
 
-    if (isMoving) {
+    if (isMoving || isFlexible) {
       // ── wantToMove / flexible: re-assign this user ────────────────────────
       // wantToMove: re-assign to their explicitly preferred room.
       // isFlexible: no preferred room — assign to any available room after
       //             all preference-holders have been served (due to sort order).
       // Slots already covered by manual (admin-added) assignments are kept as-is.
-      // Split move-days from stay-days for wantToMove users.
-      // Stay-days (preferred == current) keep their existing assignments and only process gaps.
-      const moveDaySet = isMoving && !isFlexible ? wantToMoveDays[user.id] : null;
-      const slotsForMove = moveDaySet ? slots.filter(s => moveDaySet.has(s.day_of_week)) : slots;
-      const slotsForStay = moveDaySet ? slots.filter(s => !moveDaySet.has(s.day_of_week)) : [];
-
       const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
-      const slotsToAssign = slotsForMove.filter(s =>
+      const slotsToAssign = slots.filter(s =>
         !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time))
       );
 
-      if (!slotsToAssign.length && !slotsForStay.length) continue;
+      if (!slotsToAssign.length) continue; // all slots covered by manual assignments
 
-      if (slotsToAssign.length) {
       const pr = regularRooms.find(r => r.id === preferredId);
 
       if (user.role === 'art_therapist' || user.role === 'clinical_intern') {
@@ -1375,22 +1145,10 @@ function generateAssignments() {
             const fixedSet = new Set(bestFreeDays);
             slotsToAssign.filter(s => fixedSet.has(s.day_of_week))
               .forEach(s => reserve(bestRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
-            // Group remaining slots by day — find ONE room per day before falling back to per-slot.
-            // Without this, two slots on the same day can land in different rooms (wastes capacity).
-            const remainingByDay = {};
-            slotsToAssign.filter(s => !fixedSet.has(s.day_of_week))
-              .forEach(s => (remainingByDay[s.day_of_week] = remainingByDay[s.day_of_week] || []).push(s));
-            for (const [dayStr, daySlots] of Object.entries(remainingByDay)) {
-              const dayRoom = regularRooms.find(r => daySlots.every(s => isAvail(r.id, +dayStr, s.start_time, s.end_time)));
-              if (dayRoom) {
-                daySlots.forEach(s => reserve(dayRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name));
-              } else {
-                for (const s of daySlots) {
-                  const anyRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
-                  if (anyRoom) reserve(anyRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-                  else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
-                }
-              }
+            for (const s of slotsToAssign.filter(s => !fixedSet.has(s.day_of_week))) {
+              const anyRoom = regularRooms.find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time));
+              if (anyRoom) reserve(anyRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
+              else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
             }
           } else {
             // Cannot guarantee 2 fixed days → alert admin
@@ -1555,32 +1313,6 @@ function generateAssignments() {
         result: (modalPid && gotRooms.includes(modalPid)) ? 'got_wanted' : (gotRooms.length ? 'got_other' : 'unassigned'),
         gotRoom: rooms.find(r => r.id === gotRooms[0])?.name || null,
       });
-      } // end if (slotsToAssign.length)
-
-      // Stay-days for wantToMove users: existing assignment holds the room; only process uncovered gaps.
-      for (const s of slotsForStay) {
-        for (const sub of uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s)) {
-          const hasExistingOnDay = (existingByUser[user.id] || []).some(a => a.day_of_week === sub.day_of_week);
-          let slotRoom = null;
-          const slotPreferred = sub.preferred_room_id ? +sub.preferred_room_id : null;
-          const targetRoomId = slotPreferred || (currentRoomsByDay[user.id]?.[sub.day_of_week]) || currentRoomId;
-          if (targetRoomId && isAvail(targetRoomId, sub.day_of_week, sub.start_time, sub.end_time))
-            slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
-          if (!slotRoom) {
-            if (user.role === 'art_therapist') {
-              slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
-            }
-            if (!slotRoom) slotRoom = regularRooms.find(r => isAvail(r.id, sub.day_of_week, sub.start_time, sub.end_time)) || null;
-          }
-          if (slotRoom) reserve(slotRoom.id, sub.day_of_week, sub.start_time, sub.end_time, user.id, user.role, user.name);
-          else {
-            const DAYS_LOG2 = ['ראשון','שני','שלישי','רביעי','חמישי'];
-            const freeR2 = regularRooms.filter(r=>!(grid[r.id]||[]).some(a=>a.day===+sub.day_of_week&&overlap(sub.start_time,sub.end_time,a.start,a.end))).map(r=>r.name).join(', ')||'NONE';
-            console.log(`[CONFLICT-STAY] ${user.name} (${user.role}) ${DAYS_LOG2[+sub.day_of_week]} ${sub.start_time}-${sub.end_time} | free rooms: ${freeR2}`);
-            conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [sub] });
-          }
-        }
-      }
 
     } else {
       // ── Stay / extend / new: process sub-slots not yet covered ────────────
@@ -1602,9 +1334,10 @@ function generateAssignments() {
         // Always try preferred/current room first
         if (targetRoomId && isAvail(targetRoomId, s.day_of_week, s.start_time, s.end_time))
           slotRoom = regularRooms.find(r => r.id === targetRoomId) || null;
-        // Fall back to any free room when target is unavailable — both for new days
-        // and for hour extensions (user already has another assignment on this day).
-        if (!slotRoom) {
+        // For new days (no existing assignment on this day): fall back to any free room
+        // For hour extensions (user already has a room on this day): don't move to a different room —
+        // show a conflict instead so the admin is aware and can decide.
+        if (!slotRoom && !hasExistingOnDay) {
           // art_therapist: prefer art-therapy-suitable rooms
           if (user.role === 'art_therapist') {
             slotRoom = regularRooms.filter(r => artTherapyRoomIds.has(r.id)).find(r => isAvail(r.id, s.day_of_week, s.start_time, s.end_time)) || null;
@@ -1620,17 +1353,7 @@ function generateAssignments() {
           }
         }
         if (slotRoom) reserve(slotRoom.id, s.day_of_week, s.start_time, s.end_time, user.id, user.role, user.name);
-        else {
-          // Log every room that blocked this slot — for debugging
-          const DAYS_LOG = ['ראשון','שני','שלישי','רביעי','חמישי'];
-          const blockedBy = regularRooms.map(r => {
-            const blockers = (grid[r.id] || []).filter(a => a.day === +s.day_of_week && overlap(s.start_time, s.end_time, a.start, a.end));
-            return blockers.length ? `${r.name}: ${blockers.map(b=>`${b.userName||'?'} ${b.start}-${b.end}`).join(', ')}` : null;
-          }).filter(Boolean);
-          console.log(`[CONFLICT] ${user.name} (${user.role}) ${DAYS_LOG[+s.day_of_week]} ${s.start_time}-${s.end_time} | blocked rooms: ${blockedBy.length} | free rooms: ${regularRooms.filter(r=>!(grid[r.id]||[]).some(a=>a.day===+s.day_of_week&&overlap(s.start_time,s.end_time,a.start,a.end))).map(r=>r.name).join(', ')||'NONE'}`);
-          blockedBy.slice(0, 5).forEach(b => console.log(`  ${b}`));
-          conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
-        }
+        else conflicts.push({ userId: user.id, userName: user.name, role: user.role, slots: [s] });
       }
     }
   }
@@ -1640,23 +1363,16 @@ function generateAssignments() {
   // No fixed-room requirement, no conflict raised if no room is found.
   for (const { user, slots: extraSlots } of lowPriorityExtraSlots) {
     const rawSlotsExtra = userSched[user.id] ?? [];
-    const isMovingExtra = wantToMoveIds.has(user.id);
+    const isMovingExtra = wantToMoveIds.has(user.id) || flexibleIds.has(user.id);
     const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
 
-    // wantToMove: process extra slots only on move-days; stay extra-days use uncoveredSubSlots
+    // wantToMove: process extra slots (minus manually assigned ones)
     // stay: only process uncovered sub-slots on extra days
     const slotsToProcess = isMovingExtra
-      ? extraSlots
-          .filter(s => wantToMoveDays[user.id]?.has(s.day_of_week))
-          .filter(s => !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
+      ? extraSlots.filter(s => !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
       : extraSlots.flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s));
-    const stayExtraToProcess = isMovingExtra
-      ? extraSlots.filter(s => !wantToMoveDays[user.id]?.has(s.day_of_week))
-          .flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s))
-      : [];
-    const allExtraToProcess = [...slotsToProcess, ...stayExtraToProcess];
 
-    for (const s of allExtraToProcess) {
+    for (const s of slotsToProcess) {
       const slotPrefExtra = s.preferred_room_id ? +s.preferred_room_id : null;
       let slotRoom = null;
       if (slotPrefExtra && isAvail(slotPrefExtra, s.day_of_week, s.start_time, s.end_time))
@@ -1707,20 +1423,28 @@ function generateAssignments() {
   // any existing assignment that no longer overlaps with ANY schedule slot
   // on that day should be released automatically.
   // Applies only to stay/extend users — wantToMove users are handled below.
-  // staleIds was computed before grid seeding; delete from DB now.
-  if (staleIds.size) {
-    db.get('room_assignments').remove(a => staleIds.has(a.id)).write();
+  const staleIds = [];
+  for (const [uidStr, existing] of Object.entries(existingByUser)) {
+    const uid = +uidStr;
+    if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
+    for (const a of existing) {
+      if (a.is_manual) continue; // manual assignments are never auto-removed
+      const stillNeeded = (userSched[uid] || []).some(s =>
+        s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+      );
+      if (!stillNeeded) staleIds.push(a.id);
+    }
+  }
+  if (staleIds.length) {
+    db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
   }
 
   // ── Write changes ─────────────────────────────────────────────────────────
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
-  if (wantToMoveIds.size) {
-    // Remove ALL old assignments (including is_manual) for wantToMove users on their move-days.
-    // Setting preferred_room_id is an explicit admin authorization that supersedes any prior manual placement.
+  if (wantToMoveIds.size || flexibleIds.size) {
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && a.user_id &&
-        (wantToMoveIds.has(a.user_id) && wantToMoveDays[a.user_id]?.has(a.day_of_week)))
+      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
       .write();
   }
   const now = new Date().toISOString();
@@ -1739,9 +1463,9 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      // wantToMove: keep manual + stay-days. All others (including flexible): keep all existing.
-      ...(wantToMoveIds.has(user.id)
-        ? (existingByUser[user.id] || []).filter(a => a.is_manual || !wantToMoveDays[user.id]?.has(a.day_of_week))
+      // For wantToMove / flexible users: existing assignments were cleared, but manual ones were kept
+      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
         : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),
     ];
@@ -1976,9 +1700,8 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      // Must match userStats formula: wantToMove keeps stay-day assignments + manual; everyone else keeps all
-      ...(wantToMoveIds.has(user.id)
-        ? (existingByUser[user.id] || []).filter(a => a.is_manual || !wantToMoveDays[user.id]?.has(a.day_of_week))
+      ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
         : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),
     ];
@@ -2024,24 +1747,6 @@ function generateAssignments() {
     completelyUnassigned.push({ userId: user.id, userName: user.name, daysInfo });
   }
 
-  // Diagnostic: what did the algorithm assign per day (and who has conflicts per day)
-  const newAssignmentsByDay = {};
-  for (const a of newAssignments) {
-    const d = a.day_of_week;
-    if (!newAssignmentsByDay[d]) newAssignmentsByDay[d] = [];
-    const u = users.find(x => x.id === a.user_id);
-    const r = rooms.find(x => x.id === a.room_id);
-    newAssignmentsByDay[d].push({ user: u?.name, role: u?.role, room: r?.name, start: a.start_time, end: a.end_time });
-  }
-  const conflictsByDay = {};
-  for (const c of conflicts) {
-    for (const s of c.slots) {
-      const d = s.day_of_week;
-      if (!conflictsByDay[d]) conflictsByDay[d] = [];
-      conflictsByDay[d].push({ user: c.userName, role: c.role, start: s.start_time, end: s.end_time });
-    }
-  }
-
   return {
     assigned: newAssignments.length,
     conflicts: filteredConflicts,
@@ -2056,8 +1761,6 @@ function generateAssignments() {
     multiRoomSuggestions,
     multiUnassignedWarnings,
     completelyUnassigned,
-    newAssignmentsByDay,
-    conflictsByDay,
     message: conflicts.length
       ? `השיבוץ הושלם עם ${conflicts.length} התנגשויות`
       : newAssignments.length
