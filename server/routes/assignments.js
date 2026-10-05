@@ -936,14 +936,7 @@ function generateAssignments() {
   const currentRoomsByDay = {};
   Object.entries(existingByUser).forEach(([uid, list]) => {
     currentRoomsByDay[+uid] = {};
-    const dayCounts = {};
-    list.forEach(a => {
-      if (!dayCounts[a.day_of_week]) dayCounts[a.day_of_week] = {};
-      dayCounts[a.day_of_week][a.room_id] = (dayCounts[a.day_of_week][a.room_id] || 0) + 1;
-    });
-    Object.entries(dayCounts).forEach(([day, counts]) => {
-      currentRoomsByDay[+uid][+day] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-    });
+    list.forEach(a => { if (!currentRoomsByDay[+uid][a.day_of_week]) currentRoomsByDay[+uid][a.day_of_week] = a.room_id; });
   });
 
   // ── Categorise users ──────────────────────────────────────────────────────
