@@ -348,12 +348,6 @@ router.post('/', requirePerm('assignments'), (req, res) => {
   const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap, force } = req.body;
   const aType = assignment_type ?? 'permanent';
 
-  if (!room_id || !start_time || !end_time) return res.status(400).json({ error: 'חסרים פרמטרים: room_id, start_time, end_time' });
-  if (day_of_week != null && (day_of_week < 0 || day_of_week > 6)) return res.status(400).json({ error: 'day_of_week חייב להיות בין 0 ל-6' });
-  if (toMin(start_time) >= toMin(end_time)) return res.status(400).json({ error: 'שעת ההתחלה חייבת להיות לפני שעת הסיום' });
-  if (user_id && !db.get('users').find({ id: +user_id }).value()) return res.status(400).json({ error: 'עובד לא נמצא' });
-  if (!db.get('rooms').find({ id: +room_id }).value()) return res.status(400).json({ error: 'חדר לא נמצא' });
-
   // Conflict check: warn if another user is already assigned to this room at this time
   if (aType === 'permanent' && user_id && !force) {
     const conflict = db.get('room_assignments').filter(a =>
@@ -610,11 +604,9 @@ router.put('/my/:id', (req, res) => {
   if (!start_time || !end_time) return res.status(400).json({ error: 'נדרשות שעת התחלה וסיום' });
   const a = db.get('room_assignments').find({ id: aId, user_id: req.user.id, assignment_type: 'permanent' }).value();
   if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
-  // Update all matching regular_schedule entries for this user/day/time
-  db.get('regular_schedules')
-    .filter(s => s.user_id === req.user.id && s.day_of_week === a.day_of_week && s.start_time === a.start_time && s.end_time === a.end_time)
-    .value()
-    .forEach(s => { db.get('regular_schedules').find({ id: s.id }).assign({ start_time, end_time }).write(); });
+  // Update regular_schedule to match new times
+  db.get('regular_schedules').find({ user_id: req.user.id, day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time })
+    .assign({ start_time, end_time }).write();
   db.get('room_assignments').find({ id: aId }).assign({ start_time, end_time }).write();
   res.json({ message: 'שיבוץ עודכן' });
 });
@@ -936,14 +928,7 @@ function generateAssignments() {
   const currentRoomsByDay = {};
   Object.entries(existingByUser).forEach(([uid, list]) => {
     currentRoomsByDay[+uid] = {};
-    const dayCounts = {};
-    list.forEach(a => {
-      if (!dayCounts[a.day_of_week]) dayCounts[a.day_of_week] = {};
-      dayCounts[a.day_of_week][a.room_id] = (dayCounts[a.day_of_week][a.room_id] || 0) + 1;
-    });
-    Object.entries(dayCounts).forEach(([day, counts]) => {
-      currentRoomsByDay[+uid][+day] = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-    });
+    list.forEach(a => { if (!currentRoomsByDay[+uid][a.day_of_week]) currentRoomsByDay[+uid][a.day_of_week] = a.room_id; });
   });
 
   // ── Categorise users ──────────────────────────────────────────────────────
@@ -1447,15 +1432,13 @@ function generateAssignments() {
       .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
       .write();
   }
-  const now = new Date().toISOString();
   newAssignments.forEach(a => {
     db.get('room_assignments').push({
       id: nextId('room_assignments'), ...a,
       assignment_type: 'permanent', specific_date: null,
-      created_at: now,
-    });
+      created_at: new Date().toISOString(),
+    }).write();
   });
-  if (newAssignments.length) db.write();
 
   // ── userStats ─────────────────────────────────────────────────────────────
   const userStats = {};
@@ -1769,7 +1752,7 @@ function generateAssignments() {
   };
 }
 
-const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
 
 function minToTime(m) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;

@@ -45,31 +45,10 @@ async function main() {
     console.log(`[migration] חדר 6 (id=${room6.id}) room_type changed: committee → regular`);
   }
 
-  // One-time migration: fix NaN IDs in dismissed_conflicts
-  if (!db.has('dismissed_conflicts').value()) db.set('dismissed_conflicts', []).write();
-  if (!db.get('_ids.dismissed_conflicts').value()) {
-    const maxId = db.get('dismissed_conflicts').map('id').filter(id => Number.isFinite(id)).max().value() || 0;
-    db.set('_ids.dismissed_conflicts', maxId + 1).write();
-    const badCount = db.get('dismissed_conflicts').filter(r => !Number.isFinite(r.id)).size().value();
-    if (badCount > 0) {
-      let next = maxId + 1;
-      db.get('dismissed_conflicts').filter(r => !Number.isFinite(r.id)).value()
-        .forEach(r => { db.get('dismissed_conflicts').find({ created_at: r.created_at }).assign({ id: next++ }).write(); });
-      db.set('_ids.dismissed_conflicts', next).write();
-      console.log(`[migration] fixed ${badCount} dismissed_conflicts NaN IDs`);
-    }
-  }
-
   initVapid();
 
   const app = express();
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : ['http://localhost:5173', 'http://localhost:3001'];
-  app.use(cors({
-    origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
-    credentials: true,
-  }));
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
 
   app.use('/api/auth', require('./routes/auth'));
