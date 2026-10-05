@@ -64,7 +64,6 @@ export default function Layout() {
     { to: '/library',          label: 'ספריה',          color: '#7c3aed' },
     { to: '/meeting-room',     label: 'חדר ישיבות',    color: '#0f766e' },
     { to: '/mamod',            label: 'ממד',            color: '#be185d' },
-    { to: '/admin/frameworks', label: 'מסגרות',         color: '#1d4ed8' },
   ] : [
     { to: '/',                 label: '🏠',            color: '#475569' },
     { to: '/my-schedule',      label: 'הלוח שלי',      color: '#2563eb' },
@@ -74,7 +73,6 @@ export default function Layout() {
     { to: '/library',          label: 'ספריה',          color: '#7c3aed' },
     { to: '/meeting-room',     label: 'חדר ישיבות',    color: '#0f766e' },
     { to: '/mamod',            label: 'ממד',            color: '#be185d' },
-    { to: '/admin/frameworks', label: 'מסגרות',         color: '#1d4ed8' },
   ];
   const adminLinks = [
     perms?.users       && { to: '/admin/users',       label: 'עובדים',  color: '#b45309' },
