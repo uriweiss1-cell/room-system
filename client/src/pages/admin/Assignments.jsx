@@ -873,8 +873,8 @@ export default function AdminAssignments({ readOnly = false }) {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold">{pc.userName}</span>
                         <span className="text-orange-700 text-xs">ביקש חדר {pc.wantedRoomName}</span>
-                        {pc.assignedRoomName
-                          ? <span className="inline-flex items-center gap-1 bg-green-100 border border-green-300 text-green-800 font-semibold px-2 py-0.5 rounded text-xs">✓ שובץ בפועל: {pc.assignedRoomName}</span>
+                        {(pc.assignedRoomName || stats?.assignedRooms?.length > 0)
+                          ? <span className="inline-flex items-center gap-1 bg-green-100 border border-green-300 text-green-800 font-semibold px-2 py-0.5 rounded text-xs">✓ שובץ בפועל: {pc.assignedRoomName || stats.assignedRooms.join(', ')}</span>
                           : <span className="inline-flex items-center bg-red-100 border border-red-300 text-red-700 font-semibold px-2 py-0.5 rounded text-xs">✗ לא שובץ כלל</span>}
                         <button
                           className="mr-auto text-xs text-gray-400 hover:text-gray-600 border border-gray-300 rounded px-2 py-0.5 bg-white"
