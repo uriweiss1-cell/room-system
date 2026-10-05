@@ -33,10 +33,9 @@ export default function MeetingRoom() {
   const [conflictReason, setConflictReason] = useState('');
   const [users, setUsers] = useState([]);
   const [impersonateUserId, setImpersonateUserId] = useState('');
-  const [userSearch, setUserSearch] = useState('');
 
   useEffect(() => {
-    if (isAdmin) api.get('/users').then(r => setUsers(r.data.filter(u => !u.is_admin && (u.is_active || u.id === 176)))).catch(() => {});
+    if (isAdmin) api.get('/users').then(r => setUsers(r.data.filter(u => !u.is_admin))).catch(() => {});
   }, [isAdmin]);
 
   const dates = weekDates(weekOffset);
@@ -138,11 +137,9 @@ export default function MeetingRoom() {
         {isAdmin && (
           <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <label className="label text-amber-800">📋 הגשה בשם עובד (אופציונלי)</label>
-            <input className="input w-full mb-1" placeholder="חיפוש עובד..." value={userSearch} onChange={e => setUserSearch(e.target.value)} />
-            <select className="input w-full" value={impersonateUserId} onChange={e => setImpersonateUserId(e.target.value)}
-              size={userSearch ? Math.min(users.filter(u => u.name.includes(userSearch)).length + 1, 6) : 1}>
+            <select className="input w-full" value={impersonateUserId} onChange={e => setImpersonateUserId(e.target.value)}>
               <option value="">— בשמי (מנהל) —</option>
-              {users.filter(u => !userSearch || u.name.includes(userSearch)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
         )}

@@ -82,15 +82,6 @@ export default function AdminAssignments({ readOnly = false }) {
     return d == null || count > d;
   };
 
-  const [genResultStale, setGenResultStale] = useState(false);
-  const [confirmModal, setConfirmModal] = useState({ open: false, message: '', resolve: null });
-  const showConfirm = (message) => new Promise(resolve => {
-    setConfirmModal({ open: true, message, resolve });
-  });
-  const closeConfirm = (result) => {
-    setConfirmModal(prev => { prev.resolve?.(result); return { open: false, message: '', resolve: null }; });
-  };
-
   // Compute Sun–Fri dates for the selected week
   const weekDates = (() => {
     const today = new Date();
@@ -119,14 +110,12 @@ export default function AdminAssignments({ readOnly = false }) {
     setAssignments(a.data);
     setUsers(u.data.filter(u => u.is_active));
     setRooms(r.data);
-    setGenResultStale(prev => prev || false); // mark stale only if genResult exists (checked below)
-    setGenResult(existing => { if (existing) setGenResultStale(true); return existing; });
     // Schedules are secondary — load separately so a failure doesn't break the main page
     try { const s = await api.get('/schedules/all'); setSchedules(s.data); } catch {}
   };
 
   const importFromDoc = async () => {
-    if (!await showConfirm('פעולה זו תייבא את שיבוץ החדרים מקובץ תשפ"ו, תשנה שמות חדרים ותיצור עובדים חדשים. להמשיך?')) return;
+    if (!confirm('פעולה זו תייבא את שיבוץ החדרים מקובץ תשפ"ו, תשנה שמות חדרים ותיצור עובדים חדשים. להמשיך?')) return;
     setImporting(true); setGenResult(null);
     try {
       const r = await api.post('/import');
@@ -137,8 +126,8 @@ export default function AdminAssignments({ readOnly = false }) {
   };
 
   const generate = async () => {
-    if (!await showConfirm('הפעלת אלגוריתם שיבוץ:\n• שיבוצים קיימים נשמרים כנקודת מוצא\n• עובדים שביקשו לעבור חדר — יועברו אם אפשר\n• שעות חדשות בלוח הזמנים — יתווספו\n• ימים שהוסרו מלוח הזמנים — השיבוץ שלהם יימחק\n\nלהמשיך?')) return;
-    setGenerating(true); setGenResult(null); setGenResultStale(false); setOccupiedSlots([]);
+    if (!confirm('הפעלת אלגוריתם שיבוץ:\n• שיבוצים קיימים נשמרים כנקודת מוצא\n• עובדים שביקשו לעבור חדר — יועברו אם אפשר\n• שעות חדשות בלוח הזמנים — יתווספו\n• ימים שהוסרו מלוח הזמנים — השיבוץ שלהם יימחק\n\nלהמשיך?')) return;
+    setGenerating(true); setGenResult(null); setOccupiedSlots([]);
     try {
       const r = await api.post('/assignments/generate');
       setGenResult(r.data);
@@ -216,7 +205,7 @@ export default function AdminAssignments({ readOnly = false }) {
   };
 
   const assignTogether = async (userId, roomId, day, start, end, userName, roomName) => {
-    if (!await showConfirm(`לשבץ את ${userName} יחד בחדר ${roomName} (יום ${DAYS[day]}, ${start}–${end})?`)) return;
+    if (!confirm(`לשבץ את ${userName} יחד בחדר ${roomName} (יום ${DAYS[day]}, ${start}–${end})?`)) return;
     try {
       await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end, replace_overlap: true });
       setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
@@ -224,7 +213,7 @@ export default function AdminAssignments({ readOnly = false }) {
     } catch (e) {
       if (e.response?.status === 409 && e.response?.data?.conflict) {
         const { message } = e.response.data;
-        if (await showConfirm(`${message}\nלשבץ בכל זאת?`)) {
+        if (confirm(`${message}\nלשבץ בכל זאת?`)) {
           try {
             await api.post('/assignments', { user_id: userId, room_id: roomId, day_of_week: day, start_time: start, end_time: end, replace_overlap: true, force: true });
             setGenResult(prev => ({ ...prev, applyMsg: `${userName} שובץ יחד בחדר ${roomName}` }));
@@ -268,12 +257,12 @@ export default function AdminAssignments({ readOnly = false }) {
   };
 
   const clearAll = async () => {
-    if (!await showConfirm('למחוק את כל השיבוצים הקבועים?')) return;
+    if (!confirm('למחוק את כל השיבוצים הקבועים?')) return;
     await api.delete('/assignments/clear/permanent'); load();
   };
 
   const clearAutoSchedules = async () => {
-    if (!await showConfirm('פעולה זו תמחק את כל לוחות הזמנים שנוצרו אוטומטית ביבוא (עובדים שלא הגדירו חדר מועדף).\nעובדים שהגדירו לוח זמנים ידנית לא יושפעו.\nלהמשיך?')) return;
+    if (!confirm('פעולה זו תמחק את כל לוחות הזמנים שנוצרו אוטומטית ביבוא (עובדים שלא הגדירו חדר מועדף).\nעובדים שהגדירו לוח זמנים ידנית לא יושפעו.\nלהמשיך?')) return;
     try {
       const r = await api.delete('/schedules/clear-auto-imported');
       setMsg(r.data.message);
@@ -308,7 +297,7 @@ export default function AdminAssignments({ readOnly = false }) {
   };
 
   const deleteOneTime = async (id, label, isGuest = false) => {
-    if (!await showConfirm(`למחוק את השיבוץ החד-פעמי: ${label}?`)) return;
+    if (!confirm(`למחוק את השיבוץ החד-פעמי: ${label}?`)) return;
     if (isGuest) {
       await api.delete(`/assignments/${id}`);
     } else {
@@ -334,7 +323,7 @@ export default function AdminAssignments({ readOnly = false }) {
     } catch (e) {
       if (e.response?.status === 409 && e.response?.data?.conflict) {
         const { message } = e.response.data;
-        if (await showConfirm(`${message}\nלשבץ בכל זאת?`)) {
+        if (confirm(`${message}\nלשבץ בכל זאת?`)) {
           try {
             await api.post('/assignments', { ...addForm, replace_overlap: true, force: true });
             setShowAdd(false); load(); setMsg('שיבוץ נוסף');
@@ -367,7 +356,6 @@ export default function AdminAssignments({ readOnly = false }) {
       setGuestStep('form');
       setGuestForm(p => ({ ...p, guest_name: '' }));
       loadGuests();
-      loadWeeklyOneTime();
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
@@ -384,18 +372,6 @@ export default function AdminAssignments({ readOnly = false }) {
 
   return (
     <div className="space-y-5">
-      {/* Confirm modal */}
-      {confirmModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4" dir="rtl">
-            <p className="text-sm whitespace-pre-line">{confirmModal.message}</p>
-            <div className="flex gap-2 justify-end">
-              <button className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-sm" onClick={() => closeConfirm(false)}>ביטול</button>
-              <button className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" onClick={() => closeConfirm(true)}>אישור</button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Audit modal */}
       {showAudit && auditResult && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto" onClick={() => setShowAudit(false)}>
@@ -638,12 +614,6 @@ export default function AdminAssignments({ readOnly = false }) {
           </div>
         )}
 
-        {!readOnly && genResultStale && genResult && perms?.algorithm && (
-          <div className="rounded-xl p-3 mb-2 bg-amber-50 border border-amber-300 text-amber-800 text-sm flex items-center gap-2">
-            <span>⚠️</span>
-            <span>תוצאות האלגוריתם עשויות להיות לא עדכניות לאחר שינויים ידניים — מומלץ להריץ שוב.</span>
-          </div>
-        )}
         {!readOnly && genResult && perms?.algorithm && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
             <div className="flex items-center gap-3 flex-wrap">
