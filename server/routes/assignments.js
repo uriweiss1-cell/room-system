@@ -1440,10 +1440,22 @@ function generateAssignments() {
   }
 
   // DEBUG — remove after bug-3 is confirmed fixed
-  console.log('[algo] wantToMove count:', wantToMoveIds.size, [...wantToMoveIds].map(id => db.get('users').find({ id }).value()?.name));
-  console.log('[algo] flexible count:  ', flexibleIds.size, [...flexibleIds].map(id => db.get('users').find({ id }).value()?.name));
+  console.log('[algo] wantToMove count:', wantToMoveIds.size);
+  console.log('[algo] flexible count:  ', flexibleIds.size);
   console.log('[algo] processable count:', processableUserIds.size, 'schedules count:', schedules.length, 'allExisting count:', allExisting.length);
-  console.log('[algo] existingByUser count:', Object.keys(existingByUser).length, 'keys:', Object.keys(existingByUser).slice(0,5));
+  console.log('[algo] existingByUser count:', Object.keys(existingByUser).length);
+  // שחר-specific debug
+  const shahar = db.get('users').find(u => u.name && u.name.includes('שחר')).value();
+  if (shahar) {
+    const shaharAssigns = allExisting.filter(a => +a.user_id === shahar.id);
+    const shaharSched = userSched[shahar.id] || [];
+    console.log('[algo] שחר id:', shahar.id, '| inWantToMove:', wantToMoveIds.has(shahar.id), '| inFlex:', flexibleIds.has(shahar.id));
+    console.log('[algo] שחר currentRooms:', currentRooms[shahar.id], '| currentRoomsByDay:', JSON.stringify(currentRoomsByDay[shahar.id]));
+    console.log('[algo] שחר schedule days:', shaharSched.map(s => s.day_of_week + ' pref:' + s.preferred_room_id));
+    console.log('[algo] שחר assignments:', shaharAssigns.map(a => ({ day: a.day_of_week, room: a.room_id, is_manual: a.is_manual, type: a.assignment_type })));
+  } else {
+    console.log('[algo] שחר not found in users');
+  }
   // END DEBUG
 
   // ── Cleanup: remove assignments that no longer have a schedule slot ───────
@@ -1507,6 +1519,12 @@ function generateAssignments() {
       .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual)
       .write();
   }
+  // DEBUG — שחר post-clear check
+  if (shahar) {
+    const afterClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === shahar.id).value();
+    console.log('[algo] שחר after clearing:', afterClear.map(a => ({ day: a.day_of_week, room: a.room_id, is_manual: a.is_manual })));
+  }
+  // END DEBUG
   newAssignments.forEach(a => {
     db.get('room_assignments').push({
       id: nextId('room_assignments'), ...a,
