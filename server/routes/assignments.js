@@ -878,8 +878,8 @@ function generateAssignments() {
     .write();
 
   const userSched = {};
-  schedules.forEach(s => { (userSched[s.user_id] = userSched[s.user_id] || []).push(s); });
-  const usersWithSchedules = new Set(schedules.map(s => s.user_id));
+  schedules.forEach(s => { (userSched[+s.user_id] = userSched[+s.user_id] || []).push(s); });
+  const usersWithSchedules = new Set(schedules.map(s => +s.user_id));
   const processableUserIds = new Set(users.map(u => u.id).filter(id => usersWithSchedules.has(id)));
 
   const PRIORITY = { admin: -1, psychiatrist: 0, supervisor: 1, art_therapist: 2, clinical_intern: 3, educational_intern: 4, other: 5 };
