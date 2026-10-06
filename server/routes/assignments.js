@@ -1452,7 +1452,7 @@ function generateAssignments() {
     console.log('[algo] שחר id:', shahar.id, '| inWantToMove:', wantToMoveIds.has(shahar.id), '| inFlex:', flexibleIds.has(shahar.id));
     console.log('[algo] שחר currentRooms:', currentRooms[shahar.id], '| currentRoomsByDay:', JSON.stringify(currentRoomsByDay[shahar.id]));
     console.log('[algo] שחר schedule days:', shaharSched.map(s => s.day_of_week + ' pref:' + s.preferred_room_id));
-    console.log('[algo] שחר assignments:', shaharAssigns.map(a => ({ day: a.day_of_week, room: a.room_id, is_manual: a.is_manual, type: a.assignment_type })));
+    shaharAssigns.forEach(a => console.log('[algo] שחר assignment: day=' + a.day_of_week + ' room=' + a.room_id + ' is_manual=' + a.is_manual + ' type=' + a.assignment_type));
   } else {
     console.log('[algo] שחר not found in users');
   }
@@ -1522,7 +1522,8 @@ function generateAssignments() {
   // DEBUG — שחר post-clear check
   if (shahar) {
     const afterClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === shahar.id).value();
-    console.log('[algo] שחר after clearing:', afterClear.map(a => ({ day: a.day_of_week, room: a.room_id, is_manual: a.is_manual })));
+    console.log('[algo] שחר after clearing count:', afterClear.length);
+    afterClear.forEach(a => console.log('[algo] שחר after-clear: day=' + a.day_of_week + ' room=' + a.room_id + ' is_manual=' + a.is_manual));
   }
   // END DEBUG
   newAssignments.forEach(a => {
