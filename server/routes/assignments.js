@@ -1516,7 +1516,15 @@ function generateAssignments() {
     console.log('[algo] clearing for wantToMove/flexible — candidates:', beforeClear.map(a => ({ id: a.id, user_id: a.user_id, day: a.day_of_week, is_manual: a.is_manual })));
     // END DEBUG
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual)
+      .remove(a => {
+        if (a.assignment_type !== 'permanent') return false;
+        const uid = +a.user_id;
+        if (!wantToMoveIds.has(uid) && !flexibleIds.has(uid)) return false;
+        if (!a.is_manual) return true;
+        // is_manual: remove only if the day was completely removed from the employee's schedule
+        const daySlots = (userSched[uid] || []).filter(s => +s.day_of_week === +a.day_of_week);
+        return !daySlots.length;
+      })
       .write();
   }
   // DEBUG — שחר post-clear check
