@@ -1439,18 +1439,19 @@ function generateAssignments() {
     };
   }
 
-  // ── Cleanup: remove assignments for days no longer in the schedule ──────────
-  // If a stay user removed a day from their schedule, any existing assignment
-  // on that day is released automatically.
-  // wantToMove/flexible users are rebuilt from scratch elsewhere.
+  // ── Cleanup: remove assignments that no longer have a schedule slot ───────
+  // If an employee removed a day (or hours) from their regular_schedule,
+  // any existing assignment that no longer overlaps with ANY schedule slot
+  // on that day should be released automatically.
+  // Applies only to stay/extend users — wantToMove users are handled below.
   const staleIds = [];
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
     if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
     for (const a of existing) {
-      if (a.is_manual) continue;
+      if (a.is_manual) continue; // manual assignments are never auto-removed
       const stillNeeded = (userSched[uid] || []).some(s =>
-        +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+        s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
       );
       if (!stillNeeded) staleIds.push(a.id);
     }
