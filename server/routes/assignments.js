@@ -1543,6 +1543,13 @@ function generateAssignments() {
     afterClear.forEach(a => console.log('[algo] שחר after-clear: day=' + a.day_of_week + ' room=' + a.room_id + ' is_manual=' + a.is_manual));
   }
   // END DEBUG
+  // DEBUG — תמר post-clear check
+  if (tamar) {
+    const tamarAfterClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === tamar.id && +a.day_of_week === 3).value();
+    console.log('[algo] תמר after-clear day3 count:', tamarAfterClear.length);
+    tamarAfterClear.forEach(a => console.log('[algo] תמר after-clear day3: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
+  }
+  // END DEBUG תמר
   newAssignments.forEach(a => {
     db.get('room_assignments').push({
       id: nextId('room_assignments'), ...a,
@@ -1550,6 +1557,13 @@ function generateAssignments() {
       created_at: new Date().toISOString(),
     }).write();
   });
+  // DEBUG — תמר post-write check
+  if (tamar) {
+    const tamarFinal = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === tamar.id && +a.day_of_week === 3).value();
+    console.log('[algo] תמר final day3 count:', tamarFinal.length);
+    tamarFinal.forEach(a => console.log('[algo] תמר final day3: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
+  }
+  // END DEBUG תמר final
 
   // ── userStats ─────────────────────────────────────────────────────────────
   const userStats = {};
