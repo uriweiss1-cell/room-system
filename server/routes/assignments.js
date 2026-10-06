@@ -1456,6 +1456,15 @@ function generateAssignments() {
   } else {
     console.log('[algo] שחר not found in users');
   }
+  // תמר debug
+  const tamar = db.get('users').find(u => u.name && u.name.includes('תמר')).value();
+  if (tamar) {
+    const tamarSched = userSched[tamar.id] || [];
+    const tamarAssigns = allExisting.filter(a => +a.user_id === tamar.id);
+    console.log('[algo] תמר id:', tamar.id, '| inWantToMove:', wantToMoveIds.has(tamar.id), '| inFlex:', flexibleIds.has(tamar.id));
+    tamarSched.forEach(s => console.log('[algo] תמר sched: day=' + s.day_of_week + ' ' + s.start_time + '-' + s.end_time + ' pref=' + s.preferred_room_id));
+    tamarAssigns.filter(a => +a.day_of_week === 3).forEach(a => console.log('[algo] תמר day3 assign: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
+  }
   // END DEBUG
 
   // ── Cleanup: remove assignments that no longer have a schedule slot ───────
