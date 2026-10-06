@@ -1440,9 +1440,10 @@ function generateAssignments() {
   }
 
   // DEBUG — remove after bug-3 is confirmed fixed
-  console.log('[algo] wantToMove:', [...wantToMoveIds].map(id => db.get('users').find({ id }).value()?.name));
-  console.log('[algo] flexible:  ', [...flexibleIds].map(id => db.get('users').find({ id }).value()?.name));
-  console.log('[algo] existingByUser keys:', Object.keys(existingByUser).map(uid => `${uid}(${db.get('users').find({ id: +uid }).value()?.name})`));
+  console.log('[algo] wantToMove count:', wantToMoveIds.size, [...wantToMoveIds].map(id => db.get('users').find({ id }).value()?.name));
+  console.log('[algo] flexible count:  ', flexibleIds.size, [...flexibleIds].map(id => db.get('users').find({ id }).value()?.name));
+  console.log('[algo] processable count:', processableUserIds.size, 'schedules count:', schedules.length, 'allExisting count:', allExisting.length);
+  console.log('[algo] existingByUser count:', Object.keys(existingByUser).length, 'keys:', Object.keys(existingByUser).slice(0,5));
   // END DEBUG
 
   // ── Cleanup: remove assignments that no longer have a schedule slot ───────
