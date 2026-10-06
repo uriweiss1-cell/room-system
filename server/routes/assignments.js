@@ -901,8 +901,8 @@ function generateAssignments() {
   const sorted = [...users].sort((a, b) => {
     const rawA = userSched[a.id] ?? [];
     const rawB = userSched[b.id] ?? [];
-    const flexA = (a.role === 'other' || !hasAnyPreferred(rawA)) ? 1 : 0;
-    const flexB = (b.role === 'other' || !hasAnyPreferred(rawB)) ? 1 : 0;
+    const flexA = !hasAnyPreferred(rawA) ? 1 : 0;
+    const flexB = !hasAnyPreferred(rawB) ? 1 : 0;
     if (flexA !== flexB) return flexA - flexB;
     return (PRIORITY[a.role] ?? 9) - (PRIORITY[b.role] ?? 9);
   });
@@ -967,7 +967,7 @@ function generateAssignments() {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     if (wantToMoveIds.has(user.id)) continue;
-    if (user.role === 'other' || !hasAnyPreferred(rawSlots)) flexibleIds.add(user.id);
+    if (!hasAnyPreferred(rawSlots)) flexibleIds.add(user.id);
   }
 
   // Returns sub-slots of [start,end] on [day] NOT yet covered by any existing assignment.
@@ -1071,11 +1071,29 @@ function generateAssignments() {
       //             all preference-holders have been served (due to sort order).
       // Slots already covered by manual (admin-added) assignments are kept as-is.
       const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
-      const slotsToAssign = slots.filter(s =>
-        !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time))
-      );
+      // Compute only the portions of each slot NOT already covered by manual assignments.
+      // A manual assignment covering part of a day should not cause the rest of that day to be skipped.
+      const slotsToAssign = slots.flatMap(s => {
+        const manOnDay = manualForUser.filter(a =>
+          +a.day_of_week === +s.day_of_week &&
+          overlap(a.start_time, a.end_time, s.start_time, s.end_time)
+        );
+        if (!manOnDay.length) return [s];
+        const startM = toMin(s.start_time), endM = toMin(s.end_time);
+        const cvrd = manOnDay
+          .map(a => ({ s: Math.max(toMin(a.start_time), startM), e: Math.min(toMin(a.end_time), endM) }))
+          .sort((a, b) => a.s - b.s);
+        const gaps = [];
+        let cur = startM;
+        for (const c of cvrd) {
+          if (c.s > cur) gaps.push({ ...s, start_time: minToTime(cur), end_time: minToTime(c.s) });
+          cur = Math.max(cur, c.e);
+        }
+        if (cur < endM) gaps.push({ ...s, start_time: minToTime(cur), end_time: minToTime(endM) });
+        return gaps;
+      });
 
-      if (!slotsToAssign.length) continue; // all slots covered by manual assignments
+      if (!slotsToAssign.length) continue; // all slots fully covered by manual assignments
 
       const pr = regularRooms.find(r => r.id === preferredId);
 
@@ -1354,7 +1372,25 @@ function generateAssignments() {
     // wantToMove: process extra slots (minus manually assigned ones)
     // stay: only process uncovered sub-slots on extra days
     const slotsToProcess = isMovingExtra
-      ? extraSlots.filter(s => !manualForUser.some(a => a.day_of_week === s.day_of_week && overlap(a.start_time, a.end_time, s.start_time, s.end_time)))
+      ? extraSlots.flatMap(s => {
+          const manOnDay = manualForUser.filter(a =>
+            +a.day_of_week === +s.day_of_week &&
+            overlap(a.start_time, a.end_time, s.start_time, s.end_time)
+          );
+          if (!manOnDay.length) return [s];
+          const startM = toMin(s.start_time), endM = toMin(s.end_time);
+          const cvrd = manOnDay
+            .map(a => ({ s: Math.max(toMin(a.start_time), startM), e: Math.min(toMin(a.end_time), endM) }))
+            .sort((a, b) => a.s - b.s);
+          const gaps = [];
+          let cur = startM;
+          for (const c of cvrd) {
+            if (c.s > cur) gaps.push({ ...s, start_time: minToTime(cur), end_time: minToTime(c.s) });
+            cur = Math.max(cur, c.e);
+          }
+          if (cur < endM) gaps.push({ ...s, start_time: minToTime(cur), end_time: minToTime(endM) });
+          return gaps;
+        })
       : extraSlots.flatMap(s => uncoveredSubSlots(user.id, s.day_of_week, s.start_time, s.end_time, s));
 
     for (const s of slotsToProcess) {
