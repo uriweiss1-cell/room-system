@@ -910,10 +910,10 @@ function generateAssignments() {
   // ── Snapshot existing permanent assignments ───────────────────────────────
   const allExisting = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
 
-  const existingByUser = {}; // userId -> [assignment]
+  const existingByUser = {}; // userId (number) -> [assignment]
   allExisting.forEach(a => {
-    if (!a.user_id || !processableUserIds.has(a.user_id)) return;
-    (existingByUser[a.user_id] = existingByUser[a.user_id] || []).push(a);
+    if (!a.user_id || !processableUserIds.has(+a.user_id)) return;
+    (existingByUser[+a.user_id] = existingByUser[+a.user_id] || []).push(a);
   });
 
   // Current room = most-used room per processable user (overall)
@@ -997,7 +997,7 @@ function generateAssignments() {
     if (!grid[a.room_id]) return;
     // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
     // Manual (admin-added) assignments are always preserved, even for wantToMove users
-    if (a.user_id && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual) return;
+    if (a.user_id && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual) return;
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -1445,19 +1445,43 @@ function generateAssignments() {
   // on that day should be released automatically.
   // Applies only to stay/extend users — wantToMove users are handled below.
   const staleIds = [];
+  const trimUpdates = []; // { id, start_time, end_time } for assignments wider than the schedule
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
     if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
     for (const a of existing) {
       if (a.is_manual) continue; // manual assignments are never auto-removed
-      const stillNeeded = (userSched[uid] || []).some(s =>
-        s.day_of_week === a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
-      );
-      if (!stillNeeded) staleIds.push(a.id);
+      const daySlots = (userSched[uid] || []).filter(s => +s.day_of_week === +a.day_of_week);
+      if (!daySlots.length) {
+        // Day completely removed from schedule → stale
+        staleIds.push(a.id);
+        continue;
+      }
+      const overlapping = daySlots.filter(s => overlap(s.start_time, s.end_time, a.start_time, a.end_time));
+      if (!overlapping.length) {
+        // Assignment time range no longer overlaps any schedule slot → stale
+        staleIds.push(a.id);
+        continue;
+      }
+      // Check if assignment extends beyond the schedule coverage (hour reduction)
+      const schedStart = Math.min(...overlapping.map(s => toMin(s.start_time)));
+      const schedEnd   = Math.max(...overlapping.map(s => toMin(s.end_time)));
+      const aStart = toMin(a.start_time);
+      const aEnd   = toMin(a.end_time);
+      if (aStart < schedStart || aEnd > schedEnd) {
+        trimUpdates.push({
+          id: a.id,
+          start_time: minToTime(Math.max(aStart, schedStart)),
+          end_time:   minToTime(Math.min(aEnd,   schedEnd)),
+        });
+      }
     }
   }
   if (staleIds.length) {
     db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
+  }
+  for (const { id, start_time, end_time } of trimUpdates) {
+    db.get('room_assignments').find({ id }).assign({ start_time, end_time }).write();
   }
 
   // ── Write changes ─────────────────────────────────────────────────────────
@@ -1465,7 +1489,7 @@ function generateAssignments() {
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size || flexibleIds.size) {
     db.get('room_assignments')
-      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(a.user_id) || flexibleIds.has(a.user_id)) && !a.is_manual)
+      .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual)
       .write();
   }
   newAssignments.forEach(a => {
