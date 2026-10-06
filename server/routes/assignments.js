@@ -1439,58 +1439,24 @@ function generateAssignments() {
     };
   }
 
-  // ── Cleanup: remove/trim assignments whose hours exceed the current schedule ─
-  // If a stay-user removed a day or reduced hours, assignments that extend
-  // beyond the current schedule are removed and replaced with a trimmed copy
-  // covering only the portion that still falls within the schedule.
+  // ── Cleanup: remove assignments for days no longer in the schedule ──────────
+  // If a stay user removed a day from their schedule, any existing assignment
+  // on that day is released automatically.
   // wantToMove/flexible users are rebuilt from scratch elsewhere.
   const staleIds = [];
-  const trimmedAssignments = [];
   for (const [uidStr, existing] of Object.entries(existingByUser)) {
     const uid = +uidStr;
     if (wantToMoveIds.has(uid) || flexibleIds.has(uid)) continue;
     for (const a of existing) {
       if (a.is_manual) continue;
-      const aStartM = toMin(a.start_time), aEndM = toMin(a.end_time);
-      const schedOnDay = (userSched[uid] || []).filter(s => +s.day_of_week === +a.day_of_week);
-      if (!schedOnDay.length) { staleIds.push(a.id); continue; }
-
-      // Compute the portions of this assignment covered by schedule slots
-      const cvrd = schedOnDay
-        .map(s => ({ s: Math.max(toMin(s.start_time), aStartM), e: Math.min(toMin(s.end_time), aEndM) }))
-        .filter(c => c.e > c.s)
-        .sort((x, y) => x.s - y.s);
-
-      if (!cvrd.length) { staleIds.push(a.id); continue; } // no overlap at all
-
-      // Check if assignment is fully covered (no part sticks out beyond schedule)
-      let cur = aStartM;
-      for (const c of cvrd) {
-        if (c.s > cur) break;
-        cur = Math.max(cur, c.e);
-      }
-      if (cur >= aEndM) continue; // fully covered — keep as-is
-
-      // Assignment extends beyond schedule: replace with trimmed version(s)
-      staleIds.push(a.id);
-      for (const c of cvrd) {
-        trimmedAssignments.push({
-          id: nextId('room_assignments'),
-          user_id: a.user_id,
-          room_id: a.room_id,
-          day_of_week: a.day_of_week,
-          start_time: minToTime(c.s),
-          end_time: minToTime(c.e),
-          is_manual: false,
-        });
-      }
+      const stillNeeded = (userSched[uid] || []).some(s =>
+        +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+      );
+      if (!stillNeeded) staleIds.push(a.id);
     }
   }
   if (staleIds.length) {
     db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
-  }
-  for (const a of trimmedAssignments) {
-    db.get('room_assignments').push(a).write();
   }
 
   // ── Write changes ─────────────────────────────────────────────────────────
