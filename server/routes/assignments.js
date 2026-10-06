@@ -1439,6 +1439,12 @@ function generateAssignments() {
     };
   }
 
+  // DEBUG — remove after bug-3 is confirmed fixed
+  console.log('[algo] wantToMove:', [...wantToMoveIds].map(id => db.get('users').find({ id }).value()?.name));
+  console.log('[algo] flexible:  ', [...flexibleIds].map(id => db.get('users').find({ id }).value()?.name));
+  console.log('[algo] existingByUser keys:', Object.keys(existingByUser).map(uid => `${uid}(${db.get('users').find({ id: +uid }).value()?.name})`));
+  // END DEBUG
+
   // ── Cleanup: remove assignments that no longer have a schedule slot ───────
   // If an employee removed a day (or hours) from their regular_schedule,
   // any existing assignment that no longer overlaps with ANY schedule slot
@@ -1477,6 +1483,10 @@ function generateAssignments() {
       }
     }
   }
+  // DEBUG
+  console.log('[algo] staleIds:', staleIds);
+  console.log('[algo] trimUpdates:', trimUpdates);
+  // END DEBUG
   if (staleIds.length) {
     db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
   }
@@ -1488,6 +1498,10 @@ function generateAssignments() {
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size || flexibleIds.size) {
+    const beforeClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id))).value();
+    // DEBUG
+    console.log('[algo] clearing for wantToMove/flexible — candidates:', beforeClear.map(a => ({ id: a.id, user_id: a.user_id, day: a.day_of_week, is_manual: a.is_manual })));
+    // END DEBUG
     db.get('room_assignments')
       .remove(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual)
       .write();
