@@ -1034,7 +1034,10 @@ function generateAssignments() {
       if (!freeStart) return [s];
       const result = [];
       if (toMin(s.start_time) < toMin(freeStart)) result.push({ ...s, end_time: freeStart });
-      if (toMin(s.end_time) > toMin(freeEnd)) result.push({ ...s, start_time: freeEnd });
+      if (toMin(s.end_time) > toMin(freeEnd)) {
+        const effectiveStart = Math.max(toMin(s.start_time), toMin(freeEnd));
+        result.push({ ...s, start_time: minToTime(effectiveStart) });
+      }
       return result;
     });
   }
