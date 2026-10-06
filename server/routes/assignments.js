@@ -1442,33 +1442,6 @@ function generateAssignments() {
     };
   }
 
-  // DEBUG — remove after bug-3 is confirmed fixed
-  console.log('[algo] wantToMove count:', wantToMoveIds.size);
-  console.log('[algo] flexible count:  ', flexibleIds.size);
-  console.log('[algo] processable count:', processableUserIds.size, 'schedules count:', schedules.length, 'allExisting count:', allExisting.length);
-  console.log('[algo] existingByUser count:', Object.keys(existingByUser).length);
-  // שחר-specific debug
-  const shahar = db.get('users').find(u => u.name && u.name.includes('שחר')).value();
-  if (shahar) {
-    const shaharAssigns = allExisting.filter(a => +a.user_id === shahar.id);
-    const shaharSched = userSched[shahar.id] || [];
-    console.log('[algo] שחר id:', shahar.id, '| inWantToMove:', wantToMoveIds.has(shahar.id), '| inFlex:', flexibleIds.has(shahar.id));
-    console.log('[algo] שחר currentRooms:', currentRooms[shahar.id], '| currentRoomsByDay:', JSON.stringify(currentRoomsByDay[shahar.id]));
-    console.log('[algo] שחר schedule days:', shaharSched.map(s => s.day_of_week + ' pref:' + s.preferred_room_id));
-    shaharAssigns.forEach(a => console.log('[algo] שחר assignment: day=' + a.day_of_week + ' room=' + a.room_id + ' is_manual=' + a.is_manual + ' type=' + a.assignment_type));
-  } else {
-    console.log('[algo] שחר not found in users');
-  }
-  // תמר debug
-  const tamar = db.get('users').find(u => u.name && u.name.includes('תמר')).value();
-  if (tamar) {
-    const tamarSched = userSched[tamar.id] || [];
-    const tamarAssigns = allExisting.filter(a => +a.user_id === tamar.id);
-    console.log('[algo] תמר id:', tamar.id, '| inWantToMove:', wantToMoveIds.has(tamar.id), '| inFlex:', flexibleIds.has(tamar.id));
-    tamarSched.forEach(s => console.log('[algo] תמר sched: day=' + s.day_of_week + ' ' + s.start_time + '-' + s.end_time + ' pref=' + s.preferred_room_id));
-    tamarAssigns.filter(a => +a.day_of_week === 3).forEach(a => console.log('[algo] תמר day3 assign: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
-  }
-  // END DEBUG
 
   // ── Cleanup: remove assignments that no longer have a schedule slot ───────
   // If an employee removed a day (or hours) from their regular_schedule,
@@ -1508,10 +1481,6 @@ function generateAssignments() {
       }
     }
   }
-  // DEBUG
-  console.log('[algo] staleIds:', staleIds);
-  console.log('[algo] trimUpdates:', trimUpdates);
-  // END DEBUG
   if (staleIds.length) {
     db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
   }
@@ -1523,10 +1492,6 @@ function generateAssignments() {
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size || flexibleIds.size) {
-    const beforeClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id))).value();
-    // DEBUG
-    console.log('[algo] clearing for wantToMove/flexible — candidates:', beforeClear.map(a => ({ id: a.id, user_id: a.user_id, day: a.day_of_week, is_manual: a.is_manual })));
-    // END DEBUG
     db.get('room_assignments')
       .remove(a => {
         if (a.assignment_type !== 'permanent') return false;
@@ -1539,20 +1504,6 @@ function generateAssignments() {
       })
       .write();
   }
-  // DEBUG — שחר post-clear check
-  if (shahar) {
-    const afterClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === shahar.id).value();
-    console.log('[algo] שחר after clearing count:', afterClear.length);
-    afterClear.forEach(a => console.log('[algo] שחר after-clear: day=' + a.day_of_week + ' room=' + a.room_id + ' is_manual=' + a.is_manual));
-  }
-  // END DEBUG
-  // DEBUG — תמר post-clear check
-  if (tamar) {
-    const tamarAfterClear = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === tamar.id && +a.day_of_week === 3).value();
-    console.log('[algo] תמר after-clear day3 count:', tamarAfterClear.length);
-    tamarAfterClear.forEach(a => console.log('[algo] תמר after-clear day3: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
-  }
-  // END DEBUG תמר
   newAssignments.forEach(a => {
     db.get('room_assignments').push({
       id: nextId('room_assignments'), ...a,
@@ -1560,13 +1511,6 @@ function generateAssignments() {
       created_at: new Date().toISOString(),
     }).write();
   });
-  // DEBUG — תמר post-write check
-  if (tamar) {
-    const tamarFinal = db.get('room_assignments').filter(a => a.assignment_type === 'permanent' && +a.user_id === tamar.id && +a.day_of_week === 3).value();
-    console.log('[algo] תמר final day3 count:', tamarFinal.length);
-    tamarFinal.forEach(a => console.log('[algo] תמר final day3: room=' + a.room_id + ' ' + a.start_time + '-' + a.end_time + ' is_manual=' + a.is_manual));
-  }
-  // END DEBUG תמר final
 
   // ── userStats ─────────────────────────────────────────────────────────────
   const userStats = {};
