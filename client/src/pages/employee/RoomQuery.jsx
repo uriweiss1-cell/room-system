@@ -168,20 +168,18 @@ export default function RoomQuery() {
             <table className="tbl">
               <thead><tr><th>חדר</th><th>עובד</th><th>שעות</th><th>סוג</th></tr></thead>
               <tbody>
-                {result.regular.map(a => (
-                  <tr key={`r-${a.id}`}>
+                {[
+                  ...result.regular.map(a => ({ ...a, _type: 'regular' })),
+                  ...result.oneTime.map(a => ({ ...a, _type: 'oneTime' })),
+                ].sort((a, b) => {
+                  const num = s => parseInt((s.room_name || '').match(/\d+/)?.[0]) || 0;
+                  return num(a) - num(b);
+                }).map(a => (
+                  <tr key={`${a._type}-${a.id}`}>
                     <td className="font-medium">{a.room_name}</td>
                     <td>{a.user_name}</td>
                     <td>{a.start_time}–{a.end_time}</td>
-                    <td><span className="badge badge-blue">קבוע</span></td>
-                  </tr>
-                ))}
-                {result.oneTime.map(a => (
-                  <tr key={`ot-${a.id}`}>
-                    <td className="font-medium">{a.room_name}</td>
-                    <td>{a.user_name}</td>
-                    <td>{a.start_time}–{a.end_time}</td>
-                    <td><span className="badge badge-yellow">חד-פעמי</span></td>
+                    <td><span className={`badge ${a._type === 'regular' ? 'badge-blue' : 'badge-yellow'}`}>{a._type === 'regular' ? 'קבוע' : 'חד-פעמי'}</span></td>
                   </tr>
                 ))}
               </tbody>
