@@ -1981,6 +1981,11 @@ router.post('/init-draft', requirePerm('assignments'), (req, res) => {
   res.json({ message: 'טיוטה אותחלה מהשיבוץ הפעיל', count: active.length });
 });
 
+router.delete('/draft', requirePerm('assignments'), (req, res) => {
+  db.set('draft_assignments', []).write();
+  res.json({ message: 'הטיוטה נמחקה' });
+});
+
 router.post('/approve-draft', requirePerm('algorithm'), (req, res) => {
   createBackup('before-approve-draft');
   const draft = db.get('draft_assignments').filter({ assignment_type: 'permanent' }).value();

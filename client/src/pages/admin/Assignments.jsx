@@ -141,6 +141,19 @@ export default function AdminAssignments({ readOnly = false }) {
     finally { setInitingDraft(false); }
   };
 
+  const deleteDraft = async () => {
+    if (!confirm('למחוק את הטיוטה? כל השינויים שבוצעו בה יאבדו.')) return;
+    try {
+      await api.delete('/assignments/draft');
+      setDraftMode(false);
+      setDraftExists(false);
+      setDraftDiff(null);
+      setShowDiff(false);
+      load(false);
+      setMsg('הטיוטה נמחקה');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+  };
+
   const approveDraft = async () => {
     if (!confirm('אישור הטיוטה יחליף את השיבוץ הפעיל במלואו. פעולה זו אינה הפיכה. להמשיך?')) return;
     setApproving(true);
@@ -556,9 +569,9 @@ export default function AdminAssignments({ readOnly = false }) {
                     {approving ? 'מאשר...' : '✅ אשר ופרסם'}
                   </button>
                 )}
-                <button className="btn btn-ghost text-sm text-orange-700 border-orange-300 hover:bg-orange-50"
-                  onClick={initDraft} disabled={initingDraft} title="איפוס הטיוטה לשיבוץ הפעיל הנוכחי">
-                  {initingDraft ? 'מאפס...' : '🔄 אפס טיוטה'}
+                <button className="btn btn-ghost text-sm text-red-700 border-red-300 hover:bg-red-50"
+                  onClick={deleteDraft} title="מחיקת הטיוטה — חזרה למצב פעיל ללא שמירת שינויים">
+                  🗑 מחק טיוטה
                 </button>
               </>
             )}
