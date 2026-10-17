@@ -922,8 +922,9 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
       }
     }
 
+    const draftActive = db.get('draft_assignments').size().value() > 0;
     for (const slot of effectiveSlots) {
-      db.get('room_assignments').push({
+      const newAssignment = {
         id: nextId('room_assignments'),
         user_id: request.user_id,
         room_id: slot.roomId,
@@ -934,7 +935,11 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
         is_manual: true, // protect from algorithm cleanup
         notes: request.notes || null,
         created_at: new Date().toISOString(),
-      }).write();
+      };
+      db.get('room_assignments').push(newAssignment).write();
+      if (draftActive) {
+        db.get('draft_assignments').push({ ...newAssignment, id: nextId('room_assignments') }).write();
+      }
 
       // Ensure a matching regular_schedule entry exists for each slot
       const existingSched = db.get('regular_schedules')
@@ -966,10 +971,11 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
   }
 
   if (status === 'approved' && request?.request_type === 'permanent_reduce' && request.reduce_assignment_id) {
-    db.get('room_assignments').find({ id: request.reduce_assignment_id }).assign({
-      start_time: request.start_time,
-      end_time: request.end_time,
-    }).write();
+    const reduceUpdate = { start_time: request.start_time, end_time: request.end_time };
+    db.get('room_assignments').find({ id: request.reduce_assignment_id }).assign(reduceUpdate).write();
+    if (db.get('draft_assignments').find({ id: request.reduce_assignment_id }).value()) {
+      db.get('draft_assignments').find({ id: request.reduce_assignment_id }).assign(reduceUpdate).write();
+    }
   }
 
   // Send notification to employee about the decision
