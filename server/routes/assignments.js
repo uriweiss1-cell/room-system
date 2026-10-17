@@ -387,6 +387,17 @@ router.post('/', requirePerm('assignments'), (req, res) => {
   };
   db.get(tbl).push(a).write();
 
+  // כשכותבים לטבלה הפעילה ויש טיוטה קיימת — משקפים אליה גם כן
+  if (tbl === 'room_assignments' && aType === 'permanent' && db.get('draft_assignments').size().value() > 0) {
+    if (replace_overlap && user_id) {
+      db.get('draft_assignments')
+        .remove(d => d.user_id === +user_id && d.day_of_week === +day_of_week && d.assignment_type === 'permanent'
+          && overlap(d.start_time, d.end_time, start_time, end_time))
+        .write();
+    }
+    db.get('draft_assignments').push({ ...a, id: nextId('room_assignments') }).write();
+  }
+
   // For permanent manual assignments to a real user: ensure a matching regular_schedule
   // entry exists, and update ALL schedule entries for that user/day to use the manually
   // assigned room as preferred — this prevents the algorithm from classifying the user
