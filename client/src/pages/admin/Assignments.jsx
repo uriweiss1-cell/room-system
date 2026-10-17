@@ -615,16 +615,16 @@ export default function AdminAssignments({ readOnly = false }) {
           <h2 className="text-xl font-bold">{readOnly ? 'גריד שיבוץ חדרים' : 'שיבוץ חדרים'}{draftMode ? ' (טיוטה)' : ''}</h2>
           {!readOnly && (
             <div className="flex flex-wrap gap-2">
-              {perms?.algorithm && (
-                <button className={`btn ${draftMode ? 'btn-primary' : 'btn-ghost text-amber-700 border-amber-300 hover:bg-amber-50'}`}
-                  onClick={draftMode ? generate : () => { setMsg('יש לעבור למצב טיוטה לפני הפעלת האלגוריתם'); }}
-                  disabled={generating} title={draftMode ? '' : 'האלגוריתם רץ על הטיוטה — עבור לטיוטה תחילה'}>
+              {perms?.algorithm && draftMode && (
+                <button className="btn btn-primary" onClick={generate} disabled={generating}>
                   {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
                 </button>
               )}
-              <button className="btn btn-ghost" onClick={runAudit} disabled={auditing} title="בדוק שהשיבוצים הנוכחיים עומדים בקריטריונים של כל תפקיד">
-                {auditing ? 'בודק...' : '🔍 בדיקת ציות'}
-              </button>
+              {draftMode && (
+                <button className="btn btn-ghost" onClick={runAudit} disabled={auditing} title="בדוק שהשיבוצים בטיוטה עומדים בקריטריונים של כל תפקיד">
+                  {auditing ? 'בודק...' : '🔍 בדיקת ציות'}
+                </button>
+              )}
               <button className="btn btn-ghost" onClick={() => { setShowAdd(true); setAddForm(p => ({ ...p, user_id: '' })); setMsg(''); setShowGuest(false); }}>+ הוסף שיבוץ ידני</button>
               <button className="btn btn-ghost text-teal-700 border-teal-300 hover:bg-teal-50" onClick={() => { setShowGuest(p => !p); setGuestStep('form'); setShowAdd(false); setMsg(''); }}>👤 שיבוץ אורח חד-פעמי</button>
               {perms?.algorithm && <>
@@ -755,7 +755,7 @@ export default function AdminAssignments({ readOnly = false }) {
           </div>
         )}
 
-        {!readOnly && genResult && perms?.algorithm && (
+        {!readOnly && genResult && perms?.algorithm && draftMode && (
           <div className={`rounded-xl p-4 mb-4 ${genResult.conflicts?.length ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
             <div className="flex items-center gap-3 flex-wrap">
               <p className="font-semibold flex-1">{genResult.message}</p>
