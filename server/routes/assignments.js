@@ -27,7 +27,8 @@ router.get('/my', (req, res) => {
 });
 
 router.get('/all', requirePermOrRole('assignments', 'secretary'), (req, res) => {
-  const list = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
+  const src = req.query.source === 'draft' ? 'draft_assignments' : 'room_assignments';
+  const list = db.get(src).filter({ assignment_type: 'permanent' }).value().map(enrichAssignment);
   res.json(list);
 });
 
@@ -345,12 +346,13 @@ router.get('/locate', (req, res) => {
 });
 
 router.post('/', requirePerm('assignments'), (req, res) => {
-  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap, force } = req.body;
+  const { user_id, room_id, day_of_week, start_time, end_time, assignment_type, specific_date, replace_overlap, force, target } = req.body;
   const aType = assignment_type ?? 'permanent';
+  const tbl = target === 'draft' ? 'draft_assignments' : 'room_assignments';
 
   // Conflict check: warn if another user is already assigned to this room at this time
   if (aType === 'permanent' && user_id && !force) {
-    const conflict = db.get('room_assignments').filter(a =>
+    const conflict = db.get(tbl).filter(a =>
       +a.room_id === +room_id &&
       +a.day_of_week === +day_of_week &&
       a.assignment_type === 'permanent' &&
@@ -369,7 +371,7 @@ router.post('/', requirePerm('assignments'), (req, res) => {
 
   // If replace_overlap is set, remove existing overlapping permanent assignments for this user/day
   if (replace_overlap && user_id && aType === 'permanent') {
-    db.get('room_assignments')
+    db.get(tbl)
       .remove(a => a.user_id === +user_id && a.day_of_week === +day_of_week && a.assignment_type === 'permanent'
         && overlap(a.start_time, a.end_time, start_time, end_time))
       .write();
@@ -383,7 +385,7 @@ router.post('/', requirePerm('assignments'), (req, res) => {
     is_manual: aType === 'permanent' && !!user_id, // protected from algorithm cleanup
     created_at: new Date().toISOString(),
   };
-  db.get('room_assignments').push(a).write();
+  db.get(tbl).push(a).write();
 
   // For permanent manual assignments to a real user: ensure a matching regular_schedule
   // entry exists, and update ALL schedule entries for that user/day to use the manually
@@ -420,9 +422,10 @@ router.post('/', requirePerm('assignments'), (req, res) => {
 });
 
 router.put('/:id', requirePerm('assignments'), (req, res) => {
-  const { start_time, end_time, room_id } = req.body;
+  const { start_time, end_time, room_id, source } = req.body;
   if (!start_time || !end_time) return res.status(400).json({ error: 'נדרשות שעת התחלה וסיום' });
-  const a = db.get('room_assignments').find({ id: +req.params.id }).value();
+  const tbl = source === 'draft' ? 'draft_assignments' : 'room_assignments';
+  const a = db.get(tbl).find({ id: +req.params.id }).value();
   if (!a) return res.status(404).json({ error: 'שיבוץ לא נמצא' });
   const update = { start_time, end_time };
   if (room_id) {
@@ -430,11 +433,11 @@ router.put('/:id', requirePerm('assignments'), (req, res) => {
     // Moving to a different room is an explicit admin action — protect it from algorithm overwrite
     if (a.assignment_type === 'permanent' && a.user_id) update.is_manual = true;
   }
-  db.get('room_assignments').find({ id: +req.params.id }).assign(update).write();
+  db.get(tbl).find({ id: +req.params.id }).assign(update).write();
   // When changing the room: remove any OTHER overlapping permanent assignments for the same user/day
   // to prevent accidental double-booking (e.g. from a previous manual add without replace_overlap).
   if (room_id && a.user_id && a.assignment_type === 'permanent') {
-    db.get('room_assignments')
+    db.get(tbl)
       .remove(b => b.id !== a.id && b.user_id === a.user_id && b.day_of_week === a.day_of_week
         && b.assignment_type === 'permanent'
         && overlap(b.start_time, b.end_time, start_time, end_time))
@@ -469,11 +472,12 @@ router.delete('/clear/permanent', requireAdmin, (req, res) => {
 });
 
 router.delete('/:id', requirePerm('assignments'), (req, res) => {
-  // Admin delete: removes only the room_assignment, keeps regular_schedule intact.
+  // Admin delete: removes only the assignment, keeps regular_schedule intact.
   // The employee stays in the "needs assignment" pool — the algorithm will reassign
   // them on the next run.
   // (Employee self-delete via DELETE /my/:id removes both assignment AND schedule.)
-  db.get('room_assignments').remove({ id: +req.params.id }).write();
+  const src = req.query.source === 'draft' ? 'draft_assignments' : 'room_assignments';
+  db.get(src).remove({ id: +req.params.id }).write();
   res.json({ message: 'השיבוץ נמחק' });
 });
 
@@ -490,7 +494,7 @@ router.post('/resolve-preference', requirePerm('algorithm'), (req, res) => {
     // Helper: set preferred_room_id on all schedule entries for a user to their current most-used room.
     // Prevents wantToMove from re-triggering when the algorithm runs again.
     const resetPreferred = (uid) => {
-      const currentAssignments = db.get('room_assignments').filter({ user_id: +uid, assignment_type: 'permanent' }).value();
+      const currentAssignments = db.get('draft_assignments').filter({ user_id: +uid, assignment_type: 'permanent' }).value();
       const counts = {};
       currentAssignments.forEach(a => { counts[a.room_id] = (counts[a.room_id] || 0) + 1; });
       const topRoom = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
@@ -511,20 +515,20 @@ router.post('/resolve-preference', requirePerm('algorithm'), (req, res) => {
 
     if (action === 'displace') {
       // Remove the blocker's assignment for this room/day slot
-      const allForBlocker = db.get('room_assignments')
+      const allForBlocker = db.get('draft_assignments')
         .filter(a => a.user_id === +blockerUserId && a.room_id === +roomId && a.day_of_week === +day && a.assignment_type === 'permanent')
         .value();
       const toRemove = allForBlocker.find(a => overlap(a.start_time, a.end_time, start, end));
-      if (toRemove) db.get('room_assignments').remove({ id: toRemove.id }).write();
+      if (toRemove) db.get('draft_assignments').remove({ id: toRemove.id }).write();
 
       // Also remove any existing assignment of the target user for the same day (avoid duplicates)
-      db.get('room_assignments')
+      db.get('draft_assignments')
         .remove(a => a.user_id === +userId && a.day_of_week === +day && a.assignment_type === 'permanent'
           && overlap(a.start_time, a.end_time, start, end))
         .write();
 
       // Assign the preferred user to the room
-      db.get('room_assignments').push({
+      db.get('draft_assignments').push({
         id: nextId('room_assignments'),
         user_id: +userId, room_id: +roomId, day_of_week: +day,
         start_time: start, end_time: end,
@@ -562,12 +566,12 @@ router.post('/assign-contested', requirePerm('algorithm'), (req, res) => {
   if (!assignments?.length || !roomId) return res.status(400).json({ error: 'חסרים פרמטרים' });
   for (const { userId, slots } of assignments) {
     for (const slot of slots) {
-      db.get('room_assignments').remove(a =>
+      db.get('draft_assignments').remove(a =>
         a.user_id === +userId && a.day_of_week === slot.day_of_week &&
         a.assignment_type === 'permanent' &&
         overlap(a.start_time, a.end_time, slot.start_time, slot.end_time)
       ).write();
-      db.get('room_assignments').push({
+      db.get('draft_assignments').push({
         id: nextId('room_assignments'),
         user_id: +userId, room_id: +roomId,
         day_of_week: slot.day_of_week,
@@ -743,7 +747,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
   const { action } = req.body;
   if (!action) return res.status(400).json({ error: 'חסר action' });
 
-  const push = a => db.get('room_assignments').push({
+  const push = a => db.get('draft_assignments').push({
     id: nextId('room_assignments'), ...a,
     assignment_type: 'permanent', specific_date: null, is_manual: true, created_at: new Date().toISOString(),
   }).write();
@@ -782,7 +786,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
   if (action.type === 'pref_partial') {
     // Partial split for a preference conflict: remove the full assigned-room assignment
     // and replace with split parts (preferred room where free, assigned room for the rest)
-    db.get('room_assignments').remove(a =>
+    db.get('draft_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day &&
       a.assignment_type === 'permanent' && a.room_id === +action.assignedRoomId
     ).write();
@@ -797,7 +801,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
     // (non-overlapping time slots on the same day are preserved)
     const splitStart = action.parts[0].start;
     const splitEnd = action.parts[action.parts.length - 1].end;
-    db.get('room_assignments').remove(a =>
+    db.get('draft_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
       && overlap(a.start_time, a.end_time, splitStart, splitEnd)
     ).write();
@@ -809,7 +813,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
 
   if (action.type === 'shift') {
     // Remove existing overlapping assignments for this user/day before shifting
-    db.get('room_assignments').remove(a =>
+    db.get('draft_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
       && overlap(a.start_time, a.end_time, action.start, action.end)
     ).write();
@@ -822,14 +826,14 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
     const tMin = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
     const ovlp = (s1,e1,s2,e2) => tMin(s1) < tMin(e2) && tMin(e1) > tMin(s2);
     // Find and remove the blocker's existing assignment
-    const allForUser = db.get('room_assignments').filter(a =>
+    const allForUser = db.get('draft_assignments').filter(a =>
       a.user_id === +action.displaceUserId && a.room_id === +action.fromRoomId &&
       a.day_of_week === +action.day && a.assignment_type === 'permanent'
     ).value();
     const existing = allForUser.find(a => ovlp(a.start_time, a.end_time, action.displaceStart, action.displaceEnd));
-    if (existing) db.get('room_assignments').remove({ id: existing.id }).write();
+    if (existing) db.get('draft_assignments').remove({ id: existing.id }).write();
     // Move blocker to alt room (remove any existing assignment in that alt room first)
-    db.get('room_assignments').remove(a =>
+    db.get('draft_assignments').remove(a =>
       a.user_id === +action.displaceUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
       && a.room_id === +action.toRoomId && overlap(a.start_time, a.end_time, action.displaceStart, action.displaceEnd)
     ).write();
@@ -837,7 +841,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
     // Displaced user: don't overwrite their preferred_room_id — they didn't choose this room
     syncSchedule(action.displaceUserId, action.day, action.toRoomId, action.displaceStart, action.displaceEnd, { updatePreferred: false });
     // Remove conflict user's existing assignment before assigning to freed room
-    db.get('room_assignments').remove(a =>
+    db.get('draft_assignments').remove(a =>
       a.user_id === +action.conflictUserId && a.day_of_week === +action.day && a.assignment_type === 'permanent'
       && overlap(a.start_time, a.end_time, action.conflictStart, action.conflictEnd)
     ).write();
@@ -865,7 +869,7 @@ router.post('/apply-suggestion', requirePerm('algorithm'), (req, res) => {
   }
 });
 
-function generateAssignments() {
+function generateAssignments(table = 'draft_assignments') {
   const users = db.get('users').filter(u => u.is_active).value();
   const rooms = db.get('rooms').filter({ is_active: true }).value();
   const schedules = db.get('regular_schedules').value();
@@ -873,7 +877,7 @@ function generateAssignments() {
 
   // Remove stale assignments for inactive/deleted users so they don't block rooms
   const activeIds = new Set(users.map(u => u.id));
-  db.get('room_assignments')
+  db.get(table)
     .remove(a => a.assignment_type === 'permanent' && a.user_id && !activeIds.has(a.user_id))
     .write();
 
@@ -908,7 +912,7 @@ function generateAssignments() {
   });
 
   // ── Snapshot existing permanent assignments ───────────────────────────────
-  const allExisting = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+  const allExisting = db.get(table).filter({ assignment_type: 'permanent' }).value();
 
   const existingByUser = {}; // userId (number) -> [assignment]
   allExisting.forEach(a => {
@@ -1482,17 +1486,17 @@ function generateAssignments() {
     }
   }
   if (staleIds.length) {
-    db.get('room_assignments').remove(a => staleIds.includes(a.id)).write();
+    db.get(table).remove(a => staleIds.includes(a.id)).write();
   }
   for (const { id, start_time, end_time } of trimUpdates) {
-    db.get('room_assignments').find({ id }).assign({ start_time, end_time }).write();
+    db.get(table).find({ id }).assign({ start_time, end_time }).write();
   }
 
   // ── Write changes ─────────────────────────────────────────────────────────
   // Only clear and rewrite assignments for wantToMove users.
   // All other users' assignments are untouched in the DB.
   if (wantToMoveIds.size || flexibleIds.size) {
-    db.get('room_assignments')
+    db.get(table)
       .remove(a => {
         if (a.assignment_type !== 'permanent') return false;
         const uid = +a.user_id;
@@ -1505,7 +1509,7 @@ function generateAssignments() {
       .write();
   }
   newAssignments.forEach(a => {
-    db.get('room_assignments').push({
+    db.get(table).push({
       id: nextId('room_assignments'), ...a,
       assignment_type: 'permanent', specific_date: null,
       created_at: new Date().toISOString(),
@@ -1547,8 +1551,8 @@ function generateAssignments() {
   // ── Check for conflicts between permanent assignments and guest/one-time assignments ──
   // A guest or one-time room booking on a specific date blocks a permanent employee
   // who is regularly assigned to the same room on that day-of-week.
-  const allPermanentNow = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
-  const guestSlots = db.get('room_assignments')
+  const allPermanentNow = db.get(table).filter({ assignment_type: 'permanent' }).value();
+  const guestSlots = db.get(table)
     .filter(a => a.assignment_type === 'one_time' && a.guest_name && a.specific_date)
     .value();
   const oneTimeBooked = db.get('one_time_requests')
@@ -1648,7 +1652,7 @@ function generateAssignments() {
       const preferredRoom = rooms.find(r => r.id === pid);
       if (!preferredRoom) continue;
       // Only check assignments on this slot's specific day
-      const mismatchedAssignments = db.get('room_assignments')
+      const mismatchedAssignments = db.get(table)
         .filter({ user_id: user.id, assignment_type: 'permanent', day_of_week: slot.day_of_week })
         .value()
         .filter(a => a.room_id !== pid && overlap(a.start_time, a.end_time, slot.start_time, slot.end_time));
@@ -1657,7 +1661,7 @@ function generateAssignments() {
         if (seenMismatch.has(key)) continue;
         seenMismatch.add(key);
         const currentRoom = rooms.find(r => r.id === a.room_id);
-        const preferredConflicts = db.get('room_assignments')
+        const preferredConflicts = db.get(table)
           .filter({ room_id: pid, day_of_week: a.day_of_week, assignment_type: 'permanent' })
           .value()
           .filter(b => b.user_id !== user.id && overlap(a.start_time, a.end_time, b.start_time, b.end_time));
@@ -1961,5 +1965,74 @@ function suggestResolutions(conflicts, grid, regularRooms) {
     return { userId: conflict.userId, userName: conflict.userName, slots: slotSuggestions };
   });
 }
+
+// ── Draft management routes ───────────────────────────────────────────────────
+
+router.get('/draft-status', requirePerm('assignments'), (req, res) => {
+  const count = db.get('draft_assignments').filter({ assignment_type: 'permanent' }).size().value();
+  res.json({ exists: count > 0, count });
+});
+
+router.post('/init-draft', requirePerm('assignments'), (req, res) => {
+  createBackup('before-init-draft');
+  // Copy all permanent assignments from active to draft, replacing existing draft
+  const active = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+  db.set('draft_assignments', [...active]).write();
+  res.json({ message: 'טיוטה אותחלה מהשיבוץ הפעיל', count: active.length });
+});
+
+router.post('/approve-draft', requirePerm('algorithm'), (req, res) => {
+  createBackup('before-approve-draft');
+  const draft = db.get('draft_assignments').filter({ assignment_type: 'permanent' }).value();
+  // Replace all permanent active assignments with the draft
+  db.get('room_assignments').remove({ assignment_type: 'permanent' }).write();
+  draft.forEach(a => db.get('room_assignments').push(a).write());
+  // Clear the draft
+  db.set('draft_assignments', []).write();
+  res.json({ message: 'טיוטה אושרה ופורסמה', count: draft.length });
+});
+
+router.get('/draft-diff', requirePerm('assignments'), (req, res) => {
+  const active = db.get('room_assignments').filter({ assignment_type: 'permanent' }).value();
+  const draft = db.get('draft_assignments').filter({ assignment_type: 'permanent' }).value();
+
+  const activeMap = new Map(active.map(a => [a.id, a]));
+  const draftMap = new Map(draft.map(a => [a.id, a]));
+
+  const changes = [];
+
+  // Removed from draft (in active but not in draft)
+  for (const a of active) {
+    if (!draftMap.has(a.id)) {
+      const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
+      const room = db.get('rooms').find({ id: a.room_id }).value();
+      changes.push({ type: 'removed', id: a.id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
+    }
+  }
+
+  // Added in draft (in draft but not in active)
+  for (const a of draft) {
+    if (!activeMap.has(a.id)) {
+      const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
+      const room = db.get('rooms').find({ id: a.room_id }).value();
+      changes.push({ type: 'added', id: a.id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
+    }
+  }
+
+  // Modified (same id but different room or times)
+  for (const a of draft) {
+    const b = activeMap.get(a.id);
+    if (b && (a.room_id !== b.room_id || a.start_time !== b.start_time || a.end_time !== b.end_time)) {
+      const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
+      const roomA = db.get('rooms').find({ id: b.room_id }).value();
+      const roomB = db.get('rooms').find({ id: a.room_id }).value();
+      changes.push({ type: 'modified', id: a.id, user_name: user?.name || '?', day_of_week: a.day_of_week, from_room: roomA?.name || '?', to_room: roomB?.name || '?', from_start: b.start_time, from_end: b.end_time, to_start: a.start_time, to_end: a.end_time });
+    }
+  }
+
+  const DAYS_HE_LOCAL = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+  changes.forEach(c => { c.day_name = DAYS_HE_LOCAL[c.day_of_week] || '?'; });
+  res.json({ changes, activeCount: active.length, draftCount: draft.length });
+});
 
 module.exports = router;

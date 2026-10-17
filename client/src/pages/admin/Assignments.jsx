@@ -56,6 +56,12 @@ export default function AdminAssignments({ readOnly = false }) {
   const [auditResult, setAuditResult] = useState(null);
   const [auditing, setAuditing] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  const [draftMode, setDraftMode] = useState(false);
+  const [draftExists, setDraftExists] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [draftDiff, setDraftDiff] = useState(null);
+  const [approving, setApproving] = useState(false);
+  const [initingDraft, setInitingDraft] = useState(false);
   // dismissedPanels: panelKey → count at time of dismissal
   // Panel re-appears only when current count exceeds dismissed count
   const [dismissedPanels, setDismissedPanels] = useState(() => {
@@ -98,12 +104,13 @@ export default function AdminAssignments({ readOnly = false }) {
       .then(r => setWeeklyOneTime(r.data)).catch(() => {});
   };
 
-  useEffect(() => { load(); loadGuests(); }, []);
+  useEffect(() => { load(); loadGuests(); checkDraftStatus(); }, []);
   useEffect(() => { loadWeeklyOneTime(); }, [weekOffset]);
   const loadGuests = () => api.get('/assignments/guests').then(r => setGuests(r.data)).catch(() => {});
-  const load = async () => {
+  const load = async (overrideDraftMode) => {
+    const useDraft = overrideDraftMode !== undefined ? overrideDraftMode : draftMode;
     const [a, u, r] = await Promise.all([
-      api.get('/assignments/all'),
+      api.get('/assignments/all', useDraft ? { params: { source: 'draft' } } : {}),
       api.get('/users'),
       api.get('/rooms'),
     ]);
@@ -112,6 +119,48 @@ export default function AdminAssignments({ readOnly = false }) {
     setRooms(r.data);
     // Schedules are secondary — load separately so a failure doesn't break the main page
     try { const s = await api.get('/schedules/all'); setSchedules(s.data); } catch {}
+  };
+
+  const checkDraftStatus = async () => {
+    try { const r = await api.get('/assignments/draft-status'); setDraftExists(r.data.exists); }
+    catch {}
+  };
+
+  const initDraft = async () => {
+    if (!confirm('יצירת טיוטה תעתיק את השיבוץ הפעיל הנוכחי לטיוטה חדשה. להמשיך?')) return;
+    setInitingDraft(true);
+    try {
+      await api.post('/assignments/init-draft');
+      setDraftExists(true);
+      setDraftMode(true);
+      setDraftDiff(null);
+      setShowDiff(false);
+      load(true);
+      setMsg('טיוטה נוצרה מהשיבוץ הפעיל');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+    finally { setInitingDraft(false); }
+  };
+
+  const approveDraft = async () => {
+    if (!confirm('אישור הטיוטה יחליף את השיבוץ הפעיל במלואו. פעולה זו אינה הפיכה. להמשיך?')) return;
+    setApproving(true);
+    try {
+      await api.post('/assignments/approve-draft');
+      setDraftMode(false);
+      setDraftExists(false);
+      setDraftDiff(null);
+      setShowDiff(false);
+      localStorage.removeItem('lastGenResult');
+      setGenResult(null);
+      load(false);
+      setMsg('הטיוטה אושרה ופורסמה בהצלחה');
+    } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
+    finally { setApproving(false); }
+  };
+
+  const loadDiff = async () => {
+    try { const r = await api.get('/assignments/draft-diff'); setDraftDiff(r.data); }
+    catch (e) { setMsg('שגיאה בטעינת השוואה: ' + (e.response?.data?.error || e.message)); }
   };
 
   const importFromDoc = async () => {
@@ -293,7 +342,8 @@ export default function AdminAssignments({ readOnly = false }) {
   };
 
   const deleteAssignment = async id => {
-    await api.delete(`/assignments/${id}`); load();
+    await api.delete(`/assignments/${id}`, draftMode ? { params: { source: 'draft' } } : {});
+    load();
   };
 
   const deleteOneTime = async (id, label, isGuest = false) => {
@@ -308,24 +358,25 @@ export default function AdminAssignments({ readOnly = false }) {
 
   const saveEdit = async () => {
     try {
-      await api.put(`/assignments/${editingSlot.id}`, editForm);
+      await api.put(`/assignments/${editingSlot.id}`, { ...editForm, ...(draftMode ? { source: 'draft' } : {}) });
       setEditingSlot(null);
       load();
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
   const addAssignment = async () => {
+    const extra = draftMode ? { target: 'draft' } : {};
     try {
       // replace_overlap removes any existing overlapping assignment for the same user/day
       // preventing accidental double-booking when adding manually
-      await api.post('/assignments', { ...addForm, replace_overlap: true });
+      await api.post('/assignments', { ...addForm, replace_overlap: true, ...extra });
       setShowAdd(false); load(); setMsg('שיבוץ נוסף');
     } catch (e) {
       if (e.response?.status === 409 && e.response?.data?.conflict) {
         const { message } = e.response.data;
         if (confirm(`${message}\nלשבץ בכל זאת?`)) {
           try {
-            await api.post('/assignments', { ...addForm, replace_overlap: true, force: true });
+            await api.post('/assignments', { ...addForm, replace_overlap: true, force: true, ...extra });
             setShowAdd(false); load(); setMsg('שיבוץ נוסף');
           } catch (e2) { setMsg('שגיאה: ' + (e2.response?.data?.error || e2.message)); }
         }
@@ -470,14 +521,104 @@ export default function AdminAssignments({ readOnly = false }) {
           </div>
         </div>
       )}
+      {/* Draft status bar */}
+      {!readOnly && (
+        <div className={`card border-2 ${draftMode ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className={`px-3 py-1 rounded-full text-sm font-semibold ${draftMode ? 'bg-amber-300 text-amber-900' : 'bg-green-100 text-green-800'}`}>
+              {draftMode ? '✏️ מצב טיוטה' : '✅ מצב פעיל'}
+            </div>
+            {!draftExists && !draftMode && (
+              <button className="btn btn-ghost text-sm" onClick={initDraft} disabled={initingDraft}>
+                {initingDraft ? 'יוצר...' : '📋 צור טיוטה'}
+              </button>
+            )}
+            {draftExists && !draftMode && (
+              <button className="btn btn-ghost text-sm text-amber-700 border-amber-300 hover:bg-amber-50"
+                onClick={() => { setDraftMode(true); load(true); }}>
+                ✏️ עבור לטיוטה
+              </button>
+            )}
+            {(draftExists || draftMode) && (
+              <button className="btn btn-ghost text-sm"
+                onClick={async () => { await loadDiff(); setShowDiff(p => !p); }}>
+                📊 {showDiff ? 'הסתר השוואה' : 'הצג השוואה'}
+              </button>
+            )}
+            {draftMode && (
+              <>
+                <button className="btn btn-ghost text-sm"
+                  onClick={() => { setDraftMode(false); load(false); }}>
+                  ← חזור לפעיל
+                </button>
+                {perms?.algorithm && (
+                  <button className="btn btn-primary text-sm" onClick={approveDraft} disabled={approving}>
+                    {approving ? 'מאשר...' : '✅ אשר ופרסם'}
+                  </button>
+                )}
+                <button className="btn btn-ghost text-sm text-orange-700 border-orange-300 hover:bg-orange-50"
+                  onClick={initDraft} disabled={initingDraft} title="איפוס הטיוטה לשיבוץ הפעיל הנוכחי">
+                  {initingDraft ? 'מאפס...' : '🔄 אפס טיוטה'}
+                </button>
+              </>
+            )}
+            <span className="text-xs text-gray-400 mr-auto">
+              {draftMode ? 'שינויים בטיוטה לא גלויים לעובדים' : draftExists ? 'קיימת טיוטה ממתינה לאישור' : ''}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Diff section */}
+      {showDiff && draftDiff && (
+        <div className="card border border-blue-200 bg-blue-50">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-lg">📊 השוואה: טיוטה מול פעיל</h3>
+            <button className="btn btn-ghost text-sm" onClick={() => setShowDiff(false)}>סגור</button>
+          </div>
+          <div className="text-sm text-gray-600 mb-3">
+            פעיל: <strong>{draftDiff.activeCount}</strong> שיבוצים | טיוטה: <strong>{draftDiff.draftCount}</strong> שיבוצים | שינויים: <strong>{draftDiff.changes.length}</strong>
+          </div>
+          {draftDiff.changes.length === 0 ? (
+            <div className="text-gray-400 text-sm py-4 text-center">אין שינויים — הטיוטה זהה לשיבוץ הפעיל</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="tbl">
+                <thead><tr><th>שינוי</th><th>עובד</th><th>יום</th><th>פרטים</th></tr></thead>
+                <tbody>
+                  {draftDiff.changes.map((c, i) => (
+                    <tr key={i} className={c.type === 'added' ? 'bg-green-50' : c.type === 'removed' ? 'bg-red-50' : 'bg-yellow-50'}>
+                      <td>
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${c.type === 'added' ? 'bg-green-200 text-green-800' : c.type === 'removed' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'}`}>
+                          {c.type === 'added' ? '+ נוסף' : c.type === 'removed' ? '− הוסר' : '✎ שונה'}
+                        </span>
+                      </td>
+                      <td className="font-medium">{c.user_name}</td>
+                      <td>{c.day_name}</td>
+                      <td className="text-sm text-gray-700">
+                        {c.type === 'added' && `${c.room_name} ${c.start_time}–${c.end_time}`}
+                        {c.type === 'removed' && `${c.room_name} ${c.start_time}–${c.end_time}`}
+                        {c.type === 'modified' && `${c.from_room} ${c.from_start}–${c.from_end} ← ${c.to_room} ${c.to_start}–${c.to_end}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Controls */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-3 justify-between mb-3">
-          <h2 className="text-xl font-bold">{readOnly ? 'גריד שיבוץ חדרים' : 'שיבוץ חדרים'}</h2>
+          <h2 className="text-xl font-bold">{readOnly ? 'גריד שיבוץ חדרים' : 'שיבוץ חדרים'}{draftMode ? ' (טיוטה)' : ''}</h2>
           {!readOnly && (
             <div className="flex flex-wrap gap-2">
               {perms?.algorithm && (
-                <button className="btn btn-primary" onClick={generate} disabled={generating}>
+                <button className={`btn ${draftMode ? 'btn-primary' : 'btn-ghost text-amber-700 border-amber-300 hover:bg-amber-50'}`}
+                  onClick={draftMode ? generate : () => { setMsg('יש לעבור למצב טיוטה לפני הפעלת האלגוריתם'); }}
+                  disabled={generating} title={draftMode ? '' : 'האלגוריתם רץ על הטיוטה — עבור לטיוטה תחילה'}>
                   {generating ? 'מחשב שיבוץ...' : '⚡ הפעל אלגוריתם שיבוץ'}
                 </button>
               )}
@@ -658,7 +799,7 @@ export default function AdminAssignments({ readOnly = false }) {
                                         if (!confirm(`לשבץ את ${u.userName} לחדר ${room.name} ביום ${d.dayName}?`)) return;
                                         try {
                                           for (const slot of d.requestedSlots) {
-                                            await api.post('/assignments', { user_id: u.userId, room_id: room.id, day_of_week: d.day, start_time: slot.start, end_time: slot.end, replace_overlap: true });
+                                            await api.post('/assignments', { user_id: u.userId, room_id: room.id, day_of_week: d.day, start_time: slot.start, end_time: slot.end, replace_overlap: true, ...(draftMode ? { target: 'draft' } : {}) });
                                           }
                                           setGenResult(prev => ({
                                             ...prev,
@@ -1192,7 +1333,7 @@ export default function AdminAssignments({ readOnly = false }) {
                                 onClick={async () => {
                                   if (!confirm(`להעביר את ${m.userName} מ-${m.currentRoomName} ל-${m.preferredRoomName} (יום ${m.dayName} ${m.start}–${m.end})?`)) return;
                                   try {
-                                    await api.put(`/assignments/${m.assignmentId}`, { room_id: m.preferredRoomId, start_time: m.start, end_time: m.end });
+                                    await api.put(`/assignments/${m.assignmentId}`, { room_id: m.preferredRoomId, start_time: m.start, end_time: m.end, ...(draftMode ? { source: 'draft' } : {}) });
                                     setGenResult(prev => ({
                                       ...prev,
                                       roomWishMismatches: prev.roomWishMismatches.filter(x => x.assignmentId !== m.assignmentId),
