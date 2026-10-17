@@ -539,7 +539,7 @@ export default function AdminAssignments({ readOnly = false }) {
                 ✏️ עבור לטיוטה
               </button>
             )}
-            {(draftExists || draftMode) && (
+            {draftMode && (
               <button className="btn btn-ghost text-sm"
                 onClick={async () => { await loadDiff(); setShowDiff(p => !p); }}>
                 📊 {showDiff ? 'הסתר השוואה' : 'הצג השוואה'}
