@@ -489,6 +489,10 @@ router.delete('/:id', requirePerm('assignments'), (req, res) => {
   // (Employee self-delete via DELETE /my/:id removes both assignment AND schedule.)
   const src = req.query.source === 'draft' ? 'draft_assignments' : 'room_assignments';
   db.get(src).remove({ id: +req.params.id }).write();
+  // מחיקה בפעיל משוקפת גם לטיוטה (אם קיימת)
+  if (src === 'room_assignments' && db.get('draft_assignments').size().value() > 0) {
+    db.get('draft_assignments').remove({ id: +req.params.id }).write();
+  }
   res.json({ message: 'השיבוץ נמחק' });
 });
 
