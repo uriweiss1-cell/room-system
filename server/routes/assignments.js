@@ -954,8 +954,7 @@ function generateAssignments(table = 'draft_assignments') {
     const anySlotWantsMove = rawSlots.some(s => {
       const pid = s.preferred_room_id ? +s.preferred_room_id : null;
       if (!pid) return false;
-      const dayRoom = userDayRooms[s.day_of_week] || cur;
-      return pid !== dayRoom;
+      return pid !== cur;
     });
     if (anySlotWantsMove) wantToMoveIds.add(user.id);
   }
