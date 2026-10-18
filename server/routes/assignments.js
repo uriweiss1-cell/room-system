@@ -398,37 +398,6 @@ router.post('/', requirePerm('assignments'), (req, res) => {
     db.get('draft_assignments').push({ ...a, id: nextId('room_assignments') }).write();
   }
 
-  // For permanent manual assignments to a real user: ensure a matching regular_schedule
-  // entry exists, and update ALL schedule entries for that user/day to use the manually
-  // assigned room as preferred — this prevents the algorithm from classifying the user
-  // as wantToMove on the next run (which would otherwise clear their non-manual assignments).
-  if (aType === 'permanent' && user_id) {
-    const hasOverlap = db.get('regular_schedules')
-      .filter({ user_id: +user_id, day_of_week: +day_of_week })
-      .value()
-      .some(s => overlap(s.start_time, s.end_time, start_time, end_time));
-    if (!hasOverlap) {
-      db.get('regular_schedules').push({
-        id: nextId('regular_schedules'),
-        user_id: +user_id,
-        day_of_week: +day_of_week,
-        start_time,
-        end_time,
-        preferred_room_id: +room_id,
-        created_at: new Date().toISOString(),
-      }).write();
-    }
-    // Align all schedule entries for this user/day to the manually assigned room
-    db.get('regular_schedules')
-      .filter({ user_id: +user_id, day_of_week: +day_of_week })
-      .value()
-      .forEach(s => {
-        if (+s.preferred_room_id !== +room_id) {
-          db.get('regular_schedules').find({ id: s.id }).assign({ preferred_room_id: +room_id }).write();
-        }
-      });
-  }
-
   res.json({ id: a.id });
 });
 
