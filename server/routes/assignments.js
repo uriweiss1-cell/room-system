@@ -165,7 +165,8 @@ router.get('/user-debug/:userId', requirePerm('assignments'), (req, res) => {
     return { ...s, preferred_room_name: room?.name || null };
   });
 
-  const assignments = db.get('room_assignments')
+  const src = req.query.source === 'draft' ? 'draft_assignments' : 'room_assignments';
+  const assignments = db.get(src)
     .filter({ user_id: userId, assignment_type: 'permanent' })
     .value().map(a => {
       const room = db.get('rooms').find({ id: a.room_id }).value();

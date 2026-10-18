@@ -1729,7 +1729,7 @@ export default function AdminAssignments({ readOnly = false }) {
           <button className="btn btn-primary" disabled={!debugUserId || debugLoading}
             onClick={async () => {
               setDebugLoading(true);
-              try { const r = await api.get(`/assignments/user-debug/${debugUserId}`); setDebugResult(r.data); }
+              try { const r = await api.get(`/assignments/user-debug/${debugUserId}`, { params: draftMode ? { source: 'draft' } : {} }); setDebugResult(r.data); }
               catch (e) { setDebugResult({ error: e.response?.data?.error || e.message }); }
               finally { setDebugLoading(false); }
             }}>
