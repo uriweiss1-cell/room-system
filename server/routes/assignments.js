@@ -2008,7 +2008,7 @@ router.get('/draft-diff', requirePerm('assignments'), (req, res) => {
     if (!draftMap.has(a.id)) {
       const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
       const room = db.get('rooms').find({ id: a.room_id }).value();
-      changes.push({ type: 'removed', id: a.id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
+      changes.push({ type: 'removed', id: a.id, user_id: a.user_id, room_id: a.room_id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
     }
   }
 
@@ -2017,7 +2017,7 @@ router.get('/draft-diff', requirePerm('assignments'), (req, res) => {
     if (!activeMap.has(a.id)) {
       const user = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
       const room = db.get('rooms').find({ id: a.room_id }).value();
-      changes.push({ type: 'added', id: a.id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
+      changes.push({ type: 'added', id: a.id, user_id: a.user_id, room_id: a.room_id, user_name: user?.name || a.guest_name || '?', room_name: room?.name || '?', day_of_week: a.day_of_week, start_time: a.start_time, end_time: a.end_time });
     }
   }
 
@@ -2032,9 +2032,18 @@ router.get('/draft-diff', requirePerm('assignments'), (req, res) => {
     }
   }
 
+  // Filter noise: removed+added pairs with identical content (only the ID changed — no real change)
+  const contentKey = c => `${c.user_id ?? ''}|${c.room_id ?? ''}|${c.day_of_week}|${c.start_time}|${c.end_time}`;
+  const removedKeys = new Set(changes.filter(c => c.type === 'removed').map(contentKey));
+  const addedKeys   = new Set(changes.filter(c => c.type === 'added').map(contentKey));
+  const noiseKeys   = new Set([...removedKeys].filter(k => addedKeys.has(k)));
+  const filtered = noiseKeys.size > 0
+    ? changes.filter(c => c.type === 'modified' || !noiseKeys.has(contentKey(c)))
+    : changes;
+
   const DAYS_HE_LOCAL = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
-  changes.forEach(c => { c.day_name = DAYS_HE_LOCAL[c.day_of_week] || '?'; });
-  res.json({ changes, activeCount: active.length, draftCount: draft.length });
+  filtered.forEach(c => { c.day_name = DAYS_HE_LOCAL[c.day_of_week] || '?'; });
+  res.json({ changes: filtered, activeCount: active.length, draftCount: draft.length });
 });
 
 module.exports = router;
