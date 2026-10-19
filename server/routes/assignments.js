@@ -962,7 +962,9 @@ function generateAssignments(table = 'draft_assignments') {
         +a.day_of_week === +s.day_of_week &&
         overlap(a.start_time, a.end_time, s.start_time, s.end_time)
       );
-      return !current || +current.room_id !== pid;
+      // wantToMove only when there IS an existing assignment AND it's in the wrong room.
+      // A slot with no current assignment is a new/uncovered slot — handled by the extend path.
+      return current != null && +current.room_id !== pid;
     });
     if (anySlotWantsMove) wantToMoveIds.add(user.id);
   }
