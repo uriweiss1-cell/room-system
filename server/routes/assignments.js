@@ -951,11 +951,18 @@ function generateAssignments(table = 'draft_assignments') {
     if (!rawSlots.length) continue;
     const cur = currentRooms[user.id];
     if (!cur) continue; // new employee — handle via stay/new path
-    const userDayRooms = currentRoomsByDay[user.id] || {};
+    const existing = existingByUser[user.id] || [];
+    // wantToMove if any slot with a preferred room is not already assigned to that room.
+    // Compares per-slot: if the current assignment on that day/time already matches the
+    // preferred room, no move is needed — even if the preferred differs from the overall cur.
     const anySlotWantsMove = rawSlots.some(s => {
       const pid = s.preferred_room_id ? +s.preferred_room_id : null;
       if (!pid) return false;
-      return pid !== cur;
+      const current = existing.find(a =>
+        +a.day_of_week === +s.day_of_week &&
+        overlap(a.start_time, a.end_time, s.start_time, s.end_time)
+      );
+      return !current || +current.room_id !== pid;
     });
     if (anySlotWantsMove) wantToMoveIds.add(user.id);
   }
