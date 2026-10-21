@@ -1007,7 +1007,16 @@ function generateAssignments(table = 'draft_assignments') {
     if (!grid[a.room_id]) return;
     // wantToMove users' non-manual assignments will be cleared & rewritten — exclude from grid seeding
     // Manual (admin-added) assignments are always preserved, even for wantToMove users
-    if (a.user_id && (wantToMoveIds.has(+a.user_id) || flexibleIds.has(+a.user_id)) && !a.is_manual) return;
+    if (a.user_id && flexibleIds.has(+a.user_id) && !a.is_manual) return;
+    if (a.user_id && wantToMoveIds.has(+a.user_id) && !a.is_manual) {
+      // Keep assignments already in the correct preferred room — they don't need re-assignment
+      const ms = (userSched[+a.user_id] ?? []).find(s =>
+        +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+      );
+      const pid = ms?.preferred_room_id ? +ms.preferred_room_id : null;
+      if (pid && +a.room_id === pid) { /* already in correct room — include in grid */ }
+      else return; // wrong room — exclude so it can be cleared and re-assigned
+    }
     const u = a.user_id ? db.get('users').find({ id: a.user_id }).value() : null;
     grid[a.room_id].push({ day: a.day_of_week, start: a.start_time, end: a.end_time, userId: a.user_id || null, userName: u?.name || null, role: u?.role || null });
   });
@@ -1084,16 +1093,25 @@ function generateAssignments(table = 'draft_assignments') {
       //             all preference-holders have been served (due to sort order).
       // Slots already covered by manual (admin-added) assignments are kept as-is.
       const manualForUser = allExisting.filter(a => a.user_id === user.id && a.is_manual);
-      // Compute only the portions of each slot NOT already covered by manual assignments.
-      // A manual assignment covering part of a day should not cause the rest of that day to be skipped.
+      // Assignments already in the correct preferred room — kept in DB and grid, no need to re-assign.
+      const alreadyCorrect = (existingByUser[user.id] || []).filter(a => {
+        if (a.is_manual) return false;
+        const ms = rawSlots.find(s =>
+          +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+        );
+        const pid = ms?.preferred_room_id ? +ms.preferred_room_id : null;
+        return pid != null && +a.room_id === pid;
+      });
+      // Compute only the portions of each slot NOT already covered by manual or already-correct assignments.
+      const coveredForSlot = [...manualForUser, ...alreadyCorrect];
       const slotsToAssign = slots.flatMap(s => {
-        const manOnDay = manualForUser.filter(a =>
+        const covOnDay = coveredForSlot.filter(a =>
           +a.day_of_week === +s.day_of_week &&
           overlap(a.start_time, a.end_time, s.start_time, s.end_time)
         );
-        if (!manOnDay.length) return [s];
+        if (!covOnDay.length) return [s];
         const startM = toMin(s.start_time), endM = toMin(s.end_time);
-        const cvrd = manOnDay
+        const cvrd = covOnDay
           .map(a => ({ s: Math.max(toMin(a.start_time), startM), e: Math.min(toMin(a.end_time), endM) }))
           .sort((a, b) => a.s - b.s);
         const gaps = [];
@@ -1507,10 +1525,20 @@ function generateAssignments(table = 'draft_assignments') {
         if (a.assignment_type !== 'permanent') return false;
         const uid = +a.user_id;
         if (!wantToMoveIds.has(uid) && !flexibleIds.has(uid)) return false;
-        if (!a.is_manual) return true;
-        // is_manual: remove only if the day was completely removed from the employee's schedule
-        const daySlots = (userSched[uid] || []).filter(s => +s.day_of_week === +a.day_of_week);
-        return !daySlots.length;
+        if (a.is_manual) {
+          // is_manual: remove only if the day was completely removed from the employee's schedule
+          const daySlots = (userSched[uid] || []).filter(s => +s.day_of_week === +a.day_of_week);
+          return !daySlots.length;
+        }
+        if (wantToMoveIds.has(uid)) {
+          // Keep assignments already in the correct preferred room — only clear wrong-room ones
+          const ms = (userSched[uid] ?? []).find(s =>
+            +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+          );
+          const pid = ms?.preferred_room_id ? +ms.preferred_room_id : null;
+          if (pid != null && +a.room_id === pid) return false; // already correct — keep
+        }
+        return true; // wrong room or flexible — remove
       })
       .write();
   }
