@@ -1024,6 +1024,28 @@ function generateAssignments(table = 'draft_assignments') {
   const isAvail = (roomId, day, start, end) =>
     !grid[roomId]?.some(a => a.day === day && overlap(start, end, a.start, a.end));
 
+  // stayPut: wantToMove slots where the preferred room is fully blocked in the grid
+  // (by non-wantToMove users) — keep the current assignment instead of displacing the user for nothing
+  const stayPutByUser = {};
+  for (const uid of wantToMoveIds) {
+    const existing = (existingByUser[uid] || []).filter(a => !a.is_manual && a.assignment_type === 'permanent');
+    const kept = existing.filter(a => {
+      const ms = (userSched[uid] ?? []).find(s =>
+        +s.day_of_week === +a.day_of_week && overlap(s.start_time, s.end_time, a.start_time, a.end_time)
+      );
+      const pid = ms?.preferred_room_id ? +ms.preferred_room_id : null;
+      if (!pid || +a.room_id === pid) return false; // no preferred, or already correct
+      return !isAvail(pid, a.day_of_week, a.start_time, a.end_time); // preferred blocked → stay put
+    });
+    if (kept.length) {
+      stayPutByUser[uid] = kept;
+      const u = users.find(u => u.id === uid);
+      for (const a of kept) {
+        grid[a.room_id].push({ day: +a.day_of_week, start: a.start_time, end: a.end_time, userId: uid, userName: u?.name || null, role: u?.role || null });
+      }
+    }
+  }
+
   const newAssignments = [];
   const conflicts = [];
   const preferenceConflicts = [];
@@ -1103,7 +1125,7 @@ function generateAssignments(table = 'draft_assignments') {
         return pid != null && +a.room_id === pid;
       });
       // Compute only the portions of each slot NOT already covered by manual or already-correct assignments.
-      const coveredForSlot = [...manualForUser, ...alreadyCorrect];
+      const coveredForSlot = [...manualForUser, ...alreadyCorrect, ...(stayPutByUser[user.id] || [])];
       const slotsToAssign = slots.flatMap(s => {
         const covOnDay = coveredForSlot.filter(a =>
           +a.day_of_week === +s.day_of_week &&
@@ -1537,6 +1559,11 @@ function generateAssignments(table = 'draft_assignments') {
           );
           const pid = ms?.preferred_room_id ? +ms.preferred_room_id : null;
           if (pid != null && +a.room_id === pid) return false; // already correct — keep
+          // Keep if preferred room is blocked in grid — no point displacing the user
+          const stayPutForUser = stayPutByUser[uid] || [];
+          if (stayPutForUser.some(sp =>
+            +sp.day_of_week === +a.day_of_week && overlap(sp.start_time, sp.end_time, a.start_time, a.end_time)
+          )) return false;
         }
         return true; // wrong room or flexible — remove
       })
