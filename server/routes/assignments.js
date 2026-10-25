@@ -1583,9 +1583,11 @@ function generateAssignments(table = 'draft_assignments') {
     const rawSlots = userSched[user.id] ?? [];
     if (!rawSlots.length) continue;
     const allAssigned = [
-      // For wantToMove / flexible users: existing assignments were cleared, but manual ones were kept
+      // For wantToMove / flexible users: existing assignments were cleared, but manual and stayPut ones were kept
       ...((wantToMoveIds.has(user.id) || flexibleIds.has(user.id))
-        ? (existingByUser[user.id] || []).filter(a => a.is_manual)
+        ? (existingByUser[user.id] || []).filter(a => a.is_manual || (stayPutByUser[user.id] || []).some(sp =>
+            +sp.day_of_week === +a.day_of_week && overlap(sp.start_time, sp.end_time, a.start_time, a.end_time)
+          ))
         : (existingByUser[user.id] || [])),
       ...newAssignments.filter(a => a.user_id === user.id),
     ];
