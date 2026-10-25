@@ -135,6 +135,8 @@ export default function AdminAssignments({ readOnly = false }) {
       setDraftMode(true);
       setDraftDiff(null);
       setShowDiff(false);
+      setGenResult(null);
+      localStorage.removeItem('lastGenResult');
       load(true);
       setMsg('טיוטה נוצרה מהשיבוץ הפעיל');
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
@@ -149,6 +151,8 @@ export default function AdminAssignments({ readOnly = false }) {
       setDraftExists(false);
       setDraftDiff(null);
       setShowDiff(false);
+      setGenResult(null);
+      localStorage.removeItem('lastGenResult');
       load(false);
       setMsg('הטיוטה נמחקה');
     } catch (e) { setMsg('שגיאה: ' + (e.response?.data?.error || e.message)); }
