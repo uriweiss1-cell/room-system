@@ -1474,7 +1474,7 @@ export default function AdminAssignments({ readOnly = false }) {
           })()}
           {/* Absence bar */}
           {weeklyOneTime.absences.length > 0 && (() => {
-            const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i && a.role !== 'art_therapist'));
+            const byDay = DAYS.map((_, i) => weeklyOneTime.absences.filter(a => a.day_of_week === i && a.role !== 'art_therapist' && !a.start_time));
             const daysWithAbsences = byDay.map((abs, i) => abs.length > 0 ? { day: i, abs } : null).filter(Boolean);
             return (
               <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1 items-start">
@@ -1550,8 +1550,13 @@ export default function AdminAssignments({ readOnly = false }) {
                     const slotFullyAbsent = (userId, slotStart, slotEnd) =>
                       dayAbsences.some(a => +a.user_id === +userId && (
                         !a.start_time ? true
-                          : toMin(a.start_time) < toMin(slotEnd) && toMin(a.end_time) > toMin(slotStart)
+                          : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
                       ));
+                    const slotPartialAbsent = (userId, slotStart, slotEnd) =>
+                      dayAbsences.find(a => +a.user_id === +userId && a.start_time &&
+                        toMin(a.start_time) < toMin(slotEnd) && toMin(a.end_time) > toMin(slotStart) &&
+                        !(toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd))
+                      ) || null;
                     // Returns the one-time booking that freed this user from this room (swap/library/meeting/mamod)
                     const getSwapEntry = (userId, roomId, slotStart, slotEnd) =>
                       weeklyOneTime.oneTime.find(a =>
@@ -1566,6 +1571,7 @@ export default function AdminAssignments({ readOnly = false }) {
                         {permSlots.map(a => {
                           const highlighted = search && a.user_name?.includes(search);
                           const isAbsent = slotFullyAbsent(a.user_id, a.start_time, a.end_time);
+                          const partialAbsence = !isAbsent ? slotPartialAbsent(a.user_id, a.start_time, a.end_time) : null;
                           const swapEntry = !isAbsent ? getSwapEntry(a.user_id, room.id, a.start_time, a.end_time) : null;
                           const SWAP_ICONS = { library_request: '📚', meeting_request: '👥', mamod_request: '🏥', room_swap: '🔄' };
                           if (isAbsent) return (
@@ -1607,6 +1613,7 @@ export default function AdminAssignments({ readOnly = false }) {
                                 )}
                               </div>
                               <div className="text-gray-500 leading-tight">{a.start_time}–{a.end_time}</div>
+                              {partialAbsence && <div className="text-red-400 leading-tight text-xs">⚠️ נעדר/ת חלקית {partialAbsence.start_time}–{partialAbsence.end_time}</div>}
                             </div>
                           );
                         })}
