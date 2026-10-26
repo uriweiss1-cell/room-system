@@ -1548,7 +1548,7 @@ export default function AdminAssignments({ readOnly = false }) {
                     const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
                     const dayAbsences = weeklyOneTime.absences.filter(a => a.day_of_week === dayIdx);
                     const slotFullyAbsent = (userId, slotStart, slotEnd) =>
-                      dayAbsences.some(a => a.user_id === userId && (
+                      dayAbsences.some(a => +a.user_id === +userId && (
                         !a.start_time ? true
                           : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
                       ));
