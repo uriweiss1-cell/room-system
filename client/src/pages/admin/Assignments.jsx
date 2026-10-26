@@ -1550,7 +1550,7 @@ export default function AdminAssignments({ readOnly = false }) {
                     const slotFullyAbsent = (userId, slotStart, slotEnd) =>
                       dayAbsences.some(a => +a.user_id === +userId && (
                         !a.start_time ? true
-                          : toMin(a.start_time) <= toMin(slotStart) && toMin(a.end_time) >= toMin(slotEnd)
+                          : toMin(a.start_time) < toMin(slotEnd) && toMin(a.end_time) > toMin(slotStart)
                       ));
                     // Returns the one-time booking that freed this user from this room (swap/library/meeting/mamod)
                     const getSwapEntry = (userId, roomId, slotStart, slotEnd) =>
