@@ -18,8 +18,21 @@ function formatDate(str) {
 
 export default function AbsenceReport() {
   const { isAdmin, user } = useAuth();
+
+  // Toggle between one-time and recurring
+  const [isRecurring, setIsRecurring] = useState(false);
+
+  // One-time form state
   const [date, setDate] = useState(todayStr());
   const [dateTo, setDateTo] = useState('');
+
+  // Recurring form state
+  const [recDay, setRecDay] = useState('0');
+  const [recInterval, setRecInterval] = useState('1');
+  const [recFrom, setRecFrom] = useState(todayStr());
+  const [recUntil, setRecUntil] = useState('');
+
+  // Shared form state
   const [partial, setPartial] = useState(false);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -27,27 +40,19 @@ export default function AbsenceReport() {
   const [msg, setMsg] = useState('');
   const [msgType, setMsgType] = useState('success');
   const [loading, setLoading] = useState(false);
-  const [myAbsences, setMyAbsences] = useState([]);
+
+  // Admin impersonation
   const [allUsers, setAllUsers] = useState([]);
   const [impersonateId, setImpersonateId] = useState('');
   const [userSearch, setUserSearch] = useState('');
 
-  // Recurring absences state
+  // Data
+  const [myAbsences, setMyAbsences] = useState([]);
   const [recurringPatterns, setRecurringPatterns] = useState([]);
   const [upcomingOccurrences, setUpcomingOccurrences] = useState([]);
-  const [showRecurringForm, setShowRecurringForm] = useState(false);
-  const [recDay, setRecDay] = useState('1');
-  const [recInterval, setRecInterval] = useState('1');
-  const [recPartial, setRecPartial] = useState(false);
-  const [recStart, setRecStart] = useState('08:00');
-  const [recEnd, setRecEnd] = useState('17:00');
-  const [recFrom, setRecFrom] = useState(todayStr());
-  const [recUntil, setRecUntil] = useState('');
-  const [recNotes, setRecNotes] = useState('');
-  const [recLoading, setRecLoading] = useState(false);
-  const [recMsg, setRecMsg] = useState('');
-  // Move modal state
-  const [moveModal, setMoveModal] = useState(null); // { recurringId, originalDate }
+
+  // Move modal
+  const [moveModal, setMoveModal] = useState(null);
   const [moveToDate, setMoveToDate] = useState('');
 
   useEffect(() => {
@@ -64,6 +69,13 @@ export default function AbsenceReport() {
   const loadRecurring = () => {
     api.get('/recurring-absences').then(r => setRecurringPatterns(r.data)).catch(() => {});
     api.get('/recurring-absences/upcoming?weeks=4').then(r => setUpcomingOccurrences(r.data)).catch(() => {});
+  };
+
+  const switchMode = (recurring) => {
+    setIsRecurring(recurring);
+    setMsg('');
+    setPartial(false);
+    setNotes('');
   };
 
   const submit = async () => {
@@ -90,32 +102,35 @@ export default function AbsenceReport() {
     } finally { setLoading(false); }
   };
 
+  const submitRecurring = async () => {
+    setLoading(true); setMsg('');
+    try {
+      await api.post('/recurring-absences', {
+        day_of_week: +recDay,
+        interval_weeks: +recInterval,
+        start_time: partial ? startTime : null,
+        end_time: partial ? endTime : null,
+        active_from: recFrom,
+        active_until: recUntil || null,
+        notes: notes || null,
+      });
+      setMsg('תבנית היעדרות חוזרת נשמרה');
+      setMsgType('success');
+      setRecDay('0'); setRecInterval('1'); setRecFrom(todayStr()); setRecUntil('');
+      setPartial(false); setNotes('');
+      loadRecurring();
+    } catch (e) {
+      setMsg('שגיאה: ' + (e.response?.data?.error || e.message));
+      setMsgType('error');
+    } finally { setLoading(false); }
+  };
+
   const cancelAbsence = async (id) => {
     if (!confirm('לבטל את ההיעדרות?')) return;
     try {
       await api.delete(`/requests/my/${id}`);
       loadAbsences();
     } catch (e) { alert('שגיאה: ' + (e.response?.data?.error || e.message)); }
-  };
-
-  const submitRecurring = async () => {
-    setRecLoading(true); setRecMsg('');
-    try {
-      await api.post('/recurring-absences', {
-        day_of_week: +recDay,
-        interval_weeks: +recInterval,
-        start_time: recPartial ? recStart : null,
-        end_time: recPartial ? recEnd : null,
-        active_from: recFrom,
-        active_until: recUntil || null,
-        notes: recNotes || null,
-      });
-      setShowRecurringForm(false);
-      setRecDay('1'); setRecInterval('1'); setRecPartial(false); setRecFrom(todayStr()); setRecUntil(''); setRecNotes('');
-      loadRecurring();
-    } catch (e) {
-      setRecMsg('שגיאה: ' + (e.response?.data?.error || e.message));
-    } finally { setRecLoading(false); }
   };
 
   const deletePattern = async (id) => {
@@ -159,10 +174,27 @@ export default function AbsenceReport() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
-      {/* One-time absence form */}
+      {/* Main form */}
       <div className="card space-y-4">
         <h2 className="text-xl font-bold">דיווח היעדרות</h2>
 
+        {/* Toggle */}
+        <div className="flex gap-2">
+          <button
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${!isRecurring ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            onClick={() => switchMode(false)}
+          >
+            חד פעמית
+          </button>
+          <button
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${isRecurring ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            onClick={() => switchMode(true)}
+          >
+            חוזרת (קבועה)
+          </button>
+        </div>
+
+        {/* Admin impersonation */}
         {isAdmin && (
           <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 space-y-2">
             <label className="label text-purple-800">🎭 הגשה בשם עובד (אופציונלי)</label>
@@ -185,19 +217,54 @@ export default function AbsenceReport() {
           </div>
         )}
 
-        <div className="flex gap-3 flex-wrap">
-          <div>
-            <label className="label">מתאריך</label>
-            <input type="date" className="input w-44" value={date}
-              onChange={e => setDate(e.target.value)} min={todayStr()} />
+        {/* Date fields — one-time */}
+        {!isRecurring && (
+          <div className="flex gap-3 flex-wrap">
+            <div>
+              <label className="label">מתאריך</label>
+              <input type="date" className="input w-44" value={date}
+                onChange={e => setDate(e.target.value)} min={todayStr()} />
+            </div>
+            <div>
+              <label className="label">עד תאריך (אופציונלי)</label>
+              <input type="date" className="input w-44" value={dateTo}
+                onChange={e => setDateTo(e.target.value)} min={date || todayStr()} />
+            </div>
           </div>
-          <div>
-            <label className="label">עד תאריך (אופציונלי)</label>
-            <input type="date" className="input w-44" value={dateTo}
-              onChange={e => setDateTo(e.target.value)} min={date || todayStr()} />
-          </div>
-        </div>
+        )}
 
+        {/* Date fields — recurring */}
+        {isRecurring && (
+          <div className="flex gap-3 flex-wrap">
+            <div>
+              <label className="label">יום בשבוע</label>
+              <select className="select w-32" value={recDay} onChange={e => setRecDay(e.target.value)}>
+                {[0,1,2,3,4,5].map(d => <option key={d} value={d}>{DAYS_HE[d]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">תדירות</label>
+              <select className="select w-36" value={recInterval} onChange={e => setRecInterval(e.target.value)}>
+                <option value="1">כל שבוע</option>
+                <option value="2">כל שבועיים</option>
+                <option value="3">כל 3 שבועות</option>
+                <option value="4">כל 4 שבועות</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">מתאריך</label>
+              <input type="date" className="input w-40" value={recFrom} min={todayStr()}
+                onChange={e => setRecFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">עד תאריך (אופציונלי)</label>
+              <input type="date" className="input w-40" value={recUntil} min={recFrom}
+                onChange={e => setRecUntil(e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {/* Shared: partial + times */}
         <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
           <input type="checkbox" checked={partial} onChange={e => setPartial(e.target.checked)} className="w-4 h-4" />
           היעדרות חלקית (רק בשעות מסוימות)
@@ -216,6 +283,7 @@ export default function AbsenceReport() {
           </div>
         )}
 
+        {/* Shared: notes */}
         <div>
           <label className="label">הערות (אופציונלי)</label>
           <textarea className="input h-16 resize-none" value={notes}
@@ -228,8 +296,8 @@ export default function AbsenceReport() {
           </div>
         )}
 
-        <button className="btn btn-primary w-full" onClick={submit} disabled={loading}>
-          {loading ? 'שולח...' : 'דווח על היעדרות'}
+        <button className="btn btn-primary w-full" onClick={isRecurring ? submitRecurring : submit} disabled={loading}>
+          {loading ? 'שולח...' : isRecurring ? 'שמור תבנית חוזרת' : 'דווח על היעדרות'}
         </button>
       </div>
 
@@ -252,167 +320,83 @@ export default function AbsenceReport() {
                   className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   onClick={() => cancelAbsence(a.id)}
                   title="בטל היעדרות"
-                >
-                  ✕
-                </button>
+                >✕</button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Recurring absences */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-700">היעדרות חוזרת</h3>
-          <button className="btn btn-primary text-sm" onClick={() => setShowRecurringForm(v => !v)}>
-            {showRecurringForm ? 'ביטול' : '+ הגדר תבנית'}
-          </button>
-        </div>
-
-        {showRecurringForm && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-3">
-            <div className="flex gap-3 flex-wrap">
-              <div>
-                <label className="label">יום בשבוע</label>
-                <select className="select w-32" value={recDay} onChange={e => setRecDay(e.target.value)}>
-                  {[0,1,2,3,4,5].map(d => <option key={d} value={d}>{DAYS_HE[d]}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="label">תדירות</label>
-                <select className="select w-36" value={recInterval} onChange={e => setRecInterval(e.target.value)}>
-                  <option value="1">כל שבוע</option>
-                  <option value="2">כל שבועיים</option>
-                  <option value="3">כל 3 שבועות</option>
-                  <option value="4">כל 4 שבועות</option>
-                </select>
-              </div>
-              <div>
-                <label className="label">מתאריך</label>
-                <input type="date" className="input w-40" value={recFrom} min={todayStr()}
-                  onChange={e => setRecFrom(e.target.value)} />
-              </div>
-              <div>
-                <label className="label">עד תאריך (אופציונלי)</label>
-                <input type="date" className="input w-40" value={recUntil} min={recFrom}
-                  onChange={e => setRecUntil(e.target.value)} />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
-              <input type="checkbox" checked={recPartial} onChange={e => setRecPartial(e.target.checked)} className="w-4 h-4" />
-              חלקית (שעות מסוימות בלבד)
-            </label>
-
-            {recPartial && (
-              <div className="flex gap-3">
-                <div>
-                  <label className="label">משעה</label>
-                  <input type="time" className="input w-32" value={recStart} onChange={e => setRecStart(e.target.value)} />
-                </div>
-                <div>
-                  <label className="label">עד שעה</label>
-                  <input type="time" className="input w-32" value={recEnd} onChange={e => setRecEnd(e.target.value)} />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="label">הערות (אופציונלי)</label>
-              <input type="text" className="input w-full" value={recNotes}
-                onChange={e => setRecNotes(e.target.value)} placeholder="למשל: קורס / גיבוש צוות..." />
-            </div>
-
-            {recMsg && <div className="text-sm text-red-600">{recMsg}</div>}
-
-            <button className="btn btn-primary w-full" onClick={submitRecurring} disabled={recLoading}>
-              {recLoading ? 'שומר...' : 'שמור תבנית'}
-            </button>
-          </div>
-        )}
-
-        {recurringPatterns.length === 0 && !showRecurringForm && (
-          <p className="text-sm text-gray-400">אין תבניות פעילות</p>
-        )}
-
-        {/* Active patterns */}
-        {recurringPatterns.map(p => {
-          const upcoming = upcomingOccurrences.find(u => u.pattern.id === p.id);
-          return (
-            <div key={p.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-medium text-sm">
-                    {p.interval_weeks > 1 ? `כל ${p.interval_weeks} שבועות` : 'כל שבוע'}, יום {DAYS_HE[p.day_of_week]}
-                    {p.start_time ? ` · ${p.start_time}–${p.end_time}` : ' · כל היום'}
+      {/* Recurring patterns list */}
+      {recurringPatterns.length > 0 && (
+        <div className="card space-y-3">
+          <h3 className="font-semibold text-gray-700">תבניות חוזרות פעילות</h3>
+          {recurringPatterns.map(p => {
+            const upcoming = upcomingOccurrences.find(u => u.pattern.id === p.id);
+            return (
+              <div key={p.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-sm">
+                      {p.interval_weeks > 1 ? `כל ${p.interval_weeks} שבועות` : 'כל שבוע'}, יום {DAYS_HE[p.day_of_week]}
+                      {p.start_time ? ` · ${p.start_time}–${p.end_time}` : ' · כל היום'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      מ-{formatDate(p.active_from)}{p.active_until ? ` עד ${formatDate(p.active_until)}` : ''}
+                      {p.notes ? ` · ${p.notes}` : ''}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500">
-                    מ-{formatDate(p.active_from)}{p.active_until ? ` עד ${formatDate(p.active_until)}` : ''}
-                    {p.notes ? ` · ${p.notes}` : ''}
-                  </div>
+                  <button onClick={() => deletePattern(p.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0">מחק</button>
                 </div>
-                <button
-                  onClick={() => deletePattern(p.id)}
-                  className="text-red-400 hover:text-red-600 text-xs shrink-0"
-                  title="מחק תבנית"
-                >
-                  מחק תבנית
-                </button>
-              </div>
 
-              {/* Upcoming occurrences */}
-              {upcoming && upcoming.occurrences.length > 0 && (
-                <div className="space-y-1 mt-1">
-                  <div className="text-xs text-gray-500 font-medium">מחזורים קרובים:</div>
-                  {upcoming.occurrences.map(occ => {
-                    const ex = occ.exception;
-                    const isSkipped = occ.isSkipped;
-                    const isMovedHere = occ.isMoved;
-                    const isMovedAway = ex?.type === 'moved' && !occ.isMoved;
-                    const rowClass = isSkipped
-                      ? 'bg-gray-100 text-gray-400'
-                      : isMovedHere
-                        ? 'bg-green-50 text-green-700'
-                        : isMovedAway
-                          ? 'bg-yellow-50 text-yellow-700'
-                          : 'bg-gray-50 text-gray-700';
-                    return (
-                      <div key={occ.date + (isMovedHere ? '-moved' : '')} className={`flex items-center justify-between rounded px-2 py-1 text-xs ${rowClass}`}>
-                        <span>
-                          {formatDate(occ.date)}
-                          {isSkipped && ' — דולג'}
-                          {isMovedAway && ` — הוזז ל-${formatDate(ex.moved_to_date)}`}
-                          {isMovedHere && ` — הוזז לכאן`}
-                        </span>
-                        <div className="flex gap-2">
-                          {(isSkipped || isMovedAway) ? (
-                            <button onClick={() => restoreOccurrence(p.id, ex.id)} className="text-blue-500 hover:underline">שחזר</button>
-                          ) : !isMovedHere ? (
-                            <>
-                              <button onClick={() => skipOccurrence(p.id, occ.date)} className="text-orange-500 hover:underline">דלג</button>
-                              <button onClick={() => { setMoveModal({ recurringId: p.id, originalDate: occ.date }); setMoveToDate(''); }} className="text-blue-500 hover:underline">הזז</button>
-                            </>
-                          ) : null}
+                {upcoming && upcoming.occurrences.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-gray-500 font-medium">מחזורים קרובים:</div>
+                    {upcoming.occurrences.map(occ => {
+                      const ex = occ.exception;
+                      const isSkipped = occ.isSkipped;
+                      const isMovedHere = occ.isMoved;
+                      const isMovedAway = ex?.type === 'moved' && !occ.isMoved;
+                      const rowClass = isSkipped
+                        ? 'bg-gray-100 text-gray-400'
+                        : isMovedHere ? 'bg-green-50 text-green-700'
+                        : isMovedAway ? 'bg-yellow-50 text-yellow-700'
+                        : 'bg-gray-50 text-gray-700';
+                      return (
+                        <div key={occ.date + (isMovedHere ? '-moved' : '')} className={`flex items-center justify-between rounded px-2 py-1 text-xs ${rowClass}`}>
+                          <span>
+                            {formatDate(occ.date)}
+                            {isSkipped && ' — דולג'}
+                            {isMovedAway && ` — הוזז ל-${formatDate(ex.moved_to_date)}`}
+                            {isMovedHere && ' — הוזז לכאן'}
+                          </span>
+                          <div className="flex gap-2">
+                            {(isSkipped || isMovedAway) ? (
+                              <button onClick={() => restoreOccurrence(p.id, ex.id)} className="text-blue-500 hover:underline">שחזר</button>
+                            ) : !isMovedHere ? (
+                              <>
+                                <button onClick={() => skipOccurrence(p.id, occ.date)} className="text-orange-500 hover:underline">דלג</button>
+                                <button onClick={() => { setMoveModal({ recurringId: p.id, originalDate: occ.date }); setMoveToDate(''); }} className="text-blue-500 hover:underline">הזז</button>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Move modal */}
       {moveModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setMoveModal(null)}>
           <div className="bg-white rounded-xl p-5 w-80 space-y-4 shadow-xl" onClick={e => e.stopPropagation()}>
             <h4 className="font-bold">הזז היעדרות</h4>
-            <p className="text-sm text-gray-600">
-              מחזור {formatDate(moveModal.originalDate)} יבוטל ויועבר לתאריך חדש:
-            </p>
+            <p className="text-sm text-gray-600">מחזור {formatDate(moveModal.originalDate)} יועבר לתאריך חדש:</p>
             <div>
               <label className="label">תאריך חדש</label>
               <input type="date" className="input w-full" value={moveToDate} min={todayStr()}
