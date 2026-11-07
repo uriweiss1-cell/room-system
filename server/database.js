@@ -104,7 +104,12 @@ async function initDB() {
 }
 
 function nextId(table) {
-  const id = _db.get(`_ids.${table}`).value();
+  let id = _db.get(`_ids.${table}`).value();
+  if (typeof id !== 'number' || isNaN(id) || id < 1) {
+    // Counter missing or corrupted — derive from existing max
+    const rows = _db.get(table).value() || [];
+    id = rows.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
+  }
   _db.set(`_ids.${table}`, id + 1).write();
   return id;
 }

@@ -45,6 +45,21 @@ async function main() {
     console.log(`[migration] חדר 6 (id=${room6.id}) room_type changed: committee → regular`);
   }
 
+  // Migration: fix recurring_absence records that were saved with id=undefined
+  // (happens when _ids counter was missing on first deploy of this feature)
+  let fixedRec = 0;
+  db.get('recurring_absences').value().forEach((r, i) => {
+    if (r.id === undefined || r.id === null || (typeof r.id === 'number' && isNaN(r.id))) {
+      db.get('recurring_absences').find(x => x === r).assign({ id: i + 1 }).write();
+      fixedRec++;
+    }
+  });
+  const maxRecId = db.get('recurring_absences').value().reduce((m, r) => Math.max(m, r.id || 0), 0);
+  db.set('_ids.recurring_absences', maxRecId + 1).write();
+  const maxExId = db.get('recurring_absence_exceptions').value().reduce((m, r) => Math.max(m, r.id || 0), 0);
+  db.set('_ids.recurring_absence_exceptions', maxExId + 1).write();
+  if (fixedRec > 0) console.log(`[migration] fixed ${fixedRec} recurring_absence records with missing id`);
+
   initVapid();
 
   const app = express();
