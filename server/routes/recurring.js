@@ -48,21 +48,44 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/recurring-absences/upcoming?weeks=4 — next N weeks of occurrences for all patterns
+// Includes skipped occurrences (isSkipped:true), moved-away (exception.type==='moved', !isMoved),
+// and moved-here (isMoved:true) so the UI can render restore/skip/move controls for all states.
 router.get('/upcoming', (req, res) => {
   const weeks = Math.min(parseInt(req.query.weeks) || 4, 12);
   const patterns = db.get('recurring_absences').filter({ user_id: req.user.id }).value();
-  const exceptions = db.get('recurring_absence_exceptions').value();
+  const allExceptions = db.get('recurring_absence_exceptions').value();
 
   const today = new Date();
-  const from = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const pad = n => String(n).padStart(2, '0');
+  const dateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  const from = dateStr(today);
   const toDate = new Date(today);
   toDate.setDate(toDate.getDate() + weeks * 7);
-  const to = `${toDate.getFullYear()}-${String(toDate.getMonth()+1).padStart(2,'0')}-${String(toDate.getDate()).padStart(2,'0')}`;
+  const to = dateStr(toDate);
+  const fromDate = new Date(from);
 
-  const result = patterns.map(p => ({
-    pattern: p,
-    occurrences: occurrencesInRange(p, exceptions, from, to),
-  }));
+  const result = patterns.map(p => {
+    const patExceptions = allExceptions.filter(e => e.recurring_id === p.id);
+    const occurrences = occurrencesInRange(p, patExceptions, from, to);
+
+    // Add skipped occurrences (excluded from occurrencesInRange) so user can restore them
+    let cur = new Date(p.active_from);
+    while (cur.getDay() !== p.day_of_week) cur.setDate(cur.getDate() + 1);
+    const activeUntil = p.active_until ? new Date(p.active_until) : null;
+    while (cur <= toDate) {
+      if (activeUntil && cur > activeUntil) break;
+      if (cur >= fromDate) {
+        const ds = dateStr(cur);
+        const ex = patExceptions.find(e => e.exception_date === ds && e.type === 'skip');
+        if (ex) occurrences.push({ date: ds, exception: ex, isSkipped: true });
+      }
+      cur.setDate(cur.getDate() + 7);
+    }
+
+    occurrences.sort((a, b) => a.date.localeCompare(b.date));
+    return { pattern: p, occurrences };
+  });
   res.json(result);
 });
 

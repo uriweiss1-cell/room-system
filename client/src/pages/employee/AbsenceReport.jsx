@@ -355,20 +355,29 @@ export default function AbsenceReport() {
                 <div className="space-y-1 mt-1">
                   <div className="text-xs text-gray-500 font-medium">מחזורים קרובים:</div>
                   {upcoming.occurrences.map(occ => {
-                    const ex = p.exceptions?.find(e => e.exception_date === occ.date);
-                    const isSkipped = ex?.type === 'skip';
-                    const isMoved = occ.isMoved;
+                    const ex = occ.exception;
+                    const isSkipped = occ.isSkipped;
+                    const isMovedHere = occ.isMoved;
+                    const isMovedAway = ex?.type === 'moved' && !occ.isMoved;
+                    const rowClass = isSkipped
+                      ? 'bg-gray-100 text-gray-400'
+                      : isMovedHere
+                        ? 'bg-green-50 text-green-700'
+                        : isMovedAway
+                          ? 'bg-yellow-50 text-yellow-700'
+                          : 'bg-gray-50 text-gray-700';
                     return (
-                      <div key={occ.date} className={`flex items-center justify-between rounded px-2 py-1 text-xs ${isSkipped ? 'bg-gray-100 text-gray-400' : isMoved ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-700'}`}>
+                      <div key={occ.date + (isMovedHere ? '-moved' : '')} className={`flex items-center justify-between rounded px-2 py-1 text-xs ${rowClass}`}>
                         <span>
                           {formatDate(occ.date)}
                           {isSkipped && ' — דולג'}
-                          {isMoved && ' — הוזז לכאן'}
+                          {isMovedAway && ` — הוזז ל-${formatDate(ex.moved_to_date)}`}
+                          {isMovedHere && ` — הוזז לכאן`}
                         </span>
                         <div className="flex gap-2">
-                          {isSkipped ? (
+                          {(isSkipped || isMovedAway) ? (
                             <button onClick={() => restoreOccurrence(p.id, ex.id)} className="text-blue-500 hover:underline">שחזר</button>
-                          ) : !isMoved ? (
+                          ) : !isMovedHere ? (
                             <>
                               <button onClick={() => skipOccurrence(p.id, occ.date)} className="text-orange-500 hover:underline">דלג</button>
                               <button onClick={() => { setMoveModal({ recurringId: p.id, originalDate: occ.date }); setMoveToDate(''); }} className="text-blue-500 hover:underline">הזז</button>
