@@ -37,6 +37,10 @@ export default function MySchedule() {
   const [editing, setEditing] = useState(false);
   const [slots, setSlots] = useState([]);
   const [msg, setMsg] = useState('');
+  const [waPhone, setWaPhone] = useState('');
+  const [waKey, setWaKey] = useState('');
+  const [waMsg, setWaMsg] = useState('');
+  const [waSaving, setWaSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [editAssignForm, setEditAssignForm] = useState({ start_time: '', end_time: '' });
@@ -51,11 +55,14 @@ export default function MySchedule() {
     api.get('/assignments/my'),
     api.get('/rooms'),
     api.get('/requests/my'),
-  ]).then(([s, a, r, req]) => {
+    api.get('/users/me'),
+  ]).then(([s, a, r, req, me]) => {
     setSchedule(s.data);
     setAssignments(a.data);
     setRooms(r.data);
     setOneTimeItems(req.data.filter(x => x.status === 'assigned'));
+    setWaPhone(me.data.phone || '');
+    setWaKey(me.data.callmebot_apikey || '');
   }).finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
@@ -523,6 +530,52 @@ export default function MySchedule() {
           })}
         </div>
       </div>
+    </div>
+
+    {/* WhatsApp notification settings */}
+    <div className="card mt-5 space-y-3">
+      <h3 className="font-semibold text-gray-700">הגדרות התראות WhatsApp</h3>
+      <p className="text-sm text-gray-500">
+        לקבלת הודעת WhatsApp בכל אישור או דחייה של בקשה, יש להפעיל את השירות ולהזין את הפרטים:
+      </p>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800 space-y-1">
+        <div className="font-medium">שלב 1 — הפעלה (פעם אחת בלבד):</div>
+        <div>שלח הודעת WhatsApp למספר <span className="font-mono font-bold">+34 644 86 05 50</span> עם הטקסט:</div>
+        <div className="font-mono bg-white rounded px-2 py-1 text-gray-800 select-all">I allow callmebot to send me messages</div>
+        <div>תוך דקה תקבל תשובה עם ה-API Key שלך.</div>
+      </div>
+      <div className="flex gap-3 flex-wrap">
+        <div>
+          <label className="label">מספר טלפון (עם קידומת בינלאומית)</label>
+          <input type="tel" className="input w-48" placeholder="+972501234567"
+            value={waPhone} onChange={e => setWaPhone(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">API Key מ-CallMeBot</label>
+          <input type="text" className="input w-40" placeholder="1234567"
+            value={waKey} onChange={e => setWaKey(e.target.value)} />
+        </div>
+      </div>
+      {waMsg && <div className={`text-sm px-3 py-1 rounded ${waMsg.startsWith('שגיאה') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{waMsg}</div>}
+      <button className="btn btn-primary" disabled={waSaving} onClick={async () => {
+        setWaSaving(true); setWaMsg('');
+        try {
+          await api.put('/users/me/notifications', { phone: waPhone, callmebot_apikey: waKey });
+          setWaMsg('הפרטים נשמרו');
+        } catch (e) {
+          setWaMsg('שגיאה: ' + (e.response?.data?.error || e.message));
+        } finally { setWaSaving(false); }
+      }}>
+        {waSaving ? 'שומר...' : 'שמור'}
+      </button>
+      {(waPhone || waKey) && (
+        <button className="btn btn-ghost text-sm text-gray-400" onClick={async () => {
+          await api.put('/users/me/notifications', { phone: '', callmebot_apikey: '' });
+          setWaPhone(''); setWaKey(''); setWaMsg('ההתראות בוטלו');
+        }}>
+          בטל התראות
+        </button>
+      )}
     </div>
   );
 }

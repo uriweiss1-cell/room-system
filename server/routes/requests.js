@@ -981,28 +981,37 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
   // Send notification to employee about the decision
   if (request?.user_id) {
     const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const isAbsence = request.request_type === 'absence';
     let notifMsg = '';
     if (status === 'approved') {
-      const typeLabel = request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
+      const typeLabel = isAbsence ? 'היעדרותך'
+        : request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
         : request.request_type === 'permanent_request' ? 'בקשת החדר הקבועה'
         : request.request_type === 'permanent_reduce' ? 'בקשת השינוי בשעות'
         : 'הבקשה';
-      notifMsg = `✅ ${typeLabel} שלך אושרה`;
-      if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
+      notifMsg = `✅ ${typeLabel} ${isAbsence ? 'אושרה' : 'שלך אושרה'}`;
+      if (isAbsence && request.specific_date) notifMsg += ` (${request.specific_date})`;
+      else if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
       if (admin_response) notifMsg += `: ${admin_response}`;
     } else if (status === 'rejected') {
-      const typeLabel = request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
+      const typeLabel = isAbsence ? 'היעדרותך'
+        : request.request_type === 'one_time' ? 'בקשת החדר החד-פעמית'
         : request.request_type === 'permanent_request' ? 'בקשת החדר הקבועה'
         : request.request_type === 'permanent_reduce' ? 'בקשת השינוי בשעות'
         : 'הבקשה';
-      notifMsg = `❌ ${typeLabel} שלך נדחתה`;
-      if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
+      notifMsg = `❌ ${typeLabel} ${isAbsence ? 'נדחתה' : 'שלך נדחתה'}`;
+      if (isAbsence && request.specific_date) notifMsg += ` (${request.specific_date})`;
+      else if (request.day_of_week != null) notifMsg += ` (יום ${DAYS_HE[request.day_of_week]})`;
       if (admin_response) notifMsg += `: ${admin_response}`;
     }
     if (notifMsg) {
       sendNotif(request.user_id, notifMsg);
-      // Also send a Web Push notification so the employee gets a phone alert
       sendPushToUser(db, request.user_id, 'מערכת שיבוץ חדרים', notifMsg).catch(() => {});
+      // WhatsApp via CallMeBot if user has opted in
+      const notifUser = db.get('users').find({ id: request.user_id }).value();
+      if (notifUser?.phone && notifUser?.callmebot_apikey) {
+        require('../utils/whatsapp').sendWhatsApp(notifUser.phone, notifUser.callmebot_apikey, notifMsg);
+      }
     }
   }
 
