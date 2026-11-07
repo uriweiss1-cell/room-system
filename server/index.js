@@ -62,6 +62,7 @@ async function main() {
   app.use('/api/backups', require('./routes/backups').router);
   app.use('/api/notifications', require('./routes/notifications'));
   app.use('/api/push', require('./routes/push'));
+  app.use('/api/recurring-absences', require('./routes/recurring').router);
 
   const uploadsDir = path.join(process.env.DATA_DIR || require('path').join(process.env.LOCALAPPDATA || process.env.APPDATA || __dirname, 'room-system-data'), 'uploads');
   app.use('/uploads', express.static(uploadsDir));

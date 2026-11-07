@@ -2,6 +2,7 @@ const express = require('express');
 const { db, nextId } = require('../database');
 const { authenticate, requireAdmin, requirePerm, requirePermAny, requirePermOrRole } = require('../middleware/auth');
 const { createBackup } = require('./backups');
+const { occurrencesInRange } = require('./recurring');
 
 const router = express.Router();
 router.use(authenticate);
@@ -72,7 +73,37 @@ router.get('/weekly-one-time', requirePermOrRole('assignments', 'secretary'), (r
         specific_date: r.specific_date, day_of_week: new Date(r.specific_date).getDay(),
         start_time: r.start_time, end_time: r.end_time, notes: r.notes || null };
     });
-  res.json({ oneTime: [...oneTime, ...guests], absences });
+
+  // Add recurring absences for the requested week range
+  const recurringPatterns = db.get('recurring_absences').value();
+  const recurringExceptions = db.get('recurring_absence_exceptions').value();
+  const recurringAbsences = [];
+  for (const pattern of recurringPatterns) {
+    const user = db.get('users').find({ id: pattern.user_id }).value();
+    if (!user) continue;
+    const occurrences = occurrencesInRange(pattern, recurringExceptions, from, to);
+    for (const occ of occurrences) {
+      // Don't duplicate if a manual absence already exists for this user+date
+      const alreadyExists = absences.some(a => a.user_id === pattern.user_id && a.specific_date === occ.date);
+      if (!alreadyExists) {
+        recurringAbsences.push({
+          id: `rec-${pattern.id}-${occ.date}`,
+          user_id: pattern.user_id,
+          user_name: user.name,
+          role: user.role,
+          specific_date: occ.date,
+          day_of_week: new Date(occ.date).getDay(),
+          start_time: pattern.start_time,
+          end_time: pattern.end_time,
+          notes: pattern.notes || null,
+          recurring_id: pattern.id,
+          is_recurring: true,
+        });
+      }
+    }
+  }
+
+  res.json({ oneTime: [...oneTime, ...guests], absences: [...absences, ...recurringAbsences] });
 });
 
 // Create a one-time guest assignment (admin with assignments perm, or employee with guest perm)
