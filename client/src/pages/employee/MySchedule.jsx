@@ -537,11 +537,19 @@ export default function MySchedule() {
       <p className="text-sm text-gray-500">
         לקבלת הודעת WhatsApp בכל אישור או דחייה של בקשה, יש להפעיל את השירות ולהזין את הפרטים:
       </p>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800 space-y-1">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800 space-y-2">
         <div className="font-medium">שלב 1 — הפעלה (פעם אחת בלבד):</div>
-        <div>שלח הודעת WhatsApp למספר <span className="font-mono font-bold">+34 644 86 05 50</span> עם הטקסט:</div>
+        <div>שלח הודעת WhatsApp לבוט CallMeBot עם הטקסט הבא:</div>
         <div className="font-mono bg-white rounded px-2 py-1 text-gray-800 select-all">I allow callmebot to send me messages</div>
-        <div>תוך דקה תקבל תשובה עם ה-API Key שלך.</div>
+        <a
+          href="https://wa.me/34644860550?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
+        >
+          📲 פתח WhatsApp ושלח
+        </a>
+        <div className="text-xs text-blue-700">תוך דקה תקבל תשובה עם ה-API Key שלך.</div>
       </div>
       <div className="flex gap-3 flex-wrap">
         <div>
