@@ -116,7 +116,7 @@ router.post('/', (req, res) => {
 // DELETE /api/recurring-absences/:id — delete pattern and its exceptions
 router.delete('/:id', (req, res) => {
   const id = +req.params.id;
-  const pattern = db.get('recurring_absences').find(p => p.id === id && +p.user_id === +req.user.id).value();
+  const pattern = db.get('recurring_absences').value().find(p => p.id === id && p.user_id == req.user.id);
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
   db.get('recurring_absences').remove({ id }).write();
   db.get('recurring_absence_exceptions').remove({ recurring_id: id }).write();
@@ -126,7 +126,7 @@ router.delete('/:id', (req, res) => {
 // POST /api/recurring-absences/:id/exceptions — add skip or move exception
 router.post('/:id/exceptions', (req, res) => {
   const recurring_id = +req.params.id;
-  const pattern = db.get('recurring_absences').find(p => p.id === recurring_id && +p.user_id === +req.user.id).value();
+  const pattern = db.get('recurring_absences').value().find(p => p.id === recurring_id && p.user_id == req.user.id);
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
 
   const { exception_date, type, moved_to_date } = req.body;
@@ -151,7 +151,7 @@ router.post('/:id/exceptions', (req, res) => {
 router.delete('/:id/exceptions/:exId', (req, res) => {
   const recurring_id = +req.params.id;
   const exId = +req.params.exId;
-  const pattern = db.get('recurring_absences').find(p => p.id === recurring_id && +p.user_id === +req.user.id).value();
+  const pattern = db.get('recurring_absences').value().find(p => p.id === recurring_id && p.user_id == req.user.id);
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
   db.get('recurring_absence_exceptions').remove({ id: exId, recurring_id }).write();
   res.json({ ok: true });
