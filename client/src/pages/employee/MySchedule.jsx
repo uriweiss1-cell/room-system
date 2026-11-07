@@ -530,9 +530,8 @@ export default function MySchedule() {
           })}
         </div>
       </div>
-    </div>
 
-    {/* WhatsApp notification settings */}
+      {/* WhatsApp notification settings */}
     <div className="card mt-5 space-y-3">
       <h3 className="font-semibold text-gray-700">הגדרות התראות WhatsApp</h3>
       <p className="text-sm text-gray-500">
@@ -576,6 +575,7 @@ export default function MySchedule() {
           בטל התראות
         </button>
       )}
+      </div>
     </div>
   );
 }
