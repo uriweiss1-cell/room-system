@@ -21,6 +21,7 @@ function occurrencesInRange(pattern, exceptions, from, to) {
 
   const activeUntil = pattern.active_until ? new Date(pattern.active_until) : null;
 
+  const step = (pattern.interval_weeks || 1) * 7;
   while (cur <= toDate) {
     if (activeUntil && cur > activeUntil) break;
     if (cur >= fromDate) {
@@ -34,7 +35,7 @@ function occurrencesInRange(pattern, exceptions, from, to) {
         results.push({ date: ex.moved_to_date, exception: ex, isMoved: true });
       }
     }
-    cur.setDate(cur.getDate() + 7);
+    cur.setDate(cur.getDate() + step);
   }
 
   return results;
@@ -73,6 +74,7 @@ router.get('/upcoming', (req, res) => {
     let cur = new Date(p.active_from);
     while (cur.getDay() !== p.day_of_week) cur.setDate(cur.getDate() + 1);
     const activeUntil = p.active_until ? new Date(p.active_until) : null;
+    const step = (p.interval_weeks || 1) * 7;
     while (cur <= toDate) {
       if (activeUntil && cur > activeUntil) break;
       if (cur >= fromDate) {
@@ -80,7 +82,7 @@ router.get('/upcoming', (req, res) => {
         const ex = patExceptions.find(e => e.exception_date === ds && e.type === 'skip');
         if (ex) occurrences.push({ date: ds, exception: ex, isSkipped: true });
       }
-      cur.setDate(cur.getDate() + 7);
+      cur.setDate(cur.getDate() + step);
     }
 
     occurrences.sort((a, b) => a.date.localeCompare(b.date));
@@ -91,7 +93,7 @@ router.get('/upcoming', (req, res) => {
 
 // POST /api/recurring-absences — create pattern
 router.post('/', (req, res) => {
-  const { day_of_week, start_time, end_time, active_from, active_until, notes } = req.body;
+  const { day_of_week, interval_weeks, start_time, end_time, active_from, active_until, notes } = req.body;
   if (day_of_week == null || !active_from) return res.status(400).json({ error: 'נדרשים day_of_week ו-active_from' });
   if (start_time && !end_time) return res.status(400).json({ error: 'נדרשת שעת סיום' });
 
@@ -99,6 +101,7 @@ router.post('/', (req, res) => {
     id: nextId('recurring_absences'),
     user_id: req.user.id,
     day_of_week: +day_of_week,
+    interval_weeks: interval_weeks ? +interval_weeks : 1,
     start_time: start_time || null,
     end_time: end_time || null,
     active_from,
@@ -113,7 +116,7 @@ router.post('/', (req, res) => {
 // DELETE /api/recurring-absences/:id — delete pattern and its exceptions
 router.delete('/:id', (req, res) => {
   const id = +req.params.id;
-  const pattern = db.get('recurring_absences').find({ id, user_id: req.user.id }).value();
+  const pattern = db.get('recurring_absences').find(p => p.id === id && +p.user_id === +req.user.id).value();
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
   db.get('recurring_absences').remove({ id }).write();
   db.get('recurring_absence_exceptions').remove({ recurring_id: id }).write();
@@ -123,7 +126,7 @@ router.delete('/:id', (req, res) => {
 // POST /api/recurring-absences/:id/exceptions — add skip or move exception
 router.post('/:id/exceptions', (req, res) => {
   const recurring_id = +req.params.id;
-  const pattern = db.get('recurring_absences').find({ id: recurring_id, user_id: req.user.id }).value();
+  const pattern = db.get('recurring_absences').find(p => p.id === recurring_id && +p.user_id === +req.user.id).value();
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
 
   const { exception_date, type, moved_to_date } = req.body;
@@ -148,7 +151,7 @@ router.post('/:id/exceptions', (req, res) => {
 router.delete('/:id/exceptions/:exId', (req, res) => {
   const recurring_id = +req.params.id;
   const exId = +req.params.exId;
-  const pattern = db.get('recurring_absences').find({ id: recurring_id, user_id: req.user.id }).value();
+  const pattern = db.get('recurring_absences').find(p => p.id === recurring_id && +p.user_id === +req.user.id).value();
   if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
   db.get('recurring_absence_exceptions').remove({ id: exId, recurring_id }).write();
   res.json({ ok: true });

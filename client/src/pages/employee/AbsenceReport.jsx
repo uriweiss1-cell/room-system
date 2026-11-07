@@ -37,6 +37,7 @@ export default function AbsenceReport() {
   const [upcomingOccurrences, setUpcomingOccurrences] = useState([]);
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [recDay, setRecDay] = useState('1');
+  const [recInterval, setRecInterval] = useState('1');
   const [recPartial, setRecPartial] = useState(false);
   const [recStart, setRecStart] = useState('08:00');
   const [recEnd, setRecEnd] = useState('17:00');
@@ -102,6 +103,7 @@ export default function AbsenceReport() {
     try {
       await api.post('/recurring-absences', {
         day_of_week: +recDay,
+        interval_weeks: +recInterval,
         start_time: recPartial ? recStart : null,
         end_time: recPartial ? recEnd : null,
         active_from: recFrom,
@@ -109,7 +111,7 @@ export default function AbsenceReport() {
         notes: recNotes || null,
       });
       setShowRecurringForm(false);
-      setRecDay('1'); setRecPartial(false); setRecFrom(todayStr()); setRecUntil(''); setRecNotes('');
+      setRecDay('1'); setRecInterval('1'); setRecPartial(false); setRecFrom(todayStr()); setRecUntil(''); setRecNotes('');
       loadRecurring();
     } catch (e) {
       setRecMsg('שגיאה: ' + (e.response?.data?.error || e.message));
@@ -121,7 +123,7 @@ export default function AbsenceReport() {
     try {
       await api.delete(`/recurring-absences/${id}`);
       loadRecurring();
-    } catch (e) { alert('שגיאה'); }
+    } catch (e) { alert('שגיאה: ' + (e.response?.data?.error || e.message)); }
   };
 
   const skipOccurrence = async (recurringId, date) => {
@@ -278,6 +280,15 @@ export default function AbsenceReport() {
                 </select>
               </div>
               <div>
+                <label className="label">תדירות</label>
+                <select className="select w-36" value={recInterval} onChange={e => setRecInterval(e.target.value)}>
+                  <option value="1">כל שבוע</option>
+                  <option value="2">כל שבועיים</option>
+                  <option value="3">כל 3 שבועות</option>
+                  <option value="4">כל 4 שבועות</option>
+                </select>
+              </div>
+              <div>
                 <label className="label">מתאריך</label>
                 <input type="date" className="input w-40" value={recFrom} min={todayStr()}
                   onChange={e => setRecFrom(e.target.value)} />
@@ -333,7 +344,7 @@ export default function AbsenceReport() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="font-medium text-sm">
-                    כל יום {DAYS_HE[p.day_of_week]}
+                    {p.interval_weeks > 1 ? `כל ${p.interval_weeks} שבועות` : 'כל שבוע'}, יום {DAYS_HE[p.day_of_week]}
                     {p.start_time ? ` · ${p.start_time}–${p.end_time}` : ' · כל היום'}
                   </div>
                   <div className="text-xs text-gray-500">
