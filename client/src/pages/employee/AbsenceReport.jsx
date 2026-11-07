@@ -301,32 +301,6 @@ export default function AbsenceReport() {
         </button>
       </div>
 
-      {/* One-time absences list */}
-      {myAbsences.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold mb-3 text-gray-700">ההיעדרויות שלי</h3>
-          <div className="space-y-2">
-            {myAbsences.map(a => (
-              <div key={a.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-3 gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{a.specific_date}</div>
-                  <div className="text-xs text-gray-500">
-                    {a.start_time ? `${a.start_time}–${a.end_time}` : 'כל היום'}
-                    {a.notes ? ` · ${a.notes}` : ''}
-                  </div>
-                </div>
-                <span className={`badge ${STATUS_COLORS[a.status]} shrink-0`}>{STATUS_LABELS[a.status]}</span>
-                <button
-                  className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  onClick={() => cancelAbsence(a.id)}
-                  title="בטל היעדרות"
-                >✕</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Recurring patterns list */}
       {recurringPatterns.length > 0 && (
         <div className="card space-y-3">
@@ -388,6 +362,41 @@ export default function AbsenceReport() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* One-time absences list */}
+      {myAbsences.length > 0 && (
+        <div className="card">
+          <h3 className="font-semibold mb-3 text-gray-700">ההיעדרויות שלי</h3>
+          <div className="space-y-2">
+            {(() => {
+              const now = new Date();
+              const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+              const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+              const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,'0')}`;
+              return myAbsences.filter(a => {
+                const m = a.specific_date?.slice(0, 7);
+                return m === thisMonth || m === prevMonth;
+              });
+            })().map(a => (
+              <div key={a.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-3 gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{a.specific_date}</div>
+                  <div className="text-xs text-gray-500">
+                    {a.start_time ? `${a.start_time}–${a.end_time}` : 'כל היום'}
+                    {a.notes ? ` · ${a.notes}` : ''}
+                  </div>
+                </div>
+                <span className={`badge ${STATUS_COLORS[a.status]} shrink-0`}>{STATUS_LABELS[a.status]}</span>
+                <button
+                  className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  onClick={() => cancelAbsence(a.id)}
+                  title="בטל היעדרות"
+                >✕</button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
