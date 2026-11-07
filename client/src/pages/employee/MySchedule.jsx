@@ -542,7 +542,7 @@ export default function MySchedule() {
         <div>שלח הודעת WhatsApp לבוט CallMeBot עם הטקסט הבא:</div>
         <div className="font-mono bg-white rounded px-2 py-1 text-gray-800 select-all">I allow callmebot to send me messages</div>
         <a
-          href="https://wa.me/34644860550?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+          href="https://wa.me/34644957356?text=I%20allow%20callmebot%20to%20send%20me%20messages"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
