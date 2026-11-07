@@ -116,8 +116,13 @@ router.post('/', (req, res) => {
 // DELETE /api/recurring-absences/:id — delete pattern and its exceptions
 router.delete('/:id', (req, res) => {
   const id = +req.params.id;
-  const pattern = db.get('recurring_absences').value().find(p => p.id === id && p.user_id == req.user.id);
-  if (!pattern) return res.status(404).json({ error: 'לא נמצא' });
+  const all = db.get('recurring_absences').value();
+  const pattern = all.find(p => p.id === id && p.user_id == req.user.id);
+  if (!pattern) {
+    const byId = all.find(p => p.id === id);
+    if (byId) return res.status(403).json({ error: `אין הרשאה: pattern.user_id=${byId.user_id} (${typeof byId.user_id}), req.user.id=${req.user.id} (${typeof req.user.id})` });
+    return res.status(404).json({ error: `לא נמצא: id=${id}, user=${req.user.id}, סה"כ רשומות=${all.length}` });
+  }
   db.get('recurring_absences').remove({ id }).write();
   db.get('recurring_absence_exceptions').remove({ recurring_id: id }).write();
   res.json({ ok: true });
