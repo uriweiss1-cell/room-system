@@ -1007,11 +1007,6 @@ router.put('/:id', requirePerm('requests'), (req, res) => {
     if (notifMsg) {
       sendNotif(request.user_id, notifMsg);
       sendPushToUser(db, request.user_id, 'מערכת שיבוץ חדרים', notifMsg).catch(() => {});
-      // WhatsApp via CallMeBot if user has opted in
-      const notifUser = db.get('users').find({ id: request.user_id }).value();
-      if (notifUser?.phone && notifUser?.callmebot_apikey) {
-        require('../utils/whatsapp').sendWhatsApp(notifUser.phone, notifUser.callmebot_apikey, notifMsg);
-      }
     }
   }
 

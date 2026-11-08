@@ -13,21 +13,6 @@ router.get('/', requirePermOrRole('users', 'secretary'), (req, res) => {
   res.json(db.get('users').value().map(safe));
 });
 
-router.get('/me', (req, res) => {
-  const u = db.get('users').find({ id: req.user.id }).value();
-  if (!u) return res.status(404).json({ error: 'לא נמצא' });
-  res.json(safe(u));
-});
-
-router.put('/me/notifications', (req, res) => {
-  const { phone, callmebot_apikey } = req.body;
-  db.get('users').find({ id: req.user.id }).assign({
-    phone: phone || null,
-    callmebot_apikey: callmebot_apikey || null,
-  }).write();
-  res.json({ ok: true });
-});
-
 router.get('/list/active', (req, res) => {
   res.json(db.get('users').filter(u => u.is_active && u.role !== 'admin').map(u => ({ id: u.id, name: u.name, role: u.role })).value());
 });
